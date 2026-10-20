@@ -49,7 +49,7 @@ uv run --locked pytest tests/integration
 
 `AGENTGIT_DATA_ROOT` 与 `AGENTGIT_TEST_DATA_ROOT` 默认是 `.agentgit/dev`、`.agentgit/test`，不能相同或互为祖先。路径用 `resolve()` 核验符号链接/目录联接；Windows 路径比较遵循平台大小写语义。测试库必须与开发库名称不同，且以 `_test` 结尾；仅更换用户名或主机别名不能绕过保护。
 
-迁移默认连接开发库，只前进。集成用例显式设置 Alembic `testing` 属性才允许测试库回退；不要在正式或共享数据库运行回退测试。S1 revision 只建立 Alembic 基线，不提前创建后续业务表。
+迁移默认连接开发库，只前进。集成用例显式设置 Alembic `testing` 属性才允许测试库回退；不要在正式或共享数据库运行回退测试。S1 revision 只建立 Alembic 基线；S2 通过 `0002_version_kernel` 和 `0003_parent_guards` 增加版本内核。S2 集成测试在独立测试 Schema 中运行完整迁移，不清空共享 public。
 
 ## 内容协议
 
@@ -58,3 +58,11 @@ uv run --locked pytest tests/integration
 基础契约使用 Pydantic strict/extra=forbid/frozen。载入内容时调用 `parse_contract`，同时校验 AGJSON 与显式 Schema 版本；未知版本返回 `unsupported_schema`，未知字段返回 `validation`，不默默丢弃字段。
 
 S1 实现参考官方资料：[uv 锁定与同步](https://docs.astral.sh/uv/concepts/projects/sync/)、[SQLAlchemy psycopg 方言](https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#module-sqlalchemy.dialects.postgresql.psycopg)、[Pydantic 配置](https://docs.pydantic.dev/latest/api/config/)。这里只冻结工程契约，不宣称 Agent 已可执行任务。
+
+## S2 版本内核调用
+
+`HistoryService` 提供项目/Run 创建、输入登记、耐久事件、完整状态原子提交、只读 log/restore、按实体读取产物和 GC dry-run；HTTP/CLI 业务管理在 S4/S5 接入。构造时传入 PostgreSQL engine 和独立数据根下的 `ObjectStore`，不要使用源码目录作为存储目录。
+
+环境的 `input_ref` 必须先用当前项目的 `register_input` 从实际字节登记。`commit` 必须携带 expected HEAD/version；state 与事件 payload 必须本身符合 AGJSON，不能依赖类型隐式转换。artifacts 是**完整清单**，空元组表示无文件；历史产物不自动继承。
+
+CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障注入入口仅供本地测试。GC 只有 dry-run，不提供删除；不得把扫描报告用作自动删除清单。阶段限制和测试证据见 [S2.md](acceptance/S2.md)。
