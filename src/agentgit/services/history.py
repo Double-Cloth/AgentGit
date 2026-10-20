@@ -22,7 +22,7 @@ from agentgit.core.snapshots import (
     StateSnapshot,
 )
 from agentgit.storage.objects import FaultHook, ObjectStore, StoredObject
-from agentgit.storage.schema_s2 import build_metadata
+from agentgit.storage.schema import build_metadata
 
 TABLES = build_metadata().tables
 
@@ -56,10 +56,18 @@ def _error(code: ErrorCode, message: str) -> AgentGitError:
 
 
 class HistoryService:
-    def __init__(self, engine: Engine, objects: ObjectStore, *, fault: FaultHook | None = None):
+    def __init__(
+        self,
+        engine: Engine,
+        objects: ObjectStore,
+        *,
+        fault: FaultHook | None = None,
+        lease_guard: Callable[[Connection, UUID], None] | None = None,
+    ):
         self.engine = engine
         self.objects = objects
         self.fault = fault or (lambda _: None)
+        self.lease_guard = lease_guard
 
     def create_repository(self, name: str) -> UUID:
         if not name.strip() or len(name) > 200:
@@ -90,8 +98,23 @@ class HistoryService:
 
     def create_run(self, repository_id: UUID, branch_name: str = "main") -> UUID:
         run_id = uuid4()
-        branch = self.branch(repository_id, branch_name)
         with self.engine.begin() as connection:
+            branches = TABLES["branches"]
+            branch = (
+                connection.execute(
+                    sa.select(branches)
+                    .where(
+                        branches.c.repository_id == repository_id, branches.c.name == branch_name
+                    )
+                    .with_for_update()
+                )
+                .mappings()
+                .first()
+            )
+            if branch is None:
+                raise _error(ErrorCode.NOT_FOUND, "分支不可访问")
+            if branch["active_writer_run_id"] is not None:
+                raise _error(ErrorCode.VERSION_CONFLICT, "分支已有活动写入 Run")
             connection.execute(
                 TABLES["runs"]
                 .insert()
@@ -140,6 +163,23 @@ class HistoryService:
             for key in ("object_type", "codec", "byte_length", "storage_key")
         ):
             raise _error(ErrorCode.OBJECT_CORRUPT, "对象索引与内容不符")
+
+    def assert_writer(self, connection: Connection, repository_id: UUID, run_id: UUID) -> None:
+        run = self._run(connection, repository_id, run_id)
+        branches = TABLES["branches"]
+        branch = connection.execute(
+            sa.select(branches.c.active_writer_run_id)
+            .where(branches.c.repository_id == repository_id, branches.c.name == run["branch_name"])
+            .with_for_update()
+        ).scalar_one()
+        if branch != run_id:
+            raise _error(ErrorCode.VERSION_CONFLICT, "Run 已失去分支写入绑定")
+        jobs = TABLES["jobs"]
+        managed = connection.execute(sa.select(jobs.c.id).where(jobs.c.run_id == run_id)).first()
+        if self.lease_guard is None and managed is not None:
+            raise _error(ErrorCode.VERSION_CONFLICT, "受调度的 Run 必须提供有效租约上下文")
+        if self.lease_guard is not None:
+            self.lease_guard(connection, run_id)
 
     def _ref(
         self,
@@ -213,6 +253,7 @@ class HistoryService:
         )
         with self.engine.begin() as connection:
             run = self._run(connection, repository_id, run_id, lock=True)
+            self.assert_writer(connection, repository_id, run_id)
             if run["status"] not in ("running", "planning"):
                 raise _error(ErrorCode.VERSION_CONFLICT, "运行当前不能追加执行事件")
             seq = int(run["last_event_seq"]) + 1
@@ -350,10 +391,17 @@ class HistoryService:
                     or run["checkpoint_commit_id"] != expected_head
                 ):
                     raise _error(ErrorCode.VERSION_CONFLICT, "运行在对象发布期间已改变")
-                if run["status"] not in ("queued", "running", "planning"):
+                if run["status"] not in (
+                    "queued",
+                    "running",
+                    "planning",
+                    "paused",
+                    "waiting_approval",
+                ):
                     raise _error(ErrorCode.VERSION_CONFLICT, "运行当前不能提交状态")
                 if writer_guard is not None:
                     writer_guard(connection)
+                self.assert_writer(connection, repository_id, run_id)
                 all_objects = [state_obj, environment_obj, event_obj, manifest_obj, *event_objects]
                 all_objects.extend(obj for _, obj in artifact_objects)
                 for obj in sorted(
@@ -469,6 +517,14 @@ class HistoryService:
                 )
                 if projection is not None:
                     projection(connection)
+                if self.lease_guard is not None:
+                    connection.execute(
+                        TABLES["jobs"]
+                        .update()
+                        .where(TABLES["jobs"].c.run_id == run_id)
+                        .values(checkpoint_commit_id=manifest_obj.id)
+                    )
+                    self.lease_guard(connection, run_id)
                 self.fault("in_transaction")
         except IntegrityError:
             raise _error(ErrorCode.VALIDATION, "提交违反归属或历史约束") from None

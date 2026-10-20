@@ -69,7 +69,7 @@ def test_restore_log_artifact_and_event_range(history):
 
 def test_exactly_one_concurrent_head_update(history):
     repository = history.create_repository("竞争")
-    runs = [history.create_run(repository) for _ in range(2)]
+    run = history.create_run(repository)
     barrier = Barrier(2)
 
     def compete(index):
@@ -79,7 +79,7 @@ def test_exactly_one_concurrent_head_update(history):
             fault=lambda point: barrier.wait(timeout=10) if point == "before_transaction" else None,
         )
         try:
-            return commit(service, repository, runs[index], value=index)
+            return commit(service, repository, run, value=index)
         except AgentGitError as exc:
             return exc.code
 
@@ -95,7 +95,7 @@ def test_exactly_one_concurrent_head_update(history):
                 ).scalar_one()
                 == 1
             )
-    assert sorted(len(history.events(repository, run)) for run in runs) == [0, 1]
+    assert len(history.events(repository, run)) == 1
 
 
 @pytest.mark.parametrize("point", ["before_transaction", "in_transaction", "after_commit"])

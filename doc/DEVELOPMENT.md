@@ -69,7 +69,7 @@ CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障�
 
 ## S3 离线研究演示
 
-当前 Schema head 为 `0004_research_tasks`。先升级开发库，再运行：
+S3 验收时 Schema head 为 `0004_research_tasks`；当前 head 已推进至 `0006_job_budget_status`。先升级开发库，再运行：
 
 ```powershell
 uv run --locked alembic upgrade head
@@ -79,3 +79,23 @@ uv run --locked python examples/research_agent/run.py
 具体输入、产物位置、预算演示与 Mock 计量说明见 [研究示例](../examples/research_agent/README.md)，实测证据见 [S3.md](acceptance/S3.md)。只使用固定合成资料，没有真实模型/互联网依赖。每次演示创建独立 Repository、Run 和受控工作区；实际用户代码执行须等待 S4 容器实现。
 
 新增 Python/语料文件已纳入 uv 的本地构建缓存键，避免非 editable 安装复用旧构建；配置依据 [uv 缓存文档](https://docs.astral.sh/uv/concepts/cache/#dynamic-metadata)。执行 `uv build --out-dir .agentgit/packages` 可生成 sdist/wheel，非 editable 包内语料加载已验证。开发时仍使用默认 editable 的 `uv sync --locked`。
+
+## S4 调度与恢复开发入口
+
+当前提供包内 `JobService.enqueue()` 与 `Worker.run_once()`，尚无业务 HTTP/CLI 命令。提交只持久保存 Job/Run/幂等响应，不创建工作区或启动 Adapter。API 进程后续将使用同一提交服务，独立 Worker 负责领取和执行；不使用进程内 BackgroundTasks 保存任务。
+
+`enqueue` 需要 actor、幂等 key、配置版本、分支名称与预期 HEAD/version。同一 actor/route/key 的相同请求返回原 Job/Run，异参冲突；任务或分支存在非终态写者时冲突，暂停和待核对同样占用分支。配置和计划版本在落库事务中再次核验。
+
+Job 固定代码摘要、配置、输入、语料和初始计划版本；Worker 必须使用兼容代码和恢复环境。升级代码不会强行执行旧 Job；应先处理活动任务，再升级。使用新构建启动 Worker 时，代码不匹配返回 `unsupported_schema`，不重新调用 Adapter。不能用修改 payload 的方式绕过检查。
+
+默认租约 15 秒，心跳间隔为租约的三分之一；接管增加 fencing token。失效 Worker 的调用响应和状态提交均被拒绝。暂停/取消通过 `request_control(..., expected_version=...)` 留下 requested 事件，抵达安全检查点才 applied；正在执行的外部调用不会被描述成已经撤销。普通暂停在同一 Run 恢复；首次领取后的持久截止时间不会因暂停、重启或接管而重置。
+
+崩溃恢复封存原 Run 的 interrupted 事实并创建新 Run，原 Commit/检查点不改；新租约使用独立工作区，从完整 CAS 产物恢复。结果已保存时核验 occurrence、参数、工具签名、效果分类、checkpoint 和响应限制后复用；产物由录制写入内容重建，不再次调用工具。已有意图但缺结果时进入 `outcome_unknown`，保留预算预留并等待核对，取消也仅记录请求。审批/核对接口仍待实现。
+
+运行新增集成测试：
+
+```powershell
+uv run --locked pytest tests/integration/test_jobs.py tests/integration/test_kernel_migrations.py
+```
+
+真实进程故障用例仅启动仓库内受信任的 Worker 测试助手，并使用独立测试 Schema/临时 CAS；它们不构成用户 Shell/Python 执行功能。容器执行仍未实现，`doctor --sandbox` 继续返回 `execution_ready=false`。进展和验收缺口见 [S4-progress.md](acceptance/S4-progress.md)。

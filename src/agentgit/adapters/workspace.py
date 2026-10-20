@@ -32,7 +32,9 @@ class ArtifactWorkspace:
         return path
 
     def write(self, path: str, text: str, media_type: str) -> None:
-        payload = text.encode("utf-8")
+        self.write_bytes(path, text.encode("utf-8"), media_type)
+
+    def write_bytes(self, path: str, payload: bytes, media_type: str) -> None:
         if len(payload) > self.max_file_bytes:
             raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "产物超过单文件大小上限")
         names = set(self.media_types) | {path}

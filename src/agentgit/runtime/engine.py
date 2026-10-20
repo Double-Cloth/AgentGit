@@ -35,25 +35,35 @@ class ResearchRuntime:
         journal: StateJournal,
         *,
         clock_ms: Callable[[], int] | None = None,
+        control: Callable[[], str | None] | None = None,
+        wall_budget_ms: int | None = None,
     ):
         self.state, self.config, self.model, self.tools = state, config, model, tools
         self.gateway, self.journal = gateway, journal
         self.clock_ms = clock_ms or (lambda: time.monotonic_ns() // 1_000_000)
         self.started_at = self.clock_ms()
+        self.control, self.wall_budget_ms = control, wall_budget_ms
 
     def _save(self, event_type: str, **details: object) -> None:
         self.journal.save(self.state, event_type, dict(details))
 
     def _wall(self) -> None:
-        if self.clock_ms() - self.started_at >= self.config.limits.max_wall_ms:
+        limit = self.config.limits.max_wall_ms
+        if self.wall_budget_ms is not None:
+            limit = min(limit, self.wall_budget_ms)
+        if self.clock_ms() - self.started_at >= limit:
             raise AgentGitError(ErrorCode.BUDGET_EXHAUSTED, "Run 墙钟预算已耗尽")
 
     def run(self) -> AgentState:
+        if self._control_point():
+            return self.state
         if self.state.status == RunStatus.QUEUED:
             self.state = evolve(self.state, status=RunStatus.PLANNING)
             self._save("run.planning")
         while self.state.status in (RunStatus.PLANNING, RunStatus.RUNNING):
             try:
+                if self._control_point():
+                    break
                 self._wall()
                 if self.state.pending_tool is not None:
                     self._tool(self.state.pending_tool)
@@ -64,6 +74,39 @@ class ResearchRuntime:
                     raise
                 self._failure(exc)
         return self.state
+
+    def _control_point(self) -> bool:
+        action = self.control() if self.control is not None else None
+        if action == "pause":
+            resume: RunStatus = (
+                RunStatus.PLANNING if self.state.status == RunStatus.QUEUED else self.state.status
+            )
+            self.state = evolve(self.state, status=RunStatus.PAUSED, resume_status=resume)
+            self._save("run.paused")
+            return True
+        if action == "cancel":
+            self.state = evolve(
+                self.state, status=RunStatus.CANCELLED, pending_tool=None, resume_status=None
+            )
+            self._save("run.cancelled")
+            return True
+        if action == "resume" and self.state.status == RunStatus.PAUSED:
+            resume = self.state.resume_status or (
+                RunStatus.RUNNING if self.state.plan else RunStatus.PLANNING
+            )
+            self.state = evolve(self.state, status=resume, resume_status=None)
+            self._save("run.resumed")
+        if action == "budget_exhausted":
+            self.state = evolve(
+                self.state,
+                status=RunStatus.BUDGET_EXHAUSTED,
+                error_code=ErrorCode.BUDGET_EXHAUSTED.value,
+            )
+            self._save(
+                "run.stopped", error={"code": "budget_exhausted", "message": "持久化墙钟期限已到"}
+            )
+            return True
+        return False
 
     def _model(self) -> None:
         state, limits = self.state, self.config.limits

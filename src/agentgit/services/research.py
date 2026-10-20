@@ -22,8 +22,9 @@ from agentgit.core.research import AgentConfig, AgentState, ResearchGoal
 from agentgit.runtime.engine import ResearchRuntime
 from agentgit.runtime.ports import ModelAdapter
 from agentgit.services.calls import RecordedCallGateway
+from agentgit.services.environment import source_revision
 from agentgit.services.history import ArtifactInput, EventInput, HistoryService
-from agentgit.storage.schema_s3 import build_metadata
+from agentgit.storage.schema import build_metadata
 
 TABLES = build_metadata().tables
 
@@ -152,6 +153,8 @@ class ResearchService:
             )
             if branch is None:
                 raise AgentGitError(ErrorCode.NOT_FOUND, "分支不可访问")
+            if branch["active_writer_run_id"] is not None:
+                raise AgentGitError(ErrorCode.VERSION_CONFLICT, "分支已有活动写入 Run")
             connection.execute(
                 runs.insert().values(
                     id=run_id,
@@ -217,17 +220,17 @@ class ResearchSession:
         self.head, self.version = head, version
         self.tools = ToolRegistry(service.corpus, workspace, config)
         self.environment: EnvironmentManifest | None = None
+        self.control_applied: Callable[[Connection], None] | None = None
+        self.gateway_factory: Callable[[], RecordedCallGateway] | None = None
+        self.expected_environment: EnvironmentManifest | None = None
+        self.expected_code_revision: str | None = None
+        self.after_checkpoint: Callable[[], None] | None = None
 
     def _environment(self, model: ModelAdapter) -> EnvironmentManifest:
         package = Path(__file__).resolve().parents[1]
         lock = package.parent.parent / "uv.lock"
         if not lock.is_file():
             raise AgentGitError(ErrorCode.CONFIGURATION, "S3 示例需从含 uv.lock 的项目环境运行")
-        source_hash = hashlib.sha256()
-        for path in sorted(package.rglob("*.py")):
-            source_hash.update(
-                path.relative_to(package).as_posix().encode() + b"\0" + path.read_bytes()
-            )
         payload = encode(
             {
                 "schema_version": 1,
@@ -240,7 +243,7 @@ class ResearchSession:
         return EnvironmentManifest(
             runtime_version=__version__,
             python_version=platform.python_version(),
-            code_revision="source-sha256:" + source_hash.hexdigest(),
+            code_revision=source_revision(),
             dependency_lock_digest=hashlib.sha256(lock.read_bytes()).hexdigest(),
             model_signature="mock-research/v1:" + model.signature,
             prompt_digest=hashlib.sha256(self.config.prompt.encode()).hexdigest(),
@@ -251,15 +254,41 @@ class ResearchSession:
         )
 
     def execute(
-        self, model: ModelAdapter | None = None, *, clock_ms: Callable[[], int] | None = None
+        self,
+        model: ModelAdapter | None = None,
+        *,
+        clock_ms: Callable[[], int] | None = None,
+        control: Callable[[], str | None] | None = None,
+        wall_budget_ms: int | None = None,
     ) -> AgentState:
         model = model or MockResearchModel()
         self.environment = self._environment(model)
-        gateway = RecordedCallGateway(
-            self.history, self.repository_id, self.run_id, lambda: (self.head, self.version)
+        if (
+            self.expected_code_revision is not None
+            and self.environment.code_revision != self.expected_code_revision
+        ):
+            raise AgentGitError(
+                ErrorCode.UNSUPPORTED_SCHEMA, "排队时的代码版本与当前 Worker 不一致"
+            )
+        if self.expected_environment is not None and self.environment != self.expected_environment:
+            raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "恢复环境与原检查点不兼容")
+        gateway = (
+            self.gateway_factory()
+            if self.gateway_factory is not None
+            else RecordedCallGateway(
+                self.history, self.repository_id, self.run_id, lambda: (self.head, self.version)
+            )
         )
         return ResearchRuntime(
-            self.state, self.config, model, self.tools, gateway, self, clock_ms=clock_ms
+            self.state,
+            self.config,
+            model,
+            self.tools,
+            gateway,
+            self,
+            clock_ms=clock_ms,
+            control=control,
+            wall_budget_ms=wall_budget_ms,
         ).run()
 
     def save(self, state: AgentState, event_type: str, details: dict[str, object]) -> None:
@@ -300,8 +329,14 @@ class ResearchSession:
                 TABLES["runs"]
                 .update()
                 .where(TABLES["runs"].c.id == self.run_id)
-                .values(status=state.status.value)
+                .values(status=state.status.value, failure_code=state.error_code)
             )
+            if self.control_applied is not None and event_type in (
+                "run.paused",
+                "run.resumed",
+                "run.cancelled",
+            ):
+                self.control_applied(connection)
             if state.plan is None or plan_obj is None:
                 return
             self.history._ref(
@@ -375,3 +410,5 @@ class ResearchSession:
             projection=projection,
         )
         self.head, self.version, self.state = result.commit_id, result.branch_version, state
+        if self.after_checkpoint is not None:
+            self.after_checkpoint()

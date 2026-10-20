@@ -184,6 +184,7 @@ class AgentState(Contract):
     error_code: str | None = None
     evaluation: Evaluation | None = None
     pending_tool: ToolDecision | None = None
+    resume_status: RunStatus | None = None
 
 
 class ModelRequest(Contract):

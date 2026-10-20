@@ -13,6 +13,7 @@ from agentgit.core.research import CallTrace, SavedCallOutcome
 from agentgit.core.snapshots import EventPayload
 from agentgit.runtime.ports import CallOutcome
 from agentgit.services.history import TABLES, EventInput, HistoryService
+from agentgit.storage.objects import StoredObject
 
 
 class RecordedCallGateway:
@@ -22,9 +23,18 @@ class RecordedCallGateway:
         repository_id: UUID,
         run_id: UUID,
         checkpoint: Callable[[], tuple[str | None, int]],
+        *,
+        origin_runs: tuple[UUID, ...] = (),
+        materialize: Callable[[str, bytes, bytes], None] | None = None,
+        after_result: Callable[[], None] | None = None,
     ):
         self.history, self.repository_id, self.run_id = history, repository_id, run_id
         self.checkpoint = checkpoint
+        self.origin_runs, self.materialize, self.after_result = (
+            origin_runs,
+            materialize,
+            after_result,
+        )
 
     def call(
         self,
@@ -48,6 +58,10 @@ class RecordedCallGateway:
             signature_digest=signature,
             request_digest=request_obj.id,
         )
+        if self.origin_runs:
+            recovered = self._reuse_origin(occurrence, effect, max_bytes)
+            if recovered is not None:
+                return recovered
         head, version = self.checkpoint()
         intent = history.objects.put_json(
             ObjectType.CALL,
@@ -76,6 +90,7 @@ class RecordedCallGateway:
         )
         with history.engine.begin() as connection:
             run = history._run(connection, self.repository_id, self.run_id, lock=True)
+            history.assert_writer(connection, self.repository_id, self.run_id)
             branch = TABLES["branches"]
             row = (
                 connection.execute(
@@ -128,7 +143,7 @@ class RecordedCallGateway:
                 if existing["result_ref"] is None:
                     raise AgentGitError(ErrorCode.OUTCOME_UNKNOWN, "已有调用尚无耐久结果，禁止重发")
                 saved = history.objects.get_json(existing["result_ref"], ObjectType.CALL)
-                return self._outcome(occurrence, saved)
+                return self._cached_outcome(occurrence, saved)
             for role, obj in (("request", request_obj), ("intent", intent)):
                 history._ref(
                     connection, self.repository_id, obj, "external_call", str(call_id), role
@@ -209,6 +224,7 @@ class RecordedCallGateway:
         )
         with history.engine.begin() as connection:
             run = history._run(connection, self.repository_id, self.run_id, lock=True)
+            history.assert_writer(connection, self.repository_id, self.run_id)
             for role, obj in (("response", response_obj), ("result", result_obj)):
                 history._ref(
                     connection, self.repository_id, obj, "external_call", str(call_id), role
@@ -228,7 +244,133 @@ class RecordedCallGateway:
                 .where(TABLES["runs"].c.id == self.run_id)
                 .values(last_event_seq=seq)
             )
+        if self.after_result is not None:
+            self.after_result()
         return self._outcome(occurrence, saved)
+
+    def _cached_outcome(self, occurrence: CallOccurrence, saved: dict[str, Any]) -> CallOutcome:
+        outcome = self._outcome(occurrence, saved)
+        if outcome.error is None and self.materialize is not None:
+            self.materialize(
+                occurrence.provider,
+                self.history.objects.get(occurrence.request_digest, ObjectType.BLOB),
+                outcome.payload,
+            )
+        return outcome
+
+    def _reuse_origin(
+        self, occurrence: CallOccurrence, effect: EffectClass, max_bytes: int
+    ) -> CallOutcome | None:
+        history, calls = self.history, TABLES["external_calls"]
+        head, _ = self.checkpoint()
+        saved: dict[str, Any] | None = None
+        with history.engine.begin() as connection:
+            run = history._run(connection, self.repository_id, self.run_id, lock=True)
+            history.assert_writer(connection, self.repository_id, self.run_id)
+            key = (
+                calls.c.repository_id == self.repository_id,
+                calls.c.logical_step_id == occurrence.logical_step_id,
+                calls.c.call_index == occurrence.call_index,
+                calls.c.attempt == occurrence.attempt,
+            )
+            if (
+                connection.execute(
+                    sa.select(calls.c.id).where(*key, calls.c.run_id == self.run_id)
+                ).first()
+                is not None
+            ):
+                return None
+            origin = None
+            for run_id in self.origin_runs:
+                origin = (
+                    connection.execute(sa.select(calls).where(*key, calls.c.run_id == run_id))
+                    .mappings()
+                    .first()
+                )
+                if origin is not None:
+                    break
+            if origin is None:
+                return None
+            if (
+                origin["request_digest"] != occurrence.request_digest
+                or origin["signature_digest"] != occurrence.signature_digest
+                or origin["provider"] != occurrence.provider
+                or origin["effect"] != effect.value
+            ):
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "恢复调用与来源录制不符")
+            intent = history.objects.get_json(origin["intent_ref"], ObjectType.CALL)
+            if intent.get("checkpoint") != head or intent.get("max_response_bytes") != max_bytes:
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "恢复调用的 checkpoint 或限制不符")
+            if origin["result_ref"] is None:
+                raise AgentGitError(ErrorCode.OUTCOME_UNKNOWN, "来源调用没有结果，不能在恢复中重发")
+            saved = history.objects.get_json(origin["result_ref"], ObjectType.CALL)
+            # 读取并校验完整结果后才建立当前 Run 的复用记录。
+            self._outcome(occurrence, saved)
+            call_id = uuid4()
+            for role, object_id in (
+                ("request", origin["request_digest"]),
+                ("intent", origin["intent_ref"]),
+                ("result", origin["result_ref"]),
+                ("response", saved["response_ref"]),
+            ):
+                row = (
+                    connection.execute(
+                        sa.select(TABLES["objects"]).where(TABLES["objects"].c.id == object_id)
+                    )
+                    .mappings()
+                    .one()
+                )
+                item = StoredObject(
+                    row["id"],
+                    ObjectType(row["object_type"]),
+                    row["media_type"],
+                    row["byte_length"],
+                    row["storage_key"],
+                    row["codec"],
+                )
+                history._ref(
+                    connection, self.repository_id, item, "external_call", str(call_id), role
+                )
+            connection.execute(
+                calls.insert().values(
+                    id=call_id,
+                    repository_id=self.repository_id,
+                    run_id=self.run_id,
+                    logical_step_id=occurrence.logical_step_id,
+                    call_index=occurrence.call_index,
+                    attempt=occurrence.attempt,
+                    provider=occurrence.provider,
+                    signature_digest=occurrence.signature_digest,
+                    request_digest=occurrence.request_digest,
+                    effect=effect.value,
+                    intent_ref=origin["intent_ref"],
+                    result_ref=origin["result_ref"],
+                    origin_call_id=origin["id"],
+                    status=origin["status"],
+                )
+            )
+            event = EventInput(
+                "call.reused",
+                occurrence.logical_step_id,
+                {
+                    "occurrence": occurrence.model_dump(mode="json"),
+                    "origin_run_id": str(origin["run_id"]),
+                    "origin_call_id": str(origin["id"]),
+                    "result_ref": origin["result_ref"],
+                },
+            )
+            payload = history.objects.put_json(
+                ObjectType.EVENT, EventPayload(data=event.payload).model_dump(mode="json")
+            )
+            seq = int(run["last_event_seq"]) + 1
+            history._event(connection, self.repository_id, self.run_id, seq, event, payload)
+            connection.execute(
+                TABLES["runs"]
+                .update()
+                .where(TABLES["runs"].c.id == self.run_id)
+                .values(last_event_seq=seq)
+            )
+        return self._cached_outcome(occurrence, saved)
 
     def _outcome(self, occurrence: CallOccurrence, saved: dict[str, Any]) -> CallOutcome:
         # 原始响应只从已核验 CAS 读取，缺失时明确失败，不重新调用 Adapter。
