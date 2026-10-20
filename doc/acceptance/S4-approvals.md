@@ -1,5 +1,7 @@
 # S4 工具策略与精确审批进展
 
+本记录归档 `d7d29a0` 时点；后续“核对后继续”的实现与证据见 [S4-reconciliation.md](S4-reconciliation.md)。
+
 - 日期：2026-10-21。
 - 状态：S4 进行中。本记录覆盖精确审批与未知结果阻断，不表示 S4 或 D1 已完成。
 - 前置实现：`c90f4d0`，见 [调度与恢复进展](S4-progress.md)。当前 Schema head 为 `0007_exact_approvals`。

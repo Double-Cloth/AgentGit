@@ -20,7 +20,13 @@ from agentgit.core.research import (
     evolve,
     parse_decision,
 )
-from agentgit.runtime.ports import CallGateway, ModelAdapter, StateJournal
+from agentgit.runtime.ports import (
+    CallGateway,
+    CallOutcome,
+    CallSettlement,
+    ModelAdapter,
+    StateJournal,
+)
 from agentgit.runtime.validation import validate_report
 
 
@@ -37,12 +43,14 @@ class ResearchRuntime:
         clock_ms: Callable[[], int] | None = None,
         control: Callable[[], str | None] | None = None,
         wall_budget_ms: int | None = None,
+        settlement: CallSettlement | None = None,
     ):
         self.state, self.config, self.model, self.tools = state, config, model, tools
         self.gateway, self.journal = gateway, journal
         self.clock_ms = clock_ms or (lambda: time.monotonic_ns() // 1_000_000)
         self.started_at = self.clock_ms()
         self.control, self.wall_budget_ms = control, wall_budget_ms
+        self.settlement = settlement
 
     def _save(self, event_type: str, **details: object) -> None:
         self.journal.save(self.state, event_type, dict(details))
@@ -55,6 +63,19 @@ class ResearchRuntime:
             raise AgentGitError(ErrorCode.BUDGET_EXHAUSTED, "Run 墙钟预算已耗尽")
 
     def run(self) -> AgentState:
+        if self.settlement is not None:
+            try:
+                self._settle(self.settlement)
+            except AgentGitError as exc:
+                if exc.code in (
+                    ErrorCode.REPLAY_MISMATCH,
+                    ErrorCode.OBJECT_CORRUPT,
+                    ErrorCode.VERSION_CONFLICT,
+                ):
+                    raise
+                self._failure(exc)
+            if self.state.status not in (RunStatus.PLANNING, RunStatus.RUNNING):
+                return self.state
         if self._control_point():
             return self.state
         if self.state.status == RunStatus.QUEUED:
@@ -160,12 +181,20 @@ class ResearchRuntime:
             invoke=lambda: self.model.invoke(request),
             max_bytes=limits.max_response_bytes,
         )
+        self._observe_model(outcome, len(request))
+
+    def _observe_model(
+        self, outcome: CallOutcome, request_bytes: int, *, settling: bool = False
+    ) -> None:
+        if outcome.error is not None and outcome.error.code == ErrorCode.OUTCOME_UNKNOWN:
+            self.state = evolve(self.state, messages=(*self.state.messages, outcome.trace))
+            raise outcome.error
         self.state = evolve(
             self.state,
             usage=evolve(
                 self.state.usage,
                 reserved_tokens=0,
-                tokens=usage.tokens + len(request) + outcome.output_bytes,
+                tokens=self.state.usage.tokens + request_bytes + outcome.output_bytes,
             ),
             messages=(*self.state.messages, outcome.trace),
         )
@@ -201,6 +230,9 @@ class ResearchRuntime:
         elif isinstance(decision, ToolDecision):
             self._decision(decision)
         elif isinstance(decision, FinalDecision):
+            if settling and self.control is not None and self.control() == "cancel":
+                self._control_point()
+                return
             if self.state.plan is None or len(self.state.completed) != len(self.state.plan.nodes):
                 raise AgentGitError(ErrorCode.PLAN_INVALID, "尚未完成计划不能结束任务")
             evaluation = validate_report(
@@ -261,6 +293,9 @@ class ResearchRuntime:
             invoke=lambda: self.tools.invoke(decision.tool, decision.arguments),
             max_bytes=self.config.limits.max_response_bytes,
         )
+        self._observe_tool(decision, attempt, outcome)
+
+    def _observe_tool(self, decision: ToolDecision, attempt: int, outcome: CallOutcome) -> None:
         self.state = evolve(self.state, messages=(*self.state.messages, outcome.trace))
         if outcome.error:
             raise outcome.error
@@ -318,6 +353,79 @@ class ResearchRuntime:
         )
         self._save("tool.observed", node=decision.node_key)
 
+    def _settle(self, settlement: CallSettlement) -> None:
+        unknown, before, trace = self.state, settlement.before, settlement.outcome.trace
+        if unknown.status != RunStatus.OUTCOME_UNKNOWN or before.status not in (
+            RunStatus.PLANNING,
+            RunStatus.RUNNING,
+        ):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "核对状态没有对应的未决调用")
+        normalized = evolve(
+            unknown,
+            status=before.status,
+            error_code=before.error_code,
+            usage=before.usage,
+            messages=before.messages,
+            attempts=before.attempts,
+            resume_status=before.resume_status,
+        )
+        if normalized != before or unknown.messages[: len(before.messages)] != before.messages:
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "未知状态与调用前检查点不符")
+        extra = unknown.messages[len(before.messages) :]
+        if extra and (
+            len(extra) != 1
+            or extra[0].error_code != ErrorCode.OUTCOME_UNKNOWN.value
+            or extra[0].model_dump(exclude={"response_ref", "error_code"})
+            != trace.model_dump(exclude={"response_ref", "error_code"})
+        ):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "未知调用轨迹与核对结果不符")
+        if trace.request_ref != object_digest(ObjectType.BLOB, settlement.request):
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "核对请求摘要不符")
+        model = trace.provider.startswith("llm:")
+        expected_usage = evolve(
+            before.usage,
+            steps=before.usage.steps + int(model),
+            model_calls=before.usage.model_calls + int(model),
+            tool_calls=before.usage.tool_calls + int(not model),
+            reserved_tokens=len(settlement.request) + self.config.limits.max_response_bytes
+            if model
+            else before.usage.reserved_tokens,
+        )
+        if unknown.usage != expected_usage:
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "核对不能重置或重复扣除预算")
+        if model:
+            request = parse_contract(settlement.request, ModelRequest)
+            if (
+                request.state != before
+                or request.prompt != self.config.prompt
+                or request.evaluation_time != self.tools.corpus.evaluation_time
+                or request.phase != ("plan" if before.status == RunStatus.PLANNING else "act")
+                or trace.logical_step_id != f"model-{unknown.usage.steps}"
+                or trace.attempt != 1
+                or trace.signature_digest != self.model.signature
+                or unknown.attempts != before.attempts
+            ):
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "模型核对身份不符")
+        else:
+            decision = before.pending_tool
+            if (
+                decision is None
+                or trace.provider != f"tool:{decision.tool}/v1"
+                or trace.logical_step_id != decision.node_key
+                or trace.attempt != before.attempts.get(decision.node_key, 0) + 1
+                or trace.signature_digest != self.tools.signature(decision.tool)
+                or settlement.request != encode(decision.arguments)
+                or unknown.attempts != {**before.attempts, decision.node_key: trace.attempt}
+            ):
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "工具核对身份不符")
+        self.state = evolve(before, usage=unknown.usage, attempts=unknown.attempts, error_code=None)
+        if model:
+            self._observe_model(settlement.outcome, len(settlement.request), settling=True)
+        else:
+            assert decision is not None
+            self._validate_tool_step(decision)
+            self._observe_tool(decision, trace.attempt, settlement.outcome)
+
     def _failure(self, error: AgentGitError) -> None:
         retryable = {
             ErrorCode.VALIDATION,
@@ -349,6 +457,7 @@ class ResearchRuntime:
         self.state = evolve(
             self.state,
             status=status,
+            resume_status=self.state.status if status == RunStatus.OUTCOME_UNKNOWN else None,
             pending_tool=self.state.pending_tool if status == RunStatus.OUTCOME_UNKNOWN else None,
             error_code=error.code.value,
             usage=evolve(

@@ -15,10 +15,16 @@ from agentgit.adapters.workspace import ArtifactWorkspace
 from agentgit.core.canonical import ObjectType, decode, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.jobs import Lease
-from agentgit.core.models import CommitManifest, EnvironmentManifest, RunStatus, parse_contract
+from agentgit.core.models import (
+    CallIntent,
+    CommitManifest,
+    EnvironmentManifest,
+    RunStatus,
+    parse_contract,
+)
 from agentgit.core.research import AgentState, ResearchGoal, evolve
 from agentgit.core.snapshots import EventPayload
-from agentgit.runtime.ports import ModelAdapter
+from agentgit.runtime.ports import CallSettlement, ModelAdapter
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.calls import RecordedCallGateway
 from agentgit.services.environment import source_revision
@@ -76,6 +82,7 @@ class Worker:
                 if prepared is None:
                     return self._summary(lease)
                 lease = prepared
+            self.fault("after_claim")
             with LeaseHeartbeat(self.queue, lease) as heartbeat:
                 session, origins, remaining = self._attach(lease)
                 session.gateway_factory = lambda: RecordedCallGateway(
@@ -108,6 +115,8 @@ class Worker:
                         {"pending_calls": [str(call["id"]) for call in unknown]},
                     )
                 else:
+                    if session.state.status == RunStatus.OUTCOME_UNKNOWN:
+                        session.settlement = self._settlement(session, lease, origins)
 
                     def control() -> str | None:
                         if heartbeat.lost.is_set():
@@ -281,10 +290,13 @@ class Worker:
         for call in calls:
             if call["provider"].startswith("llm:"):
                 models += 1
-                intent = self.queue.history.objects.get_json(call["intent_ref"], ObjectType.CALL)
-                reserved += len(
-                    self.queue.history.objects.get(call["request_digest"], ObjectType.BLOB)
-                ) + int(intent["max_response_bytes"])
+                intent = parse_contract(
+                    self.queue.history.objects.get(call["intent_ref"], ObjectType.CALL), CallIntent
+                )
+                reserved += (
+                    len(self.queue.history.objects.get(call["request_digest"], ObjectType.BLOB))
+                    + intent.max_response_bytes
+                )
             else:
                 tools += 1
                 attempts[call["logical_step_id"]] = max(
@@ -300,10 +312,87 @@ class Worker:
         return evolve(
             state,
             status=RunStatus.OUTCOME_UNKNOWN,
+            resume_status=state.status,
             error_code="outcome_unknown",
             usage=usage,
             attempts=attempts,
         )
+
+    def _settlement(
+        self, session: ResearchSession, lease: Lease, origins: tuple[UUID, ...]
+    ) -> CallSettlement:
+        resolutions, calls = TABLES["call_resolutions"], TABLES["external_calls"]
+        with session.history.engine.connect() as connection:
+            rows = list(
+                connection.execute(
+                    sa.select(
+                        calls,
+                        resolutions.c.checkpoint_commit_id.label("resolved_checkpoint"),
+                        resolutions.c.result_ref.label("resolved_result"),
+                        resolutions.c.evidence_ref,
+                        resolutions.c.request_digest.label("resolved_request"),
+                        resolutions.c.resolver_signature,
+                    )
+                    .join(resolutions, resolutions.c.call_id == calls.c.id)
+                    .where(
+                        resolutions.c.repository_id == lease.repository_id,
+                        resolutions.c.run_id.in_((lease.run_id, *origins)),
+                        calls.c.run_id.in_((lease.run_id, *origins)),
+                        resolutions.c.checkpoint_commit_id == session.head,
+                    )
+                ).mappings()
+            )
+        if len(rows) != 1:
+            raise AgentGitError(ErrorCode.OUTCOME_UNKNOWN, "当前停止点没有唯一的可信核对结果")
+        call = rows[0]
+        intent = parse_contract(
+            session.history.objects.get(call["intent_ref"], ObjectType.CALL), CallIntent
+        )
+        if (
+            call["status"] != "succeeded"
+            or call["result_ref"] is None
+            or call["result_ref"] != call["resolved_result"]
+            or call["request_digest"] != call["resolved_request"]
+            or call["signature_digest"] != call["resolver_signature"]
+            or intent.checkpoint is None
+            or intent.request_ref != call["request_digest"]
+            or intent.effect.value != call["effect"]
+        ):
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "核对结果不完整")
+        session.history.objects.get(call["evidence_ref"], ObjectType.BLOB)
+        before = parse_contract(
+            encode(session.history.restore(lease.repository_id, intent.checkpoint).data),
+            AgentState,
+        )
+        occurrence = intent.occurrence
+        if any(
+            occurrence.model_dump()[key] != call[key]
+            for key in (
+                "logical_step_id",
+                "call_index",
+                "attempt",
+                "provider",
+                "signature_digest",
+                "request_digest",
+            )
+        ):
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "核对结果的原始意图身份不符")
+        gateway = RecordedCallGateway(
+            session.history,
+            lease.repository_id,
+            lease.run_id,
+            lambda: (session.head, session.version),
+        )
+        saved = session.history.objects.get_json(call["result_ref"], ObjectType.CALL)
+        outcome = gateway._outcome(occurrence, saved)
+        if (
+            outcome.error is not None
+            or intent.max_response_bytes != session.config.limits.max_response_bytes
+        ):
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "核对结果含错误或响应上限改变")
+        request = session.history.objects.get(call["request_digest"], ObjectType.BLOB)
+        self._materialize(session, call["provider"], request, outcome.payload)
+        return CallSettlement(before, request, outcome)
 
     def _materialize(
         self, session: ResearchSession, provider: str, request: bytes, response: bytes

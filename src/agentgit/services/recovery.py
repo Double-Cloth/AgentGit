@@ -49,10 +49,25 @@ def prepare_recovery(queue: JobService, lease: Lease) -> Lease | None:
             .with_for_update()
         )
         job = queue.guard(connection, lease, lease.run_id)
-        if old["status"] in TERMINAL_RUNS or old["status"] in (
-            "paused",
-            "waiting_approval",
-            "outcome_unknown",
+        resolutions = TABLES["call_resolutions"]
+        confirmed = (
+            connection.execute(
+                sa.select(resolutions.c.id).where(
+                    resolutions.c.repository_id == lease.repository_id,
+                    resolutions.c.run_id == lease.run_id,
+                    resolutions.c.checkpoint_commit_id == old["checkpoint_commit_id"],
+                )
+            ).first()
+            is not None
+        )
+        if (
+            old["status"] in TERMINAL_RUNS
+            or old["status"]
+            in (
+                "paused",
+                "waiting_approval",
+            )
+            or (old["status"] == "outcome_unknown" and not confirmed)
         ):
             connection.execute(
                 jobs.update()

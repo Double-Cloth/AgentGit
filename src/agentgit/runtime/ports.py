@@ -17,6 +17,26 @@ class CallOutcome:
     output_bytes: int = 0
 
 
+@dataclass(frozen=True)
+class VerifiedOutcome:
+    payload: bytes
+    evidence: bytes
+
+
+class OutcomeResolver(Protocol):
+    provider: str
+    signature: str
+
+    def resolve(self, request: bytes) -> VerifiedOutcome | None: ...
+
+
+@dataclass(frozen=True)
+class CallSettlement:
+    before: AgentState
+    request: bytes
+    outcome: CallOutcome
+
+
 class ModelAdapter(Protocol):
     signature: str
 

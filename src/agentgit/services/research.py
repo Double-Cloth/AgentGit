@@ -21,7 +21,7 @@ from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.models import EffectClass, EnvironmentManifest, parse_contract
 from agentgit.core.research import AgentConfig, AgentState, ResearchGoal
 from agentgit.runtime.engine import ResearchRuntime
-from agentgit.runtime.ports import ModelAdapter
+from agentgit.runtime.ports import CallSettlement, ModelAdapter
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.calls import RecordedCallGateway
 from agentgit.services.environment import source_revision
@@ -227,6 +227,8 @@ class ResearchSession:
         self.expected_environment: EnvironmentManifest | None = None
         self.expected_code_revision: str | None = None
         self.after_checkpoint: Callable[[], None] | None = None
+        self.authorization: ApprovalService | None = None
+        self.settlement: CallSettlement | None = None
 
     def _environment(self, model: ModelAdapter) -> EnvironmentManifest:
         package = Path(__file__).resolve().parents[1]
@@ -281,6 +283,8 @@ class ResearchSession:
                 self.history, self.repository_id, self.run_id, lambda: (self.head, self.version)
             )
         )
+        if gateway.authorization is None and self.authorization is not None:
+            gateway.authorization = self.authorization
         if gateway.authorization is None:
             rules = [
                 ToolRule(
@@ -314,6 +318,7 @@ class ResearchSession:
             clock_ms=clock_ms,
             control=control,
             wall_budget_ms=wall_budget_ms,
+            settlement=self.settlement,
         ).run()
 
     def save(self, state: AgentState, event_type: str, details: dict[str, object]) -> None:

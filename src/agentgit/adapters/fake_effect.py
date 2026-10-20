@@ -1,5 +1,6 @@
 """仅测试用的显式回环服务 Adapter；不接入离线研究 Demo。"""
 
+from http.client import HTTPException
 from typing import Annotated, Literal
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -10,6 +11,7 @@ from pydantic import Field
 from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.models import Contract, Digest, Identifier, parse_contract
+from agentgit.runtime.ports import VerifiedOutcome
 
 
 class FakeEffectRequest(Contract):
@@ -99,12 +101,16 @@ class FakeEffectAdapter:
             if exc.code == 404:
                 return None
             raise AgentGitError(ErrorCode.OUTCOME_UNKNOWN, "效果查询没有取得可信结果") from None
-        except (OSError, URLError):
+        except (OSError, URLError, HTTPException):
             raise AgentGitError(ErrorCode.OUTCOME_UNKNOWN, "效果查询不可用") from None
         if len(payload) > 4096:
             raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "效果查询回执超出上限")
         self._validate(request, payload)
         return payload
+
+    def resolve(self, request: bytes) -> VerifiedOutcome | None:
+        receipt = self.lookup(request)
+        return VerifiedOutcome(receipt, receipt) if receipt is not None else None
 
     @staticmethod
     def _validate(request: bytes, response: bytes) -> None:

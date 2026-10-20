@@ -69,7 +69,7 @@ CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障�
 
 ## S3 离线研究演示
 
-S3 验收时 Schema head 为 `0004_research_tasks`；当前 head 已推进至 `0007_exact_approvals`。先升级开发库，再运行：
+S3 验收时 Schema head 为 `0004_research_tasks`；当前 head 已推进至 `0008_call_resolutions`。先升级开发库，再运行：
 
 ```powershell
 uv run --locked alembic upgrade head
@@ -90,7 +90,7 @@ Job 固定代码摘要、配置、输入、语料和初始计划版本；Worker 
 
 默认租约 15 秒，心跳间隔为租约的三分之一；接管增加 fencing token。失效 Worker 的调用响应和状态提交均被拒绝。暂停/取消通过 `request_control(..., expected_version=...)` 留下 requested 事件，抵达安全检查点才 applied；正在执行的外部调用不会被描述成已经撤销。普通暂停在同一 Run 恢复；首次领取后的持久截止时间不会因暂停、重启或接管而重置。
 
-崩溃恢复封存原 Run 的 interrupted 事实并创建新 Run，原 Commit/检查点不改；新租约使用独立工作区，从完整 CAS 产物恢复。结果已保存时核验 occurrence、参数、工具签名、效果分类、checkpoint 和响应限制后复用；产物由录制写入内容重建，不再次调用工具。已有意图但缺结果时进入 `outcome_unknown`，保留预算预留并等待核对，取消也仅记录请求。核对后恢复推进仍待实现。
+崩溃恢复封存原 Run 的 interrupted 事实并创建新 Run，原 Commit/检查点不改；新租约使用独立工作区，从完整 CAS 产物恢复。结果已保存时核验 occurrence、参数、工具签名、效果分类、checkpoint 和响应限制后复用；产物由录制写入内容重建，不再次调用工具。已有意图但缺结果时进入 `outcome_unknown`，保留预算预留并等待可信核对；核对前取消也仅记录请求。核对入口与继续语义见下节。
 
 运行新增集成测试：
 
@@ -108,4 +108,14 @@ uv run --locked pytest tests/integration/test_jobs.py tests/integration/test_ker
 
 批准只使原 Job 可重新领取，同 Run 使用新 fencing token；后续调用意图与 consumed 状态在同一事务提交，不能先消费再丢失意图。拒绝和过期不会启动 Adapter。Worker 每轮有界扫描等待中的过期审批，并重新排队以落实失败或已有取消请求。普通控制请求也在新调用意图事务内复查：若暂停/取消刚刚到达，则撤回未发出调用的内存计数并立即到安全点，不多发一次模型或工具请求。
 
-`FakeEffectAdapter` 仅供独立集成测试使用，须显式登记 `http://127.0.0.1:<port>`；禁用环境代理与 HTTP 重定向，限定请求/回执大小，端点纳入工具签名。它不注册到离线研究 Demo，不写真实外部系统。测试服务器先 fsync 效果记录再回复或断连；断连时网关记录 `outcome_unknown` 与诊断引用，保留空 result_ref，不自动重发。`lookup()` 可核验服务回执，**将核对结果耐久附着、结算预算并继续 Run 的服务仍待实现**。证据见 [S4-approvals.md](acceptance/S4-approvals.md)。
+`FakeEffectAdapter` 仅供独立集成测试使用，须显式登记 `http://127.0.0.1:<port>`；禁用环境代理与 HTTP 重定向，限定请求/回执大小，端点纳入工具签名。它不注册到离线研究 Demo，不写真实外部系统。测试服务器先 fsync 效果记录再回复或断连；断连时网关记录 `outcome_unknown` 与诊断引用，保留空 result_ref，不自动重发。`lookup()` 可核验服务回执，`resolve()` 供下述可信核对服务调用。审批证据见 [S4-approvals.md](acceptance/S4-approvals.md)。
+
+## S4 未知结果核对与继续
+
+`ReconciliationService.confirm(repository_id, run_id, call_id, actor=..., expected_version=..., resolver=...)` 只接受后端登记的 `OutcomeResolver`，不能把用户上传的 JSON 或“批准”当作外部动作已成功的证明。Resolver 必须匹配原 provider/签名，查询绑定原请求的结果，返回有界 `VerifiedOutcome(payload, evidence)`；查不到可信肯定回执时返回 None，Job 仍为 outcome_unknown，不安排重发。模型服务不支持结果查询时也继续保持未知；当前只验证离线模型与 fake effect fixture。
+
+服务先短事务核对 Run/Branch/Job、来源路径、actor 与状态版本，退出事务后查询服务；再次校验相同停止点后，在一个事务内附着结果/证据、建立不可变 `call_resolutions`、追加审计事件并重新排队。重复同一核对返回原记录，不重复排队；失配、缺失、截断或无证据的回执不能发布。旧未知事件和诊断保留，核对 ID/actor 不写入逻辑 AgentState。
+
+Worker 恢复该停止点时只消费核对结果，严格核验调用前状态、occurrence、请求、签名、预算与证据链接。已计入的步骤/调用数不会重置或重复增加，模型的预留按原请求与确认响应结算；未知轨迹替换为同一逻辑调用的确认轨迹。随后推进新检查点，再处理已有取消或到期预算，不再发送原写动作。核对后的 Worker 若崩溃，可创建新恢复 Run 继续；原 Run 检查点保留。
+
+`tests/helpers/effectful_worker.py` 仅在集成测试中将一次搜索观察绑定到独立 fake 写服务，以验证审批→断连→未知→核对→完成的完整 Worker 流程；它不改变普通研究工具的只读分类。测试服务的实际 POST/效果计数是验收依据。运行 `uv run --locked pytest tests/integration/test_reconciliation.py`；证据见 [S4-reconciliation.md](acceptance/S4-reconciliation.md)。业务 HTTP/CLI 与真实容器执行继续在 S4 后续步骤实现。

@@ -8,7 +8,7 @@ import sqlalchemy as sa
 
 from agentgit.core.canonical import ObjectType, encode
 from agentgit.core.errors import AgentGitError, ErrorCode
-from agentgit.core.models import CallOccurrence, EffectClass, parse_contract
+from agentgit.core.models import CallIntent, CallOccurrence, EffectClass, parse_contract
 from agentgit.core.research import CallTrace, SavedCallOutcome
 from agentgit.core.snapshots import EventPayload
 from agentgit.runtime.ports import CallOutcome
@@ -73,14 +73,13 @@ class RecordedCallGateway:
         head, version = self.checkpoint()
         intent = history.objects.put_json(
             ObjectType.CALL,
-            {
-                "schema_version": 1,
-                "occurrence": occurrence.model_dump(mode="json"),
-                "effect": effect.value,
-                "request_ref": request_obj.id,
-                "checkpoint": head,
-                "max_response_bytes": max_bytes,
-            },
+            CallIntent(
+                occurrence=occurrence,
+                effect=effect,
+                request_ref=request_obj.id,
+                checkpoint=head,
+                max_response_bytes=max_bytes,
+            ).model_dump(mode="json"),
         )
         calls = TABLES["external_calls"]
         call_id = uuid4()

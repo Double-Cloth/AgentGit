@@ -397,8 +397,11 @@ class HistoryService:
                     "planning",
                     "paused",
                     "waiting_approval",
+                    "outcome_unknown",
                 ):
                     raise _error(ErrorCode.VERSION_CONFLICT, "运行当前不能提交状态")
+                if run["status"] == "outcome_unknown" and self.lease_guard is None:
+                    raise _error(ErrorCode.VERSION_CONFLICT, "未知结果必须经受租约保护的核对恢复")
                 if writer_guard is not None:
                     writer_guard(connection)
                 self.assert_writer(connection, repository_id, run_id)

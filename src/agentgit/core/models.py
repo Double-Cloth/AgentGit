@@ -75,6 +75,14 @@ class CallOccurrence(Contract):
     request_digest: Digest
 
 
+class CallIntent(Contract):
+    occurrence: CallOccurrence
+    effect: EffectClass
+    request_ref: Digest
+    checkpoint: Digest | None
+    max_response_bytes: Annotated[int, Field(ge=1, le=8 * 1024 * 1024)]
+
+
 class EventRange(Contract):
     first_seq: Annotated[int, Field(ge=1)]
     last_seq: Annotated[int, Field(ge=1)]
