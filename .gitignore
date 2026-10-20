@@ -1,0 +1,46 @@
+# 本地凭据与个人配置
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+
+# 运行数据与非公开轨迹
+.agentgit/
+.local-data/
+data/
+workspaces/
+artifacts/
+recordings/
+logs/
+*.log
+!tests/fixtures/artifacts/
+!tests/fixtures/recordings/
+
+# Python 依赖与构建缓存
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# 前端依赖与测试产物
+node_modules/
+dist/
+build/
+coverage/
+playwright-report/
+test-results/
+
+# 操作系统临时文件
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.tmp
