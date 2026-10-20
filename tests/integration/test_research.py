@@ -1,5 +1,6 @@
 """S3：真实数据库中的完整离线研究与故障闭环。"""
 
+import platform
 import socket
 from unittest.mock import patch
 
@@ -35,6 +36,7 @@ def test_research_completes_with_durable_sources_and_artifacts(history, tmp_path
     assert len(state.working_memory) == 6
     assert state.usage.model_calls == 11
     assert state.usage.tool_calls == 9
+    assert session.environment.python_version == platform.python_version()
     with history.engine.connect() as connection:
         commits = (
             connection.execute(

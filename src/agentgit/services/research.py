@@ -1,6 +1,7 @@
 """配置、任务、离线执行与 S2 原子提交的用例编排。"""
 
 import hashlib
+import platform
 from collections.abc import Callable
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -9,6 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Connection
 
+from agentgit import __version__
 from agentgit.adapters.corpus import Corpus
 from agentgit.adapters.mock import MockResearchModel
 from agentgit.adapters.tools import ToolRegistry
@@ -236,8 +238,8 @@ class ResearchSession:
         )
         input_ref = self.history.register_input(self.repository_id, payload)
         return EnvironmentManifest(
-            runtime_version="0.1.0",
-            python_version="3.12",
+            runtime_version=__version__,
+            python_version=platform.python_version(),
             code_revision="source-sha256:" + source_hash.hexdigest(),
             dependency_lock_digest=hashlib.sha256(lock.read_bytes()).hexdigest(),
             model_signature="mock-research/v1:" + model.signature,
