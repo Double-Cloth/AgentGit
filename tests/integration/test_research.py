@@ -8,11 +8,18 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
-from agentgit.adapters.mock import MockResearchModel
+from agentgit.adapters.mock import MockResearchModel, research_plan
 from agentgit.core.canonical import encode
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.models import EffectClass, RunStatus, parse_contract
-from agentgit.core.research import AgentConfig, AgentState, BudgetLimits, ResearchGoal, evolve
+from agentgit.core.research import (
+    AgentConfig,
+    AgentState,
+    BudgetLimits,
+    ResearchGoal,
+    ToolDecision,
+    evolve,
+)
 from agentgit.services.calls import RecordedCallGateway
 from agentgit.services.research import TABLES, ResearchService
 
@@ -347,3 +354,32 @@ def test_terminal_retry_uses_new_run_and_new_plan_version(history, tmp_path):
     assert old == after
     assert run["origin_run_id"] == first.run_id
     assert second.state.plan_version == 2
+
+
+def test_pending_tool_rechecks_dependencies_before_dispatch(history, tmp_path):
+    session = session_for(history, tmp_path)
+    session.environment = session._environment(MockResearchModel())
+    session.save(
+        evolve(session.state, status=RunStatus.RUNNING, plan=research_plan(), plan_version=1),
+        "plan.accepted",
+        {},
+    )
+    session.state = evolve(
+        session.state,
+        pending_tool=ToolDecision(
+            node_key="read-0",
+            tool="source_read",
+            arguments={"schema_version": 1, "source_id": "aster-overview"},
+        ),
+    )
+    invoked = []
+    original = session.tools.invoke
+
+    def record(name, arguments):
+        invoked.append(name)
+        return original(name, arguments)
+
+    session.tools.invoke = record
+    assert session.execute().status == RunStatus.COMPLETED
+    assert invoked[0] == "corpus_search"
+    assert session.tools.executions["source_read"] == 6

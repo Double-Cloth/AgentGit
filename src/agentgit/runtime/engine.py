@@ -164,6 +164,12 @@ class ResearchRuntime:
         self.state = evolve(self.state, last_action=fingerprint, repeated_actions=repeated)
         if repeated >= 3:
             raise AgentGitError(ErrorCode.LOOP_DETECTED, "重复无进展决策已达到停止阈值")
+        self._validate_tool_step(decision)
+        self.tools.effect(decision.tool)
+        self.state = evolve(self.state, pending_tool=decision)
+        self._save("decision.accepted", node=decision.node_key)
+
+    def _validate_tool_step(self, decision: ToolDecision) -> None:
         if self.state.status != RunStatus.RUNNING or self.state.plan is None:
             raise AgentGitError(ErrorCode.PLAN_INVALID, "执行决策必须处于有效计划中")
         ready = {node.key: node for node in self.state.plan.ready(self.state.completed)}
@@ -177,11 +183,9 @@ class ResearchRuntime:
         }
         if decision.tool != expected[ready[decision.node_key].kind]:
             raise AgentGitError(ErrorCode.PLAN_INVALID, "工具与计划节点类型不一致")
-        self.tools.effect(decision.tool)
-        self.state = evolve(self.state, pending_tool=decision)
-        self._save("decision.accepted", node=decision.node_key)
 
     def _tool(self, decision: ToolDecision) -> None:
+        self._validate_tool_step(decision)
         usage = self.state.usage
         if usage.tool_calls >= self.config.limits.max_tool_calls:
             raise AgentGitError(ErrorCode.BUDGET_EXHAUSTED, "工具调用预算已耗尽")
