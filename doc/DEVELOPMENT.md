@@ -66,3 +66,16 @@ S1 实现参考官方资料：[uv 锁定与同步](https://docs.astral.sh/uv/con
 环境的 `input_ref` 必须先用当前项目的 `register_input` 从实际字节登记。`commit` 必须携带 expected HEAD/version；state 与事件 payload 必须本身符合 AGJSON，不能依赖类型隐式转换。artifacts 是**完整清单**，空元组表示无文件；历史产物不自动继承。
 
 CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障注入入口仅供本地测试。GC 只有 dry-run，不提供删除；不得把扫描报告用作自动删除清单。阶段限制和测试证据见 [S2.md](acceptance/S2.md)。
+
+## S3 离线研究演示
+
+当前 Schema head 为 `0004_research_tasks`。先升级开发库，再运行：
+
+```powershell
+uv run --locked alembic upgrade head
+uv run --locked python examples/research_agent/run.py
+```
+
+具体输入、产物位置、预算演示与 Mock 计量说明见 [研究示例](../examples/research_agent/README.md)，实测证据见 [S3.md](acceptance/S3.md)。只使用固定合成资料，没有真实模型/互联网依赖。每次演示创建独立 Repository、Run 和受控工作区；实际用户代码执行须等待 S4 容器实现。
+
+新增 Python/语料文件已纳入 uv 的本地构建缓存键，避免非 editable 安装复用旧构建；配置依据 [uv 缓存文档](https://docs.astral.sh/uv/concepts/cache/#dynamic-metadata)。执行 `uv build --out-dir .agentgit/packages` 可生成 sdist/wheel，非 editable 包内语料加载已验证。开发时仍使用默认 editable 的 `uv sync --locked`。
