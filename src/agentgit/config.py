@@ -1,9 +1,11 @@
 """显式配置、秘密包装及开发/测试数据隔离。"""
 
+import json
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError
 
@@ -32,18 +34,62 @@ class Settings(BaseModel):
     test_data_root: Path = Path(".agentgit/test")
     max_object_bytes: int = Field(default=8 * 1024 * 1024, ge=1)
     connect_timeout_seconds: int = Field(default=3, ge=1, le=30)
+    operator_id: str = Field(default="local-operator", min_length=1, max_length=200)
+    api_token: SecretStr | None = None
+    api_origins: tuple[str, ...] = (
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+    )
+
+    @field_validator("api_token")
+    @classmethod
+    def strong_local_token(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None and (
+            len(value.get_secret_value()) < 32
+            or not value.get_secret_value().isascii()
+            or any(
+                char.isspace() or ord(char) < 33 or ord(char) > 126
+                for char in value.get_secret_value()
+            )
+        ):
+            raise ValueError("本地身份令牌至少需要 32 个 ASCII 字符")
+        return value
+
+    @field_validator("api_origins")
+    @classmethod
+    def local_origins(cls, origins: tuple[str, ...]) -> tuple[str, ...]:
+        if len(origins) > 20:
+            raise ValueError("Origin 配置超出上限")
+        for origin in origins:
+            parsed = urlsplit(origin)
+            if (
+                parsed.scheme != "http"
+                or parsed.hostname not in ("127.0.0.1", "localhost", "::1")
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.path
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError("只支持显式回环 Origin")
+            _ = parsed.port
+        return origins
 
     @classmethod
     def from_env(cls) -> "Settings":
         try:
             return cls.model_validate(
                 {
-                    name: os.environ[f"AGENTGIT_{name.upper()}"]
+                    name: json.loads(os.environ[f"AGENTGIT_{name.upper()}"])
+                    if name == "api_origins"
+                    else os.environ[f"AGENTGIT_{name.upper()}"]
                     for name in cls.model_fields
                     if f"AGENTGIT_{name.upper()}" in os.environ
                 }
             )
-        except ValidationError:
+        except (ValidationError, json.JSONDecodeError):
             raise AgentGitError(ErrorCode.CONFIGURATION, "环境配置字段无效") from None
 
     def assert_test_isolation(self) -> None:

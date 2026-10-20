@@ -26,6 +26,7 @@ from agentgit.services.approvals import ApprovalService
 from agentgit.services.calls import RecordedCallGateway
 from agentgit.services.environment import source_revision
 from agentgit.services.history import ArtifactInput, EventInput, HistoryService
+from agentgit.storage.database import transaction
 from agentgit.storage.schema import build_metadata
 
 TABLES = build_metadata().tables
@@ -36,11 +37,18 @@ class ResearchService:
         self.history, self.data_root = history, data_root.resolve()
         self.corpus = corpus or Corpus.bundled()
 
-    def create_config(self, repository_id: UUID, config: AgentConfig | None = None) -> UUID:
+    def create_config(
+        self,
+        repository_id: UUID,
+        config: AgentConfig | None = None,
+        *,
+        connection: Connection | None = None,
+        expected_version: int | None = None,
+    ) -> UUID:
         config = config or AgentConfig()
         obj = self.history.objects.put(ObjectType.BLOB, encode(config.model_dump(mode="json")))
         config_id = uuid4()
-        with self.history.engine.begin() as connection:
+        with transaction(self.history.engine, connection) as connection:
             repo = TABLES["repositories"]
             if (
                 connection.execute(
@@ -58,6 +66,8 @@ class ResearchService:
                 ).scalar_one()
                 + 1
             )
+            if expected_version is not None and version != expected_version + 1:
+                raise AgentGitError(ErrorCode.VERSION_CONFLICT, "配置版本已改变")
             self.history._ref(
                 connection, repository_id, obj, "agent_config", str(config_id), "config"
             )
@@ -86,7 +96,14 @@ class ResearchService:
             self.history.objects.get(row["config_ref"], ObjectType.BLOB), AgentConfig
         )
 
-    def create_task(self, repository_id: UUID, config_id: UUID, goal: ResearchGoal) -> UUID:
+    def create_task(
+        self,
+        repository_id: UUID,
+        config_id: UUID,
+        goal: ResearchGoal,
+        *,
+        connection: Connection | None = None,
+    ) -> UUID:
         config = self.config(repository_id, config_id)
         if set(goal.frameworks) != {source.framework for source in self.corpus.sources.values()}:
             raise AgentGitError(ErrorCode.VALIDATION, "S3 仅支持固定三框架比较任务")
@@ -104,7 +121,7 @@ class ResearchService:
             role: self.history.objects.put(ObjectType.BLOB, encode(value))
             for role, value in documents.items()
         }
-        with self.history.engine.begin() as connection:
+        with transaction(self.history.engine, connection) as connection:
             for role, obj in objects.items():
                 self.history._ref(connection, repository_id, obj, "task", str(task_id), role)
             connection.execute(

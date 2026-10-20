@@ -1,5 +1,7 @@
 # S4 未知结果核对与恢复继续
 
+本记录归档 ac4f211 时点；后续 HTTP/CLI 接入证据见 [S4-service.md](S4-service.md)。
+
 - 日期：2026-10-21。
 - 状态：S4 进行中；本记录完成 S4-T05 的当前 fake effect 核对闭环，不表示全部 S4 或 D1 已完成。
 - 前置：`d7d29a0`，见 [精确审批](S4-approvals.md)；Schema head：`0008_call_resolutions`，只新增前进迁移。

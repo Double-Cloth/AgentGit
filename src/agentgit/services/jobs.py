@@ -11,10 +11,12 @@ from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.jobs import TERMINAL_RUNS, JobPayload, Lease, Submission
 from agentgit.core.models import parse_contract
+from agentgit.core.research import BudgetLimits
 from agentgit.core.snapshots import EventPayload
 from agentgit.services.environment import source_revision
 from agentgit.services.history import TABLES, EventInput
 from agentgit.services.research import ResearchService
+from agentgit.storage.database import transaction
 
 
 class JobService:
@@ -34,6 +36,7 @@ class JobService:
         expected_branch_version: int,
         expected_head: str | None,
         branch_name: str = "main",
+        budget: BudgetLimits | None = None,
     ) -> Submission:
         if not actor or not key or len(actor) > 200 or len(key) > 200:
             raise AgentGitError(ErrorCode.VALIDATION, "操作者和幂等键必须为有界非空字符串")
@@ -49,6 +52,7 @@ class JobService:
                     "head": expected_head,
                     "branch_version": expected_branch_version,
                     "branch_name": branch_name,
+                    "budget": budget.model_dump(mode="json") if budget is not None else None,
                 }
             ),
         )
@@ -81,6 +85,16 @@ class JobService:
                 )
             ).scalar_one()
         config = self.research.config(repository_id, task["agent_config_id"])
+        task_budget = parse_contract(
+            self.history.objects.get(task["budget_ref"], ObjectType.BLOB), BudgetLimits
+        )
+        limits = budget or task_budget
+        if any(
+            getattr(limits, name) > min(getattr(task_budget, name), getattr(config.limits, name))
+            for name in BudgetLimits.model_fields
+            if name != "schema_version"
+        ):
+            raise AgentGitError(ErrorCode.FORBIDDEN, "Run 预算不能扩大 Task 或配置上限")
         payload = JobPayload(
             config_id=str(task["agent_config_id"]),
             goal_ref=task["goal_ref"],
@@ -89,7 +103,8 @@ class JobService:
             sources=tuple(self.research.corpus.sources.values()),
             evaluation_time=self.research.corpus.evaluation_time,
             initial_plan_version=plan_version,
-            max_wall_ms=config.limits.max_wall_ms,
+            max_wall_ms=limits.max_wall_ms,
+            limits=limits,
         )
         job_id, run_id = uuid4(), uuid4()
         submitted = Submission(job_id=str(job_id), run_id=str(run_id))
@@ -361,7 +376,13 @@ class JobService:
             )
 
     def request_control(
-        self, repository_id: UUID, run_id: UUID, action: str, *, expected_version: int
+        self,
+        repository_id: UUID,
+        run_id: UUID,
+        action: str,
+        *,
+        expected_version: int,
+        connection: Connection | None = None,
     ) -> dict[str, Any]:
         if action not in ("pause", "resume", "cancel"):
             raise AgentGitError(ErrorCode.VALIDATION, "未知控制操作")
@@ -370,7 +391,7 @@ class JobService:
             ObjectType.EVENT, EventPayload(data=event.payload).model_dump(mode="json")
         )
         runs, jobs = TABLES["runs"], TABLES["jobs"]
-        with self.history.engine.begin() as connection:
+        with transaction(self.history.engine, connection) as connection:
             run = self.history._run(connection, repository_id, run_id, lock=True)
             if (
                 run["state_version"] != expected_version
@@ -416,7 +437,8 @@ class JobService:
                         lease_until=None,
                     )
                 )
-        return self.run(repository_id, run_id)
+            result = dict(self.history._run(connection, repository_id, run_id))
+        return result
 
     def apply_control(self, lease: Lease) -> str | None:
         with self.history.engine.begin() as connection:

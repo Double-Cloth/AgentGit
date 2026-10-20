@@ -7,6 +7,8 @@ class ErrorCode(StrEnum):
     VALIDATION = "validation"
     NOT_FOUND = "not_found"
     FORBIDDEN = "forbidden"
+    UNAUTHORIZED = "unauthorized"
+    INTERNAL_ERROR = "internal_error"
     APPROVAL_REQUIRED = "approval_required"
     CONTROL_REQUESTED = "control_requested"
     VERSION_CONFLICT = "version_conflict"

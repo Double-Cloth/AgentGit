@@ -1,10 +1,23 @@
 """短连接数据库探测，不在模块导入时连接数据库。"""
 
-from sqlalchemy import Engine, create_engine, text
+from collections.abc import Iterator
+from contextlib import contextmanager
+
+from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentgit.config import Settings, database_url
 from agentgit.core.errors import AgentGitError, ErrorCode
+
+
+@contextmanager
+def transaction(engine: Engine, connection: Connection | None = None) -> Iterator[Connection]:
+    """已有用例事务由调用者提交，否则创建独立短事务。"""
+    if connection is not None:
+        yield connection
+    else:
+        with engine.begin() as opened:
+            yield opened
 
 
 def make_engine(settings: Settings, *, testing: bool = False) -> Engine:

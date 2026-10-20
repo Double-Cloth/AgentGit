@@ -13,6 +13,7 @@ from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.models import CallOccurrence, EffectClass
 from agentgit.core.snapshots import EventPayload
 from agentgit.services.history import TABLES, EventInput, HistoryService
+from agentgit.storage.database import transaction
 
 
 class ApprovalService:
@@ -259,12 +260,13 @@ class ApprovalService:
         actor: str,
         decision: str,
         expected_version: int,
+        connection: Connection | None = None,
     ) -> dict[str, Any]:
         if decision not in ("approve", "reject"):
             raise AgentGitError(ErrorCode.VALIDATION, "未知审批决定")
         table = TABLES["approvals"]
         failure = None
-        with self.history.engine.begin() as connection:
+        with transaction(self.history.engine, connection) as connection:
             hint = connection.execute(
                 sa.select(table.c.run_id).where(
                     table.c.id == approval_id, table.c.repository_id == repository_id

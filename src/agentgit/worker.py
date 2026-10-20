@@ -206,6 +206,8 @@ class Worker:
             now = connection.execute(sa.select(sa.func.clock_timestamp())).scalar_one()
             remaining = max(0, int((job_row["deadline_at"] - now).total_seconds() * 1000))
         config = research.config(lease.repository_id, UUID(payload.config_id))
+        if payload.limits is not None:
+            config = evolve(config, limits=payload.limits)
         goal = parse_contract(history.objects.get(payload.goal_ref, ObjectType.BLOB), ResearchGoal)
         state = AgentState(goal=goal, plan_version=payload.initial_plan_version)
         environment = None

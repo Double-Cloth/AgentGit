@@ -31,7 +31,7 @@ uv run --locked agentgit doctor --sandbox
 uv run --locked uvicorn agentgit.api.main:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
-`GET /health` 是不依赖数据库的存活探测；`GET /ready` 实际连接 PostgreSQL，连接不可用返回 503 和 `database_unavailable`。S1 无业务 API，身份认证和项目访问控制在 S4 实现。
+`GET /health` 是公开存活探测；`GET /ready` 实际连接 PostgreSQL，失败返回 503 和 database_unavailable。S4 业务 API、身份和项目边界已接入，操作见 [API.md](API.md)，业务请求须配置本地身份令牌。
 
 `doctor --sandbox` 不创建容器、下载镜像或执行命令；在 S4 完成前 `execution_ready=false`，退出码为 1。引擎可达不代表执行工具已实现。资源能力必须由 S4 的实际隔离测试证明，禁止使用宿主进程作为执行回退。
 
@@ -82,7 +82,7 @@ uv run --locked python examples/research_agent/run.py
 
 ## S4 调度与恢复开发入口
 
-当前提供包内 `JobService.enqueue()` 与 `Worker.run_once()`，尚无业务 HTTP/CLI 命令。提交只持久保存 Job/Run/幂等响应，不创建工作区或启动 Adapter。API 进程后续将使用同一提交服务，独立 Worker 负责领取和执行；不使用进程内 BackgroundTasks 保存任务。
+`JobService.enqueue()` 与 `Worker.run_once()` 已接入业务 HTTP/CLI，见 [API.md](API.md)。提交只保存 Job/Run/幂等响应，不创建工作区或启动 Adapter；独立 Worker 使用相同 PostgreSQL/CAS 领取执行，不使用 BackgroundTasks 保存任务。
 
 `enqueue` 需要 actor、幂等 key、配置版本、分支名称与预期 HEAD/version。同一 actor/route/key 的相同请求返回原 Job/Run，异参冲突；任务或分支存在非终态写者时冲突，暂停和待核对同样占用分支。配置和计划版本在落库事务中再次核验。
 
@@ -104,7 +104,7 @@ uv run --locked pytest tests/integration/test_jobs.py tests/integration/test_ker
 
 `RecordedCallGateway` 必须提供 `ApprovalService`；缺少策略、未注册 provider、签名或效果分类不匹配均在调用前拒绝。研究 Session 从受信任的本地 Tool Registry 与模型签名生成策略，允许现有三个工具和离线模型。模型和远程说明不能修改效果分类。`ToolPolicy` 的外部写与不可逆动作不能预授权；断网 sandbox 策略预授权只适用于后续受控容器 Adapter，不授权宿主或网络能力。
 
-非预授权动作首次到达网关时，事务保存动作原文/策略和 `approval.requested`，Run/Job 转为 waiting_approval，保留 checkpoint 与分支绑定并释放租约。审批是操作元数据，此时不追加改变绑定 checkpoint 的逻辑 Commit；已经保存的 pending decision 和预算是恢复依据，未发送调用不扣除耐久预算。批准/拒绝通过 `ApprovalService.decide()`，要求相同 actor、预期 Run 状态版本、精确 checkpoint 和策略；同决定重复提交幂等，相反决定冲突。审批 HTTP/CLI 接口将在服务入口步骤接入。
+非预授权动作保存原文/策略和 approval.requested，Run/Job 转为 waiting_approval，保留 checkpoint/分支绑定并释放租约。审批是操作元数据，不改变绑定检查点；已保存 pending decision 和预算是恢复依据。ApprovalService.decide 要求 actor、状态版本、检查点和策略匹配；同决定幂等，相反决定冲突。HTTP/CLI 共用管理事务，决定只重新排队，不直接启动动作。
 
 批准只使原 Job 可重新领取，同 Run 使用新 fencing token；后续调用意图与 consumed 状态在同一事务提交，不能先消费再丢失意图。拒绝和过期不会启动 Adapter。Worker 每轮有界扫描等待中的过期审批，并重新排队以落实失败或已有取消请求。普通控制请求也在新调用意图事务内复查：若暂停/取消刚刚到达，则撤回未发出调用的内存计数并立即到安全点，不多发一次模型或工具请求。
 
@@ -118,4 +118,4 @@ uv run --locked pytest tests/integration/test_jobs.py tests/integration/test_ker
 
 Worker 恢复该停止点时只消费核对结果，严格核验调用前状态、occurrence、请求、签名、预算与证据链接。已计入的步骤/调用数不会重置或重复增加，模型的预留按原请求与确认响应结算；未知轨迹替换为同一逻辑调用的确认轨迹。随后推进新检查点，再处理已有取消或到期预算，不再发送原写动作。核对后的 Worker 若崩溃，可创建新恢复 Run 继续；原 Run 检查点保留。
 
-`tests/helpers/effectful_worker.py` 仅在集成测试中将一次搜索观察绑定到独立 fake 写服务，以验证审批→断连→未知→核对→完成的完整 Worker 流程；它不改变普通研究工具的只读分类。测试服务的实际 POST/效果计数是验收依据。运行 `uv run --locked pytest tests/integration/test_reconciliation.py`；证据见 [S4-reconciliation.md](acceptance/S4-reconciliation.md)。业务 HTTP/CLI 与真实容器执行继续在 S4 后续步骤实现。
+`tests/helpers/effectful_worker.py` 仅用于独立 fake 服务的审批→断连→未知→核对→完成验证，不改变普通工具分类。运行 `uv run --locked pytest tests/integration/test_reconciliation.py`，证据见 [S4-reconciliation.md](acceptance/S4-reconciliation.md)。业务 HTTP/CLI 已接入；真容器执行继续在 S4 后续步骤实现。

@@ -21,6 +21,7 @@ from agentgit.core.snapshots import (
     LogicalEvent,
     StateSnapshot,
 )
+from agentgit.storage.database import transaction
 from agentgit.storage.objects import FaultHook, ObjectStore, StoredObject
 from agentgit.storage.schema import build_metadata
 
@@ -69,11 +70,11 @@ class HistoryService:
         self.fault = fault or (lambda _: None)
         self.lease_guard = lease_guard
 
-    def create_repository(self, name: str) -> UUID:
+    def create_repository(self, name: str, *, connection: Connection | None = None) -> UUID:
         if not name.strip() or len(name) > 200:
             raise _error(ErrorCode.VALIDATION, "项目名称无效")
         repository_id = uuid4()
-        with self.engine.begin() as connection:
+        with transaction(self.engine, connection) as connection:
             connection.execute(TABLES["repositories"].insert().values(id=repository_id, name=name))
             connection.execute(
                 TABLES["branches"].insert().values(repository_id=repository_id, name="main")
