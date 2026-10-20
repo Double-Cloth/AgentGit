@@ -19,6 +19,12 @@ def run_migrations() -> None:
         with context.begin_transaction():
             context.run_migrations()
         return
+    provided = config.attributes.get("connection")
+    if provided is not None:
+        context.configure(connection=provided, target_metadata=None, compare_type=True)
+        with context.begin_transaction():
+            context.run_migrations()
+        return
     engine = make_engine(settings, testing=testing)
     try:
         with engine.connect() as connection:
