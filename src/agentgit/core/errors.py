@@ -7,6 +7,8 @@ class ErrorCode(StrEnum):
     VALIDATION = "validation"
     NOT_FOUND = "not_found"
     FORBIDDEN = "forbidden"
+    APPROVAL_REQUIRED = "approval_required"
+    CONTROL_REQUESTED = "control_requested"
     VERSION_CONFLICT = "version_conflict"
     REPLAY_MISMATCH = "replay_mismatch"
     RECORDING_MISSING = "recording_missing"

@@ -19,6 +19,7 @@ from agentgit.core.models import CommitManifest, EnvironmentManifest, RunStatus,
 from agentgit.core.research import AgentState, ResearchGoal, evolve
 from agentgit.core.snapshots import EventPayload
 from agentgit.runtime.ports import ModelAdapter
+from agentgit.services.approvals import ApprovalService
 from agentgit.services.calls import RecordedCallGateway
 from agentgit.services.environment import source_revision
 from agentgit.services.history import TABLES, EventInput, HistoryService
@@ -65,6 +66,7 @@ class Worker:
         self.fault = fault or (lambda _: None)
 
     def run_once(self) -> dict[str, Any] | None:
+        ApprovalService.expire_pending(self.queue.history)
         lease = self.queue.claim(self.name)
         if lease is None:
             return None
@@ -118,6 +120,8 @@ class Worker:
                 self.queue.finish(lease, state.status.value)
                 return self._summary(lease)
         except AgentGitError as exc:
+            if exc.code == ErrorCode.APPROVAL_REQUIRED:
+                return self._summary(lease)
             if exc.code == ErrorCode.VERSION_CONFLICT:
                 return {
                     "job_id": str(lease.job_id),

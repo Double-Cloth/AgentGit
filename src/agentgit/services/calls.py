@@ -12,6 +12,7 @@ from agentgit.core.models import CallOccurrence, EffectClass, parse_contract
 from agentgit.core.research import CallTrace, SavedCallOutcome
 from agentgit.core.snapshots import EventPayload
 from agentgit.runtime.ports import CallOutcome
+from agentgit.services.approvals import ApprovalService
 from agentgit.services.history import TABLES, EventInput, HistoryService
 from agentgit.storage.objects import StoredObject
 
@@ -27,9 +28,11 @@ class RecordedCallGateway:
         origin_runs: tuple[UUID, ...] = (),
         materialize: Callable[[str, bytes, bytes], None] | None = None,
         after_result: Callable[[], None] | None = None,
+        authorization: ApprovalService | None = None,
     ):
         self.history, self.repository_id, self.run_id = history, repository_id, run_id
         self.checkpoint = checkpoint
+        self.authorization = authorization
         self.origin_runs, self.materialize, self.after_result = (
             origin_runs,
             materialize,
@@ -48,6 +51,8 @@ class RecordedCallGateway:
         invoke: Callable[[], bytes],
         max_bytes: int,
     ) -> CallOutcome:
+        if type(max_bytes) is not int or not 1 <= max_bytes <= 8 * 1024 * 1024:
+            raise AgentGitError(ErrorCode.VALIDATION, "响应上限必须为 1–8388608 字节")
         history = self.history
         request_obj = history.objects.put(ObjectType.BLOB, request)
         occurrence = CallOccurrence(
@@ -58,6 +63,9 @@ class RecordedCallGateway:
             signature_digest=signature,
             request_digest=request_obj.id,
         )
+        if self.authorization is None:
+            raise AgentGitError(ErrorCode.FORBIDDEN, "调用缺少本地工具策略")
+        self.authorization.policy.rule(occurrence, effect)
         if self.origin_runs:
             recovered = self._reuse_origin(occurrence, effect, max_bytes)
             if recovered is not None:
@@ -105,7 +113,7 @@ class RecordedCallGateway:
                 .one()
             )
             if (
-                run["status"] not in ("planning", "running")
+                run["status"] not in ("planning", "running", "waiting_approval")
                 or run["checkpoint_commit_id"] != head
                 or row["head_commit_id"] != head
                 or row["version"] != version
@@ -144,37 +152,49 @@ class RecordedCallGateway:
                     raise AgentGitError(ErrorCode.OUTCOME_UNKNOWN, "已有调用尚无耐久结果，禁止重发")
                 saved = history.objects.get_json(existing["result_ref"], ObjectType.CALL)
                 return self._cached_outcome(occurrence, saved)
-            for role, obj in (("request", request_obj), ("intent", intent)):
-                history._ref(
-                    connection, self.repository_id, obj, "external_call", str(call_id), role
+            if run["control_status"] == "requested" and run["control_request"] in (
+                "pause",
+                "cancel",
+            ):
+                raise AgentGitError(ErrorCode.CONTROL_REQUESTED, "调用意图保存前收到控制请求")
+            admission_error = self.authorization.admit(
+                connection, run, occurrence, effect, max_bytes, call_id
+            )
+            started_seq = 0
+            if admission_error is None:
+                for role, obj in (("request", request_obj), ("intent", intent)):
+                    history._ref(
+                        connection, self.repository_id, obj, "external_call", str(call_id), role
+                    )
+                connection.execute(
+                    calls.insert().values(
+                        id=call_id,
+                        repository_id=self.repository_id,
+                        run_id=self.run_id,
+                        logical_step_id=step,
+                        call_index=0,
+                        attempt=attempt,
+                        provider=provider,
+                        signature_digest=signature,
+                        request_digest=request_obj.id,
+                        effect=effect.value,
+                        intent_ref=intent.id,
+                        status="started",
+                    )
                 )
-            connection.execute(
-                calls.insert().values(
-                    id=call_id,
-                    repository_id=self.repository_id,
-                    run_id=self.run_id,
-                    logical_step_id=step,
-                    call_index=0,
-                    attempt=attempt,
-                    provider=provider,
-                    signature_digest=signature,
-                    request_digest=request_obj.id,
-                    effect=effect.value,
-                    intent_ref=intent.id,
-                    status="started",
+                seq = int(run["last_event_seq"]) + 1
+                history._event(
+                    connection, self.repository_id, self.run_id, seq, started_event, started_payload
                 )
-            )
-            seq = int(run["last_event_seq"]) + 1
-            history._event(
-                connection, self.repository_id, self.run_id, seq, started_event, started_payload
-            )
-            connection.execute(
-                TABLES["runs"]
-                .update()
-                .where(TABLES["runs"].c.id == self.run_id)
-                .values(last_event_seq=seq)
-            )
-            started_seq = seq
+                connection.execute(
+                    TABLES["runs"]
+                    .update()
+                    .where(TABLES["runs"].c.id == self.run_id)
+                    .values(last_event_seq=seq)
+                )
+                started_seq = seq
+        if admission_error is not None:
+            raise admission_error
         # Adapter 可以执行磁盘操作；此处已退出事务。
         error: AgentGitError | None = None
         response = b""
@@ -191,11 +211,20 @@ class RecordedCallGateway:
                 complete = False
                 error = AgentGitError(ErrorCode.OUTPUT_LIMIT, "调用响应超过上限，录制已截断")
         except AgentGitError as exc:
-            error = exc
+            error = (
+                AgentGitError(ErrorCode.OUTCOME_UNKNOWN, "写动作未取得可确认的结果，需要核对")
+                if effect in (EffectClass.NON_IDEMPOTENT_WRITE, EffectClass.IRREVERSIBLE)
+                and exc.code not in (ErrorCode.OUTCOME_UNKNOWN, ErrorCode.OUTPUT_LIMIT)
+                else exc
+            )
         except Exception:
             error = AgentGitError(
-                ErrorCode.MODEL_ERROR if provider.startswith("llm:") else ErrorCode.TOOL_ERROR,
-                "本地 Adapter 调用失败",
+                ErrorCode.OUTCOME_UNKNOWN
+                if effect in (EffectClass.NON_IDEMPOTENT_WRITE, EffectClass.IRREVERSIBLE)
+                else ErrorCode.MODEL_ERROR
+                if provider.startswith("llm:")
+                else ErrorCode.TOOL_ERROR,
+                "Adapter 调用中断，外部结果需要核对",
             )
         response_obj = history.objects.put(ObjectType.BLOB, response)
         saved = SavedCallOutcome(
@@ -206,7 +235,9 @@ class RecordedCallGateway:
         ).model_dump(mode="json")
         result_obj = history.objects.put_json(ObjectType.CALL, saved)
         completed_event = EventInput(
-            "call.failed"
+            "call.outcome_unknown"
+            if error and error.code == ErrorCode.OUTCOME_UNKNOWN
+            else "call.failed"
             if error
             else "llm.completed"
             if provider.startswith("llm:")
@@ -225,14 +256,21 @@ class RecordedCallGateway:
         with history.engine.begin() as connection:
             run = history._run(connection, self.repository_id, self.run_id, lock=True)
             history.assert_writer(connection, self.repository_id, self.run_id)
-            for role, obj in (("response", response_obj), ("result", result_obj)):
+            unknown = error is not None and error.code == ErrorCode.OUTCOME_UNKNOWN
+            for role, obj in (
+                ("response", response_obj),
+                ("uncertain_diagnostic" if unknown else "result", result_obj),
+            ):
                 history._ref(
                     connection, self.repository_id, obj, "external_call", str(call_id), role
                 )
             connection.execute(
                 calls.update()
                 .where(calls.c.id == call_id, calls.c.status == "started")
-                .values(status="failed" if error else "succeeded", result_ref=result_obj.id)
+                .values(
+                    status="outcome_unknown" if unknown else "failed" if error else "succeeded",
+                    result_ref=None if unknown else result_obj.id,
+                )
             )
             seq = int(run["last_event_seq"]) + 1
             history._event(

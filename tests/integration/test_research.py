@@ -10,6 +10,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from agentgit.adapters.mock import MockResearchModel, research_plan
 from agentgit.core.canonical import encode
+from agentgit.core.effects import ToolPolicy, ToolRule
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.models import EffectClass, RunStatus, parse_contract
 from agentgit.core.research import (
@@ -20,6 +21,7 @@ from agentgit.core.research import (
     ToolDecision,
     evolve,
 )
+from agentgit.services.approvals import ApprovalService
 from agentgit.services.calls import RecordedCallGateway
 from agentgit.services.research import TABLES, ResearchService
 
@@ -200,7 +202,32 @@ def prepared_gateway(history, tmp_path):
     session.environment = session._environment(MockResearchModel())
     session.save(evolve(session.state, status=RunStatus.PLANNING), "run.planning", {})
     return session, RecordedCallGateway(
-        history, session.repository_id, session.run_id, lambda: (session.head, session.version)
+        history,
+        session.repository_id,
+        session.run_id,
+        lambda: (session.head, session.version),
+        authorization=ApprovalService(
+            history,
+            ToolPolicy(
+                rules=(
+                    ToolRule(
+                        provider="tool:fixture/v1",
+                        signature_digest="a" * 64,
+                        effect=EffectClass.READ_ONLY,
+                        scope="local",
+                        preauthorized=True,
+                    ),
+                    ToolRule(
+                        provider="llm:fixture/v1",
+                        signature_digest="a" * 64,
+                        effect=EffectClass.READ_ONLY,
+                        scope="local",
+                        preauthorized=True,
+                    ),
+                )
+            ),
+            actor="fixture-operator",
+        ),
     )
 
 

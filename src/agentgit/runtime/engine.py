@@ -61,6 +61,7 @@ class ResearchRuntime:
             self.state = evolve(self.state, status=RunStatus.PLANNING)
             self._save("run.planning")
         while self.state.status in (RunStatus.PLANNING, RunStatus.RUNNING):
+            before_call = self.state
             try:
                 if self._control_point():
                     break
@@ -70,7 +71,19 @@ class ResearchRuntime:
                 else:
                     self._model()
             except AgentGitError as exc:
-                if exc.code in (ErrorCode.VERSION_CONFLICT, ErrorCode.OBJECT_CORRUPT):
+                if exc.code == ErrorCode.CONTROL_REQUESTED:
+                    # 尚无调用意图或实际发送，撤回本轮内存中的计数/预留。
+                    self.state = before_call
+                    if self.control is None or not self._control_point():
+                        raise AgentGitError(
+                            ErrorCode.VERSION_CONFLICT, "控制请求与执行上下文不符"
+                        ) from exc
+                    continue
+                if exc.code in (
+                    ErrorCode.VERSION_CONFLICT,
+                    ErrorCode.OBJECT_CORRUPT,
+                    ErrorCode.APPROVAL_REQUIRED,
+                ):
                     raise
                 self._failure(exc)
         return self.state

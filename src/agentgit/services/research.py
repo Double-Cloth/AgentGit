@@ -16,11 +16,13 @@ from agentgit.adapters.mock import MockResearchModel
 from agentgit.adapters.tools import ToolRegistry
 from agentgit.adapters.workspace import ArtifactWorkspace
 from agentgit.core.canonical import ObjectType, encode
+from agentgit.core.effects import ToolPolicy, ToolRule
 from agentgit.core.errors import AgentGitError, ErrorCode
-from agentgit.core.models import EnvironmentManifest, parse_contract
+from agentgit.core.models import EffectClass, EnvironmentManifest, parse_contract
 from agentgit.core.research import AgentConfig, AgentState, ResearchGoal
 from agentgit.runtime.engine import ResearchRuntime
 from agentgit.runtime.ports import ModelAdapter
+from agentgit.services.approvals import ApprovalService
 from agentgit.services.calls import RecordedCallGateway
 from agentgit.services.environment import source_revision
 from agentgit.services.history import ArtifactInput, EventInput, HistoryService
@@ -279,6 +281,29 @@ class ResearchSession:
                 self.history, self.repository_id, self.run_id, lambda: (self.head, self.version)
             )
         )
+        if gateway.authorization is None:
+            rules = [
+                ToolRule(
+                    provider="llm:mock-research/v1",
+                    signature_digest=model.signature,
+                    effect=EffectClass.READ_ONLY,
+                    scope="local",
+                    preauthorized=True,
+                )
+            ]
+            rules.extend(
+                ToolRule(
+                    provider=f"tool:{name}/v1",
+                    signature_digest=self.tools.signature(name),
+                    effect=self.tools.effect(name),
+                    scope="local",
+                    preauthorized=True,
+                )
+                for name in sorted(self.config.tools)
+            )
+            gateway.authorization = ApprovalService(
+                self.history, ToolPolicy(rules=tuple(rules)), actor="local-operator"
+            )
         return ResearchRuntime(
             self.state,
             self.config,

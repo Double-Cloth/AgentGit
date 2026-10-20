@@ -16,6 +16,7 @@ from agentgit.core.canonical import encode
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.models import RunStatus, parse_contract
 from agentgit.core.research import AgentState, ResearchGoal
+from agentgit.services.calls import RecordedCallGateway
 from agentgit.services.history import TABLES
 from agentgit.services.jobs import JobService
 from agentgit.services.research import ResearchService
@@ -458,3 +459,51 @@ def test_job_and_run_queries_enforce_repository_scope(queued):
         with pytest.raises(AgentGitError) as caught:
             getter(other, UUID(entity_id))
         assert caught.value.code == ErrorCode.NOT_FOUND
+
+
+@pytest.mark.parametrize(
+    "target,action", [("model", "pause"), ("tool", "pause"), ("tool", "cancel")]
+)
+def test_control_between_runtime_check_and_intent_stops_new_call(
+    queued, monkeypatch, target, action
+):
+    queue, repo, _, _, _ = queued
+    response = submit(queued)
+    run_id = UUID(response.run_id)
+    original = RecordedCallGateway.call
+    requested = False
+
+    def interrupt(gateway, **kwargs):
+        nonlocal requested
+        matches = (
+            kwargs["provider"].startswith("llm:")
+            if target == "model"
+            else kwargs["provider"].startswith("tool:")
+        )
+        if matches and not requested:
+            requested = True
+            current = queue.run(repo, run_id)
+            queue.request_control(repo, run_id, action, expected_version=current["state_version"])
+        return original(gateway, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(RecordedCallGateway, "call", interrupt)
+        assert Worker(queue).run_once()["status"] == (
+            "paused" if action == "pause" else "cancelled"
+        )
+    current = queue.run(repo, run_id)
+    assert current["control_status"] == "applied"
+    state = parse_contract(
+        encode(queue.history.restore(repo, current["checkpoint_commit_id"]).data), AgentState
+    )
+    assert state.usage.reserved_tokens == 0
+    assert state.usage.tool_calls == 0
+    assert state.usage.model_calls == (0 if target == "model" else 2)
+    with queue.history.engine.connect() as connection:
+        calls = list(connection.execute(sa.select(TABLES["external_calls"])).mappings())
+    assert len(calls) == state.usage.model_calls
+    if action == "pause":
+        queue.request_control(repo, run_id, "resume", expected_version=current["state_version"])
+        done = Worker(queue).run_once()
+        assert done["run_id"] == response.run_id
+        assert done["status"] == "completed", done
