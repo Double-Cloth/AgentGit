@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "schema_version": 1,
+      "id": "aster-overview",
+      "framework": "Aster",
+      "url": "https://aster.fixture.invalid/overview",
+      "collected_at": "2026-10-01T00:00:00Z",
+      "valid_from": "2026-01-01T00:00:00Z",
+      "valid_until": "2027-01-01T00:00:00Z",
+      "body": "本资料为 AgentGit 固定合成语料，不描述真实产品。\nAster 的调度方式为串行任务。\nAster 的状态存储为本地 JSON。",
+      "body_sha256": "3c0e46a12d2760bb080ed4f148d766be8e637c763857aa45bb330762aab8b802",
+      "facts": [
+        {
+          "schema_version": 1,
+          "dimension": "调度方式",
+          "value": "串行任务",
+          "quote": "Aster 的调度方式为串行任务。"
+        },
+        {
+          "schema_version": 1,
+          "dimension": "状态存储",
+          "value": "本地 JSON",
+          "quote": "Aster 的状态存储为本地 JSON。"
+        }
+      ],
+      "trust": "untrusted_fixture"
+    },
+    {
+      "schema_version": 1,
+      "id": "aster-scope",
+      "framework": "Aster",
+      "url": "https://aster.fixture.invalid/scope",
+      "collected_at": "2026-10-01T00:00:00Z",
+      "valid_from": "2026-01-01T00:00:00Z",
+      "valid_until": "2027-01-01T00:00:00Z",
+      "body": "本资料为 AgentGit 固定合成语料，不描述真实产品。\nAster 的适用规模为单项目。",
+      "body_sha256": "a2914107585a678551ea13b8fd582abd1b49ebc645da522bf490abc086ff1aaf",
+      "facts": [
+        {
+          "schema_version": 1,
+          "dimension": "适用规模",
+          "value": "单项目",
+          "quote": "Aster 的适用规模为单项目。"
+        }
+      ],
+      "trust": "untrusted_fixture"
+    },
+    {
+      "schema_version": 1,
+      "id": "birch-overview",
+      "framework": "Birch",
+      "url": "https://birch.fixture.invalid/overview",
+      "collected_at": "2026-10-01T00:00:00Z",
+      "valid_from": "2026-01-01T00:00:00Z",
+      "valid_until": "2027-01-01T00:00:00Z",
+      "body": "本资料为 AgentGit 固定合成语料，不描述真实产品。\nBirch 的调度方式为DAG 调度。\nBirch 的状态存储为PostgreSQL。",
+      "body_sha256": "1976111e94590ad645f14577c44efeeb768ce4abf15f4f5d9cdd798ca8591239",
+      "facts": [
+        {
+          "schema_version": 1,
+          "dimension": "调度方式",
+          "value": "DAG 调度",
+          "quote": "Birch 的调度方式为DAG 调度。"
+        },
+        {
+          "schema_version": 1,
+          "dimension": "状态存储",
+          "value": "PostgreSQL",
+          "quote": "Birch 的状态存储为PostgreSQL。"
+        }
+      ],
+      "trust": "untrusted_fixture"
+    },
+    {
+      "schema_version": 1,
+      "id": "birch-scope",
+      "framework": "Birch",
+      "url": "https://birch.fixture.invalid/scope",
+      "collected_at": "2026-10-01T00:00:00Z",
+      "valid_from": "2026-01-01T00:00:00Z",
+      "valid_until": "2027-01-01T00:00:00Z",
+      "body": "本资料为 AgentGit 固定合成语料，不描述真实产品。\nBirch 的适用规模为十节点计划。",
+      "body_sha256": "fc1e95bb4e9edc4de49b7ecf8ac197ae8e0bf6192165eaba8295d66dd1197778",
+      "facts": [
+        {
+          "schema_version": 1,
+          "dimension": "适用规模",
+          "value": "十节点计划",
+          "quote": "Birch 的适用规模为十节点计划。"
+        }
+      ],
+      "trust": "untrusted_fixture"
+    },
+    {
+      "schema_version": 1,
+      "id": "cedar-overview",
+      "framework": "Cedar",
+      "url": "https://cedar.fixture.invalid/overview",
+      "collected_at": "2026-10-01T00:00:00Z",
+      "valid_from": "2026-01-01T00:00:00Z",
+      "valid_until": "2027-01-01T00:00:00Z",
+      "body": "本资料为 AgentGit 固定合成语料，不描述真实产品。\nCedar 的调度方式为事件驱动。\nCedar 的状态存储为追加日志。",
+      "body_sha256": "1a950fee4265441655fc847a30935c7ee1d3dc55ae13d565d8871bd718fdbb00",
+      "facts": [
+        {
+          "schema_version": 1,
+          "dimension": "调度方式",
+          "value": "事件驱动",
+          "quote": "Cedar 的调度方式为事件驱动。"
+        },
+        {
+          "schema_version": 1,
+          "dimension": "状态存储",
+          "value": "追加日志",
+          "quote": "Cedar 的状态存储为追加日志。"
+        }
+      ],
+      "trust": "untrusted_fixture"
+    },
+    {
+      "schema_version": 1,
+      "id": "cedar-scope",
+      "framework": "Cedar",
+      "url": "https://cedar.fixture.invalid/scope",
+      "collected_at": "2026-10-01T00:00:00Z",
+      "valid_from": "2026-01-01T00:00:00Z",
+      "valid_until": "2027-01-01T00:00:00Z",
+      "body": "本资料为 AgentGit 固定合成语料，不描述真实产品。\nCedar 的适用规模为批处理任务。",
+      "body_sha256": "af21fa3d2c3932c6e6a77de9dd77c425d6a12fe37be7de8109cf147b0a99d9ab",
+      "facts": [
+        {
+          "schema_version": 1,
+          "dimension": "适用规模",
+          "value": "批处理任务",
+          "quote": "Cedar 的适用规模为批处理任务。"
+        }
+      ],
+      "trust": "untrusted_fixture"
+    }
+  ]
+}

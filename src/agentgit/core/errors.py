@@ -18,6 +18,14 @@ class ErrorCode(StrEnum):
     OBJECT_CORRUPT = "object_corrupt"
     OUTPUT_LIMIT = "output_limit"
     CONFIGURATION = "configuration"
+    PLAN_INVALID = "plan_invalid"
+    MODEL_EMPTY = "model_empty"
+    MODEL_ERROR = "model_error"
+    TOOL_EMPTY = "tool_empty"
+    TOOL_ERROR = "tool_error"
+    LOOP_DETECTED = "loop_detected"
+    VALIDATION_FAILED = "validation_failed"
+    CONTEXT_LIMIT = "context_limit"
 
 
 class AgentGitError(Exception):

@@ -237,6 +237,7 @@ class HistoryService:
         events: tuple[EventInput, ...],
         artifacts: tuple[ArtifactInput, ...] = (),
         writer_guard: Callable[[Connection], None] | None = None,
+        projection: Callable[[Connection], None] | None = None,
     ) -> CommitResult:
         if not events:
             raise _error(ErrorCode.VALIDATION, "状态转移至少需要一个事件")
@@ -349,7 +350,7 @@ class HistoryService:
                     or run["checkpoint_commit_id"] != expected_head
                 ):
                     raise _error(ErrorCode.VERSION_CONFLICT, "运行在对象发布期间已改变")
-                if run["status"] not in ("running", "planning"):
+                if run["status"] not in ("queued", "running", "planning"):
                     raise _error(ErrorCode.VERSION_CONFLICT, "运行当前不能提交状态")
                 if writer_guard is not None:
                     writer_guard(connection)
@@ -466,6 +467,8 @@ class HistoryService:
                         checkpoint_commit_id=manifest_obj.id,
                     )
                 )
+                if projection is not None:
+                    projection(connection)
                 self.fault("in_transaction")
         except IntegrityError:
             raise _error(ErrorCode.VALIDATION, "提交违反归属或历史约束") from None
