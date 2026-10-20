@@ -1,7 +1,9 @@
 """S1-T01/T06：入口、故障映射与执行准备边界。"""
 
 import json
+import os
 import subprocess
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -36,6 +38,24 @@ def test_unavailable_database_does_not_leak_credentials(monkeypatch):
     assert result.exit_code == 1
     assert "private-password" not in result.stdout
     assert json.loads(result.stdout)["error"]["code"] == "database_unavailable"
+
+
+def test_redirected_json_works_with_windows_legacy_encoding():
+    env = {
+        **os.environ,
+        "PYTHONIOENCODING": "gbk",
+        "AGENTGIT_DATABASE_URL": "postgresql+psycopg://u:secret@127.0.0.1:1/missing",
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", "from agentgit.cli.main import app; app()", "doctor", "--database"],
+        capture_output=True,
+        env=env,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert json.loads(result.stdout.decode("utf-8"))["error"]["code"] == "database_unavailable"
+    assert b"secret" not in result.stdout
 
 
 @pytest.mark.parametrize(

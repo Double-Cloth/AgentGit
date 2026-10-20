@@ -4,6 +4,11 @@
 *.md text eol=lf
 *.py text eol=lf
 *.toml text eol=lf
+*.lock text eol=lf
+*.ini text eol=lf
+*.mako text eol=lf
+.env* text eol=lf
+.python-version text eol=lf
 *.json text eol=lf
 *.yaml text eol=lf
 *.yml text eol=lf

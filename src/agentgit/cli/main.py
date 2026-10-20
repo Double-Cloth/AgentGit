@@ -33,9 +33,10 @@ def doctor(database: bool = False, sandbox: bool = False, testing: bool = False)
             report["postgresql"] = probe_database(settings, testing=testing)
         if sandbox:
             report["sandbox"] = sandbox_prerequisites()
-        typer.echo(json.dumps(report, ensure_ascii=False))
+        # JSON 使用 ASCII 转义，避免 Windows 重定向时受本地代码页影响。
+        typer.echo(json.dumps(report))
         if sandbox and not report["sandbox"]["execution_ready"]:
             raise typer.Exit(1)
     except AgentGitError as exc:
-        typer.echo(json.dumps({"error": exc.as_dict()}, ensure_ascii=False))
+        typer.echo(json.dumps({"error": exc.as_dict()}))
         raise typer.Exit(1) from None
