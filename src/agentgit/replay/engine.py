@@ -23,6 +23,7 @@ from agentgit.core.models import CommitManifest, EffectClass, RunStatus, parse_c
 from agentgit.core.research import AgentConfig, AgentState, CallTrace
 from agentgit.core.snapshots import EventManifest, EventPayload, StateSnapshot
 from agentgit.replay.recorded import RecordedAdapter
+from agentgit.replay.recovery import rebuild_discard
 from agentgit.replay.workspace import MemoryWorkspace
 from agentgit.runtime.engine import ResearchRuntime
 from agentgit.runtime.ports import CallOutcome
@@ -385,6 +386,27 @@ class RecordedReplayer:
         if len(bundle.checkpoints) > 1:
             with suppress(_ReachedUntil):
                 while journal.position + 1 < len(bundle.checkpoints):
+                    event_type, details = journal.next_event()
+                    if event_type == "sandbox.execution_discarded":
+                        target = bundle.checkpoints[journal.position + 1][0]
+                        candidates = [
+                            item for item in bundle.discards if item.source_commit == target
+                        ]
+                        policy, decision = config.execution_policy, runtime.state.pending_tool
+                        if len(candidates) != 1 or policy is None or decision is None:
+                            raise AgentGitError(
+                                ErrorCode.RECORDING_MISSING, "缺少精确匹配的丢弃录制"
+                            )
+                        runtime.state = rebuild_discard(
+                            candidates[0],
+                            runtime.state,
+                            context(),
+                            signature=tools.signature(decision.tool),
+                            max_response_bytes=config.limits.max_response_bytes,
+                            max_attempts=policy.max_attempts,
+                        )
+                        journal.save(runtime.state, event_type, details)
+                        continue
                     before = journal.position
                     runtime.run()
                     if journal.position == before or runtime.state.status != RunStatus.PAUSED:

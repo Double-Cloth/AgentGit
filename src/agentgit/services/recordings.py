@@ -24,10 +24,11 @@ from agentgit.core.models import (
     EnvironmentManifest,
     parse_contract,
 )
-from agentgit.core.research import SavedCallOutcome
+from agentgit.core.research import AgentState, SavedCallOutcome
 from agentgit.core.snapshots import EventManifest, EventPayload, LogicalEvent, StateSnapshot
 from agentgit.core.versions import RecordedRange
 from agentgit.replay.recorded import Recording
+from agentgit.replay.recovery import CleanupProof, DiscardEvent, RecordedDiscard
 from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.versions import HistorySelection, VersionService
 
@@ -41,6 +42,7 @@ class RecordedBundle:
     environment: EnvironmentManifest
     checkpoints: tuple[tuple[str, StateSnapshot], ...]
     recordings: tuple[Recording, ...]
+    discards: tuple[RecordedDiscard, ...] = ()
 
 
 class RecordingReader:
@@ -110,6 +112,194 @@ class RecordingReader:
                 raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "复用调用与原录制身份不符")
             current = dict(origin)
         return current
+
+    def _discard(
+        self,
+        repository: UUID,
+        source: UUID,
+        family: set[UUID],
+        commit_id: str,
+        data: dict[str, Any],
+        environment: EnvironmentManifest,
+    ) -> RecordedDiscard:
+        if type(data.get("charged_tool_calls")) is not int:
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "丢弃预算必须为精确整数")
+        event = parse_contract(encode({"schema_version": 1, **data}), DiscardEvent)
+        calls, executions, refs = (
+            TABLES["external_calls"],
+            TABLES["sandbox_executions"],
+            TABLES["object_refs"],
+        )
+        with self.history.engine.connect() as connection:
+            call = (
+                connection.execute(
+                    sa.select(calls).where(
+                        calls.c.repository_id == repository, calls.c.id == UUID(event.call_id)
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            execution = (
+                connection.execute(
+                    sa.select(executions).where(
+                        executions.c.repository_id == repository,
+                        executions.c.call_id == UUID(event.call_id),
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            proofs = list(
+                connection.execute(
+                    sa.select(refs.c.object_id).where(
+                        refs.c.repository_id == repository,
+                        refs.c.owner_type == "sandbox_execution",
+                        refs.c.owner_id == event.call_id,
+                        refs.c.role == "recovery_cleanup",
+                    )
+                ).scalars()
+            )
+        if (
+            call is None
+            or execution is None
+            or call["run_id"] not in family
+            or execution["run_id"] != call["run_id"]
+            or call["result_ref"] is not None
+            or execution["result_ref"] is not None
+            or call["status"] not in ("started", "outcome_unknown")
+            or call["effect"] != "NON_IDEMPOTENT_WRITE"
+            or execution["status"] != "outcome_unknown"
+            or not execution["cleanup_confirmed"]
+            or proofs != [event.cleanup_evidence_ref]
+        ):
+            raise AgentGitError(ErrorCode.RECORDING_MISSING, "录制丢弃缺少原执行或可信清理事实")
+        raw = self._owned(
+            repository,
+            event.cleanup_evidence_ref,
+            ObjectType.BLOB,
+            "execution_discard",
+            str(source),
+            event.stopped_execution.occurrence.request_digest,
+        )
+        if len(raw) > 4096:
+            raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "清理证明超过固定上限")
+        proof = parse_contract(raw, CleanupProof)
+        if (
+            not proof.cleanup_confirmed
+            or proof.container_name != execution["container_name"]
+            or proof.container_id != execution["container_id"]
+            or proof.previous_fencing_token != execution["fencing_token"]
+            or proof.observer_fencing_token <= proof.previous_fencing_token
+        ):
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "丢弃清理证明与原容器身份不符")
+        call_id = event.call_id
+        intent = parse_contract(
+            self._owned(
+                repository, call["intent_ref"], ObjectType.CALL, "external_call", call_id, "intent"
+            ),
+            CallIntent,
+        )
+        occurrence = event.stopped_execution.occurrence
+        policy = parse_contract(
+            self._owned(
+                repository,
+                execution["policy_ref"],
+                ObjectType.BLOB,
+                "sandbox_execution",
+                call_id,
+                "policy",
+            ),
+            ExecutionPolicy,
+        )
+        if (
+            intent.occurrence != occurrence
+            or intent.effect.value != call["effect"]
+            or occurrence.provider not in SANDBOX_PROVIDERS
+            or intent.checkpoint != execution["checkpoint_commit_id"]
+            or intent.request_ref != execution["request_digest"]
+            or intent.request_ref != occurrence.request_digest
+            or execution["attempt"] != occurrence.attempt
+            or event.stopped_execution.input_manifest_ref != execution["input_manifest_ref"]
+            or event.stopped_execution.execution_policy_ref != execution["policy_ref"]
+            or policy.digest() != execution["policy_ref"]
+            or policy.image_id != execution["image_id"]
+            or execution_signature(occurrence.provider, policy) != occurrence.signature_digest
+            or occurrence.signature_digest not in environment.tool_signatures
+            or any(
+                getattr(occurrence, key) != call[key]
+                for key in (
+                    "logical_step_id",
+                    "call_index",
+                    "attempt",
+                    "provider",
+                    "signature_digest",
+                    "request_digest",
+                )
+            )
+        ):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "丢弃证书、意图、执行索引与环境不符")
+        request = self._owned(
+            repository, intent.request_ref, ObjectType.BLOB, "external_call", call_id, "request"
+        )
+        arguments = (
+            parse_contract(request, TerminalArguments)
+            if occurrence.provider == "tool:terminal_exec/v1"
+            else parse_contract(request, CodeArguments)
+        )
+        checkpoint = intent.checkpoint
+        if checkpoint is None:
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "丢弃录制没有原输入检查点")
+        if (
+            arguments.input_manifest_ref != execution["input_manifest_ref"]
+            or arguments.execution_policy_ref != policy.digest()
+        ):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "丢弃请求与冻结输入或策略不符")
+        manifest = parse_contract(
+            self._owned(
+                repository,
+                arguments.input_manifest_ref,
+                ObjectType.ARTIFACT_MANIFEST,
+                "sandbox_input",
+                str(call["run_id"]),
+                checkpoint,
+            ),
+            ExecutionManifest,
+        )
+        for item in manifest.files:
+            if (
+                len(
+                    self._owned(
+                        repository,
+                        item.object_ref,
+                        ObjectType.BLOB,
+                        "sandbox_input",
+                        str(call["run_id"]),
+                        checkpoint,
+                    )
+                )
+                != item.byte_length
+            ):
+                raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "丢弃输入文件长度与原清单不符")
+        extra = (
+            arguments.command_ref
+            if isinstance(arguments, TerminalArguments)
+            else arguments.code_ref
+        )
+        for reference in (arguments.stdin_ref, extra):
+            if reference is not None:
+                self._owned(
+                    repository,
+                    reference,
+                    ObjectType.BLOB,
+                    "sandbox_input",
+                    str(call["run_id"]),
+                    checkpoint,
+                )
+        before = parse_contract(
+            encode(self.history.restore(repository, checkpoint).data), AgentState
+        )
+        return RecordedDiscard(commit_id, event, intent, request, before)
 
     def _execution(self, repository: UUID, row: dict[str, Any], record: Recording) -> None:
         call_id = str(row["id"])
@@ -242,6 +432,7 @@ class RecordingReader:
         checkpoints: list[tuple[str, StateSnapshot]] = []
         expected_events: list[LogicalEvent] = []
         checkpoint_for_event: dict[int, str] = {}
+        boundary_commits: dict[int, str] = {}
         size = 0
 
         def account(payload: bytes) -> bytes:
@@ -276,6 +467,7 @@ class RecordingReader:
                 checkpoint_for_event.update(
                     {event.seq: selection.commits[index - 1] for event in events.events}
                 )
+                boundary_commits[manifest.event_range.last_seq] = commit_id
         with self.history.engine.connect() as connection:
             events_table, calls = TABLES["events"], TABLES["external_calls"]
             event_rows = list(
@@ -323,7 +515,27 @@ class RecordingReader:
         if len(by_key) != len(call_rows):
             raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "来源调用索引包含重复 occurrence")
         completed: dict[tuple[str, int, int], tuple[int, dict[str, Any]]] = {}
+        discards: list[RecordedDiscard] = []
         for event in indexed_events:
+            if event.type == "sandbox.execution_discarded":
+                if event.seq not in boundary_commits:
+                    raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "执行丢弃必须对应独立状态检查点")
+                data = parse_contract(
+                    account(self.history.objects.get(event.payload_ref, ObjectType.EVENT)),
+                    EventPayload,
+                ).data
+                discard = self._discard(
+                    repository,
+                    selection.source_run_id,
+                    family,
+                    boundary_commits[event.seq],
+                    data,
+                    environment,
+                )
+                account(encode(discard.before.model_dump(mode="json")))
+                account(discard.request)
+                discards.append(discard)
+                continue
             if event.type not in ("tool.completed", "llm.completed", "call.failed"):
                 continue
             terminal = parse_contract(
@@ -448,4 +660,6 @@ class RecordingReader:
             if occurrence.provider in SANDBOX_PROVIDERS:
                 self._execution(repository, physical, record)
             recordings.append(record)
-        return RecordedBundle(selection, environment, tuple(checkpoints), tuple(recordings))
+        return RecordedBundle(
+            selection, environment, tuple(checkpoints), tuple(recordings), tuple(discards)
+        )
