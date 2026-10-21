@@ -90,6 +90,37 @@ def test_forks_change_only_their_own_heads_and_preserve_source(versioned):
     }
 
 
+def test_equivalent_branch_commits_share_object_without_reinserting_published_parent(versioned):
+    service, repository, source, commits, environment = versioned
+    outputs = []
+    for name in ("equivalent-a", "equivalent-b"):
+        fork(service, repository, source, commits[0], name)
+        run = service.history.create_run(repository, name)
+        result = service.history.commit(
+            repository,
+            run,
+            expected_head=commits[0],
+            expected_version=0,
+            state={"shared": True},
+            environment=environment,
+            events=(EventInput("fixture.shared", "step", {}),),
+            artifacts=(ArtifactInput("binary", b"same bytes", "application/octet-stream"),),
+        )
+        outputs.append(result.commit_id)
+    assert outputs[0] == outputs[1]
+    assert service.history.restore(repository, outputs[0]).data == {"shared": True}
+    with service.history.engine.connect() as connection:
+        parents = TABLES["commit_parents"]
+        assert (
+            connection.execute(
+                sa.select(sa.func.count())
+                .select_from(parents)
+                .where(parents.c.commit_id == outputs[0])
+            ).scalar_one()
+            == 1
+        )
+
+
 def test_source_range_rejects_foreign_branch_and_reversed_endpoints(versioned):
     service, repository, run, commits, _ = versioned
     selected = service.select_range(

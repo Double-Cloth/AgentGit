@@ -30,7 +30,7 @@ from agentgit.core.management import (
 )
 from agentgit.core.models import parse_contract
 from agentgit.core.research import AgentConfig, BudgetLimits, ResearchGoal
-from agentgit.core.versions import NewBranch
+from agentgit.core.versions import NewBranch, RecordedReplay
 from agentgit.diagnostics import sandbox_prerequisites
 from agentgit.services.management import ManagementService
 from agentgit.storage.database import probe_database
@@ -177,6 +177,36 @@ def task(
             NewTask,
         )
         emit(service.create_task(repository_id, payload, key))
+
+
+@app.command("replay")
+def replay(
+    repository_id: UUID,
+    source_run: Annotated[UUID, typer.Option()],
+    from_commit: Annotated[str, typer.Option()],
+    until_commit: Annotated[str, typer.Option()],
+    branch_name: Annotated[str, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    mode: str = "recorded",
+    testing: bool = False,
+) -> None:
+    """提交带来源范围的新 Recorded Job，执行由独立 Worker 负责。"""
+    with management(testing) as service:
+        payload = parse_contract(
+            encode(
+                {
+                    "schema_version": 1,
+                    "mode": mode,
+                    "source_run_id": str(source_run),
+                    "from_commit": from_commit,
+                    "until_commit": until_commit,
+                    "branch_name": branch_name,
+                    "expected_version": 0,
+                }
+            ),
+            RecordedReplay,
+        )
+        emit(service.replay(repository_id, payload, key))
 
 
 @app.command("branch")

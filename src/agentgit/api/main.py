@@ -30,7 +30,7 @@ from agentgit.core.management import (
     SubmitRun,
 )
 from agentgit.core.models import parse_contract
-from agentgit.core.versions import NewBranch
+from agentgit.core.versions import NewBranch, RecordedReplay
 from agentgit.services.management import ManagementService
 from agentgit.storage.database import probe_database
 
@@ -158,6 +158,23 @@ def create_app(
         service: Annotated[ManagementService, Depends(get_manager)],
     ) -> dict[str, Any]:
         return service.create_branch(repo, parse_contract(encode(body), NewBranch), key)
+
+    @app.post("/replays", status_code=202)
+    def replay(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.replay(repo, parse_contract(encode(body), RecordedReplay), key)
+
+    @app.get("/replays/{job_id}")
+    def replay_status(
+        job_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.replay_status(repo, job_id)
 
     @app.get("/repositories/{repository_id}/branches")
     def branches(

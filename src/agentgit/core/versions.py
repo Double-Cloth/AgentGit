@@ -27,6 +27,23 @@ class RecordedRange(Contract):
     until_commit: Digest
 
 
+class RecordedReplay(RecordedRange):
+    mode: Literal["recorded"] = "recorded"
+    branch_name: Annotated[str, Field(min_length=1, max_length=100)]
+    expected_version: Annotated[int, Field(ge=0, le=0)] = 0
+
+    @field_validator("branch_name")
+    @classmethod
+    def visible_name(cls, value: str) -> str:
+        return NewBranch.visible_name(value)
+
+
+class RecordedReplaySpec(RecordedRange):
+    mode: Literal["recorded"] = "recorded"
+    environment_ref: Digest
+    checkpoint_count: Annotated[int, Field(ge=1, le=10001)]
+
+
 class StructuralChange(Contract):
     path: str
     operation: Literal["add", "remove", "replace"]

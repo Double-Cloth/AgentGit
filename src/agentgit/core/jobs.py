@@ -8,11 +8,13 @@ from pydantic import Field
 
 from agentgit.core.models import Contract, Digest, Identifier, NonNegative
 from agentgit.core.research import BudgetLimits, Source
+from agentgit.core.versions import RecordedReplaySpec
 
 TERMINAL_RUNS = frozenset({"completed", "failed", "cancelled", "budget_exhausted"})
 
 
 class JobPayload(Contract):
+    replay: RecordedReplaySpec | None = None
     limits: BudgetLimits | None = None
     kind: Literal["research_run"] = "research_run"
     config_id: Identifier

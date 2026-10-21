@@ -32,6 +32,7 @@ from agentgit.services.execution_recovery import discard_stopped, occurrence_of,
 from agentgit.services.executions import ExecutionService
 from agentgit.services.history import TABLES, EventInput, HistoryService
 from agentgit.services.jobs import JobService
+from agentgit.services.recorded_jobs import RecordedJobRunner
 from agentgit.services.recovery import prepare_recovery, recovery_origins
 from agentgit.services.research import ResearchService, ResearchSession
 
@@ -79,6 +80,18 @@ class Worker:
         if lease is None:
             return None
         try:
+            payload = self.queue.payload(self.queue.get(lease.repository_id, lease.job_id))
+            if payload.replay is not None:
+                if lease.recovery_required:
+                    with LeaseHeartbeat(self.queue, lease):
+                        prepared = prepare_recovery(self.queue, lease)
+                    if prepared is None:
+                        return self._summary(lease)
+                    lease = prepared
+                with LeaseHeartbeat(self.queue, lease):
+                    self.fault("after_claim")
+                    RecordedJobRunner(self.queue, lease, self.fault).run()
+                return self._summary(lease)
             if lease.recovery_required:
                 with LeaseHeartbeat(self.queue, lease):
                     ExecutionService.reconcile(self.queue, lease)

@@ -35,7 +35,7 @@
 
 ## Runtime 状态与产物重算
 
-`RecordedReplayer` 直接使用原 `ResearchRuntime`，只有起点来自恢复快照。随后每个状态转换均由录制调用结果驱动，使用独立 `MemoryWorkspace` 重建产物，并同时对比快照摘要与来源 Commit 的 `state_ref`；成功重算后才通知检查点回调。回调可供后续耐久 Job 保存新 Commit 和 provenance，目前尚未接通持久 Replay。
+`RecordedReplayer` 直接使用原 `ResearchRuntime`，只有起点来自恢复快照。随后每个状态转换均由录制调用结果驱动，使用独立 `MemoryWorkspace` 重建产物，并同时对比快照摘要与来源 Commit 的 `state_ref`；成功重算后才通知检查点回调。回调现已接入耐久 Job 保存新 Commit 和 provenance，批次证据见 [S5-recorded-jobs.md](S5-recorded-jobs.md)。
 
 实际模型、工具、网络、宿主工作区/进程和容器入口均不调用；`ReplayResult` 分别返回历史逻辑用量与实际零调用事实。执行输入 manifest 根据内存文件重新计算，Shell/Python 输出从已验证的 CAS manifest 重建。中间终点立即停止，不继续运行至原终态；零长度范围只恢复起点。
 
@@ -59,7 +59,7 @@
 
 ## 尚待完成
 
-1. 补全恢复专用来源路径的逻辑状态重算，并在持久任务中分离逻辑用量与新运行的实际计量。
-2. 将 Recorded/Live 作为耐久任务接入 Worker、HTTP/CLI，保存来源及范围；Recorded 禁止 override，禁止真实客户端或执行后端初始化，验证崩溃接管仍可安全重算。
+1. 补全其余恢复专用来源与复合 Recorded 来源路径的逻辑状态重算。
+2. 完成 Live 的 Worker、HTTP/CLI，验证实际控制、计量、崩溃接管与来源隔离；Recorded 耐久批次的 499 项全量及 CLI 结果见专属记录。
 3. Live 从指定检查点建立独立工作区，验证配置/计划/参数变化，启用新预算、独立执行容器和重新授权；不继承源调用结果或审批。
 4. 完成 S5-T01–T09 的端到端验收，特别是完整断网重算、执行工具 Recorded 零启动和 A/B Live 代码/同名产物隔离。

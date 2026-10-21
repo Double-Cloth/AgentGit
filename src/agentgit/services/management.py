@@ -23,10 +23,11 @@ from agentgit.core.management import (
 )
 from agentgit.core.models import parse_contract
 from agentgit.core.research import AgentState, BudgetUsage
-from agentgit.core.versions import NewBranch
+from agentgit.core.versions import NewBranch, RecordedReplay
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.jobs import JobService
+from agentgit.services.replays import ReplayService
 from agentgit.services.research import ResearchService
 from agentgit.services.versions import VersionService
 from agentgit.storage.database import make_engine
@@ -52,6 +53,18 @@ class ManagementService:
         self.research, self.history, self.actor = research, research.history, actor
         self.jobs = JobService(research)
         self.versions = VersionService(self.history)
+        self.replays = ReplayService(research)
+
+    def replay(self, repository_id: UUID, payload: RecordedReplay, key: str) -> dict[str, Any]:
+        return self._mutate(
+            "POST /replays",
+            key,
+            repository_id,
+            payload.model_dump(mode="json"),
+            lambda connection: self.replays.submit(
+                repository_id, payload, actor=self.actor, key=key, connection=connection
+            ),
+        )
 
     def create_branch(self, repository_id: UUID, payload: NewBranch, key: str) -> dict[str, Any]:
         return self._mutate(
@@ -305,12 +318,6 @@ class ManagementService:
         usage = BudgetUsage()
         with self.history.engine.connect() as connection:
             snapshots, jobs = TABLES["snapshots"], TABLES["jobs"]
-            snapshot = connection.execute(
-                sa.select(snapshots.c.run_id).where(
-                    snapshots.c.repository_id == repository_id,
-                    snapshots.c.commit_id == row["checkpoint_commit_id"],
-                )
-            ).first()
             job = (
                 connection.execute(sa.select(jobs).where(jobs.c.run_id == run_id))
                 .mappings()
@@ -329,6 +336,13 @@ class ManagementService:
                     origin = self.history._run(connection, repository_id, origin)["origin_run_id"]
                 if job["origin_run_id"] not in allowed:
                     raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "预算来源链未到达 Job 根")
+            snapshot = connection.execute(
+                sa.select(snapshots.c.run_id).where(
+                    snapshots.c.repository_id == repository_id,
+                    snapshots.c.commit_id == row["checkpoint_commit_id"],
+                    snapshots.c.run_id.in_(allowed),
+                )
+            ).first()
         if snapshot is not None and snapshot.run_id in allowed:
             restored = self.history.restore(repository_id, row["checkpoint_commit_id"])
             usage = parse_contract(encode(restored.data), AgentState).usage
@@ -350,6 +364,10 @@ class ManagementService:
                 "wall_ms": wall,
             },
         }
+        if job is not None:
+            report = self.replays.report(repository_id, job["id"])
+            if report is not None:
+                result["replay"] = report
         return result
 
     def job(self, repository_id: UUID, job_id: UUID) -> dict[str, Any]:
@@ -379,6 +397,15 @@ class ManagementService:
                 for key in ("control_request", "control_status", "state_version", "budget")
             }
         )
+        if "replay" in run:
+            result["replay"] = run["replay"]
+            result["mode"] = run["mode"]
+        return result
+
+    def replay_status(self, repository_id: UUID, job_id: UUID) -> dict[str, Any]:
+        result = self.job(repository_id, job_id)
+        if "replay" not in result:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "重放任务不可访问")
         return result
 
     def events(

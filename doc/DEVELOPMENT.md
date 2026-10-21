@@ -69,7 +69,7 @@ CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障�
 
 ## S3 离线研究演示
 
-S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 head 已推进至 `0010_branch_forks`。先升级开发库，再运行：
+S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 head 已推进至 `0011_replay_jobs`。先升级开发库，再运行：
 
 ```powershell
 uv run --locked alembic upgrade head
@@ -114,7 +114,11 @@ Recorded 同时校验当前代码、Python、依赖锁、模型/工具签名、P
 
 `sandbox.execution_discarded` 由单独的纯状态逻辑重建：读取器先验证原物理调用、固定策略/输入、同来源链、唯一清理证明及该 Run 的丢弃引用归属，重算器再比较原安全状态或精确的 `outcome_unknown` 状态，保留旧轨迹、扣除一次旧尝试用量并追加停止证书。丢弃本身没有调用响应，不补造成功结果。之后继续消费新 attempt 的录制，或按原取消/截止时间/预算/尝试上限停止。缺清理证明或输入漂移明确失败，不访问引擎补齐证明。
 
-完整 Replay 仍在实施：独立耐久运行计量、Recorded/Live Job、未知结果经可信结果核对后的其他恢复专用来源路径、Live 新预算与授权尚待接通。因此当前没有 `POST /replays` 或 `agentgit replay` 成功入口，不把内部重算专项通过视为 S5 已验收。`MemoryWorkspace` 还对工作区总字节施加 64 MiB 上限，超限必须缩小范围或明确失败，不物化宿主文件作为回退。
+Recorded 已接入耐久 Job、Worker、`POST /replays` 和 `agentgit replay`，操作见 [API.md](API.md#recorded-耐久任务)。`0011_replay_jobs` 增加不可变 `replay_requests/replay_checkpoints`，绑定来源范围、独立 Job 和逐检查点状态摘要；数据库复核来源顺序、父关系和新 Run 归属。提交复用原配置、创建独立 Task，不继承原工作区或动作授权，也不执行 Runtime。Worker 在租约和心跳下重算，证明随 Commit 同事务保存。
+
+Recorded 的实际暂停/取消/期限与来源逻辑状态分别记录；重启后先验证已保存前缀，再保存剩余证明。实际耗时通过操作事件记录，未完成计量的崩溃尝试明确展示为未知；原逻辑预算不归零。等价分支允许共享 Commit 内容，但已发布父边只校验、不再次插入；父边不可补写和篡改的数据库保护不变。预算读取按当前 Job 的 Run 来源链过滤快照，避免共享 Commit 的其他 Run 被误选。
+
+完整 S5 仍在实施：Live Job 的新预算/授权/工作区、复合 Recorded 来源，以及未知结果经可信核对后的其他来源路径尚待接通和验收。`MemoryWorkspace` 对工作区总字节施加 64 MiB 上限，超限必须缩小范围或明确失败，不物化宿主文件作为回退。耐久批次证据见 [S5-recorded-jobs.md](acceptance/S5-recorded-jobs.md)。
 
 调度进程故障用例启动仓库内受信任的 Worker 测试助手，并使用独立测试 Schema/临时 CAS；用户 Shell/Python 始终在容器中执行。实际容器基础设施与持久执行服务使用单独套件验证，准备方式与边界见 [sandbox/README.md](../sandbox/README.md)；完整五工具接入及本机验收见 [S4.md](acceptance/S4.md)。早期进展保留在 [S4-progress.md](acceptance/S4-progress.md) 与 [容器边界](acceptance/S4-sandbox-boundary.md)。
 

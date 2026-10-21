@@ -92,9 +92,11 @@ class ResearchService:
             )
         return config_id
 
-    def config(self, repository_id: UUID, config_id: UUID) -> AgentConfig:
+    def config(
+        self, repository_id: UUID, config_id: UUID, *, connection: Connection | None = None
+    ) -> AgentConfig:
         table = TABLES["agent_configs"]
-        with self.history.engine.connect() as connection:
+        with transaction(self.history.engine, connection) as connection:
             row = (
                 connection.execute(
                     sa.select(table).where(
@@ -118,7 +120,7 @@ class ResearchService:
         *,
         connection: Connection | None = None,
     ) -> UUID:
-        config = self.config(repository_id, config_id)
+        config = self.config(repository_id, config_id, connection=connection)
         if set(goal.frameworks) != {source.framework for source in self.corpus.sources.values()}:
             raise AgentGitError(ErrorCode.VALIDATION, "S3 仅支持固定三框架比较任务")
         task_id = uuid4()

@@ -1,6 +1,6 @@
 # 本地服务与 CLI（S4/S5）
 
-当前支持本机操作者、固定离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，以 AGENTGIT_* 进程环境为准。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0010_branch_forks`。
+当前支持本机操作者、固定离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，以 AGENTGIT_* 进程环境为准。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0011_replay_jobs`。
 
 ## CLI 离线流程
 
@@ -77,6 +77,8 @@ serve 只监听 127.0.0.1。Origin 默认允许 http://127.0.0.1:8000、http://l
 | POST /repositories | name、expected_version=0 | 201，repository_id、version |
 | GET /repositories/{id} | 项目头与路径一致 | 项目、当前主分支 HEAD/version |
 | POST /branches | source_run_id、from_commit、name、expected_version=0 | 201，从安全检查点建立分支，保存不可变来源；同名冲突 |
+| POST /replays | mode=recorded、source_run_id、from_commit、until_commit、branch_name；expected_version=0 可省略 | 202，原子创建独立 Task/Job/Run/分支及来源，实际重算由 Worker 执行 |
+| GET /replays/{job_id} | 项目头 | Job 状态、重放范围/证明进度、逻辑状态/用量、独立实际计量 |
 | GET /repositories/{id}/branches | after_name 可省略、limit=1..1000 | 分支 HEAD/version 与来源、has_more、next_after_name |
 | GET /repositories/{id}/commits | branch_name 默认 main、after_commit 可省略、limit=1..1000 | 当前分支从新到旧的 Commit manifest、has_more、next_after_commit |
 | GET /commits/{id} | 项目头 | 完整 manifest、环境和 snapshot，只读且核验内容 |
@@ -121,7 +123,27 @@ HTTP 创建体示例（示例占位符须替换）：
 {"schema_version":1,"source_run_id":"<Run UUID>","from_commit":"<Commit digest>","name":"experiment-a","expected_version":0}
 ```
 
-当前 S5 仍在实施；Recorded 读取器、无客户端 Adapter 和内部 Runtime 重算已具备严格匹配，但尚未开放耐久 Replay 提交入口。读取快照或录制本身不代表重算通过；完整 Recorded/Live Job 状态见 [S5-progress.md](acceptance/S5-progress.md)。
+### Recorded 耐久任务
+
+Recorded 自行创建新分支，不必预先执行 `branch`；同名分支冲突，不覆盖旧分支。通过 Fork 创建的历史分支不能用普通 `run` 隐式选择执行模式，应使用 Replay。当前入口只接受 Recorded，Live 与复合 Recorded 来源仍在实施。
+
+```powershell
+$replay = uv run --locked agentgit replay $repo.repository_id --source-run $job.run_id --from-commit $fromCommit --until-commit $untilCommit --branch-name recorded-a --key replay-001 | ConvertFrom-Json
+uv run --locked agentgit worker --once
+uv run --locked agentgit status $repo.repository_id $replay.job_id --job
+```
+
+HTTP 创建体（替换示例占位符），使用既有身份/项目/幂等头：
+
+```json
+{"schema_version":1,"mode":"recorded","source_run_id":"<Run UUID>","from_commit":"<Commit digest>","until_commit":"<Commit digest>","branch_name":"recorded-a","expected_version":0}
+```
+
+Recorded 不接受 `overrides/config/budget/prompt/model` 等干预字段。提交先验证范围、完整录制及环境兼容性，只保存耐久任务，不创建执行工作区或调用模型/工具。运行中丢失记录或产物会失败，不回退 Live。起点必须可安全 Fork；`from=until` 合法，只恢复起点，不伪称执行过调用。
+
+`status --job`、`GET /jobs/{id}` 和 `GET /replays/{id}` 的 `replay` 字段区分三类事实：`status=completed` 是新 Job 已结束；`replay.verified=true` 是选定历史范围重算验证通过；`logical_status/logical_usage` 是原历史逻辑状态与用量。选择非终态终点也可完成 Recorded，不能因此认定原任务成功或修复有效。`actual.model_calls/tool_calls/cost_micro_units` 为零；`actual.elapsed_ms` 仅累计已结束尝试的实测耗时，`unmeasured_attempts` 明确标记崩溃等未完成计量的尝试，不把未知耗时记为零。
+
+实际重放暂停/恢复沿用 Run，取消/到期只结束新任务，不改历史逻辑状态；持久截止时间不因重启重置。崩溃接管创建新的 Recorded Run，重算并核验已保存前缀，继续保存剩余证明。原幂等响应保持最初 Job/Run ID，最新 Run 通过 Job 状态查询。版本/录制和耐久任务证据见 [S5-progress.md](acceptance/S5-progress.md)、[S5-recorded-jobs.md](acceptance/S5-recorded-jobs.md)。S5 尚未完成验收。
 
 错误含 error.code、message、evidence_refs（无证据时为空）、correlation_id，另有 X-Correlation-ID，不反射输入/URL/堆栈/令牌。validation=422、权限=403、不可访问=404、冲突=409、输出上限=413、配置/设施不可用=503、未预期错误=500。响应不缓存；JSON 日志写 stderr，仅含关联编号、方法、路由模板、状态、整数耗时，不含正文/认证头/查询/幂等键。
 

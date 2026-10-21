@@ -210,6 +210,19 @@ class RecordedReplayer:
 
         self.read = guarded_read
 
+    def validate_environment(
+        self, bundle: "RecordedBundle", config: AgentConfig, corpus: Corpus
+    ) -> None:
+        if not bundle.checkpoints:
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "Recorded 没有起点检查点")
+        workspace = MemoryWorkspace(
+            max_file_bytes=config.limits.max_artifact_bytes, max_files=config.limits.max_files
+        )
+        try:
+            self._compatible(bundle, config, corpus, ToolRegistry(corpus, workspace, config))
+        except _ReplayAbort as failure:
+            raise failure.error from None
+
     def _compatible(
         self, bundle: "RecordedBundle", config: AgentConfig, corpus: Corpus, tools: ToolRegistry
     ) -> str:
