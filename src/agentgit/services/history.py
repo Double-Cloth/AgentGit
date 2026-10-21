@@ -23,6 +23,7 @@ from agentgit.core.snapshots import (
 )
 from agentgit.storage.database import transaction
 from agentgit.storage.objects import FaultHook, ObjectStore, StoredObject
+from agentgit.storage.roles import path_reference_role
 from agentgit.storage.schema import build_metadata
 
 TABLES = build_metadata().tables
@@ -472,7 +473,7 @@ class HistoryService:
                         obj,
                         "commit",
                         manifest_obj.id,
-                        f"artifact:{item.path}",
+                        path_reference_role("artifact", item.path),
                     )
                     connection.execute(
                         insert(TABLES["artifacts"])

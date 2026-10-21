@@ -13,7 +13,7 @@ from agentgit.core.jobs import TERMINAL_RUNS, JobPayload, Lease, Submission
 from agentgit.core.models import parse_contract
 from agentgit.core.research import BudgetLimits
 from agentgit.core.snapshots import EventPayload
-from agentgit.core.versions import RecordedReplaySpec
+from agentgit.core.versions import LiveReplaySpec, RecordedReplaySpec
 from agentgit.services.environment import source_revision
 from agentgit.services.history import TABLES, EventInput
 from agentgit.services.research import ResearchService
@@ -38,7 +38,7 @@ class JobService:
         expected_head: str | None,
         branch_name: str = "main",
         budget: BudgetLimits | None = None,
-        replay: RecordedReplaySpec | None = None,
+        replay: RecordedReplaySpec | LiveReplaySpec | None = None,
         connection: Connection | None = None,
     ) -> Submission:
         if not actor or not key or len(actor) > 200 or len(key) > 200:
@@ -237,7 +237,7 @@ class JobService:
                     origin_run_id=UUID(replay.source_run_id)
                     if replay
                     else current["active_run_id"],
-                    mode="recorded" if replay else "live",
+                    mode=replay.mode if replay else "live",
                     status="queued",
                 )
             )

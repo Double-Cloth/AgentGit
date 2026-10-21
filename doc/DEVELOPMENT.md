@@ -118,7 +118,13 @@ Recorded 已接入耐久 Job、Worker、`POST /replays` 和 `agentgit replay`，
 
 Recorded 的实际暂停/取消/期限与来源逻辑状态分别记录；重启后先验证已保存前缀，再保存剩余证明。实际耗时通过操作事件记录，未完成计量的崩溃尝试明确展示为未知；原逻辑预算不归零。等价分支允许共享 Commit 内容，但已发布父边只校验、不再次插入；父边不可补写和篡改的数据库保护不变。预算读取按当前 Job 的 Run 来源链过滤快照，避免共享 Commit 的其他 Run 被误选。
 
-完整 S5 仍在实施：Live Job 的新预算/授权/工作区、复合 Recorded 来源，以及未知结果经可信核对后的其他来源路径尚待接通和验收。`MemoryWorkspace` 对工作区总字节施加 64 MiB 上限，超限必须缩小范围或明确失败，不物化宿主文件作为回退。耐久批次证据见 [S5-recorded-jobs.md](acceptance/S5-recorded-jobs.md)。
+Live Job 已接入相同管理服务和 Worker：`prepare_live` 在内存中验证干预、生成独立初始快照，提交事务登记新配置/Task/Job、分支来源及 `replay_input` 归属。Worker 只从当前 Job 的初始输入或自身恢复链物化新工作区，先保存 `live.initialized`。新环境显式绑定 `budget_baseline`，Runtime 保留累计 occurrence 编号，按用量差额检查新增预算。Recorded 重算 Live 来源时必须验证同一基线。
+
+新 Job 的 `origin_run_id` 恢复边界在第一次执行时为空；来源 Run 仅用于历史 provenance，不提供结果复用和旧审批。接管后恢复链止于该 Job 的初始 Run。执行干预重新绑定文件、清单和固定策略，每次实际尝试仍创建独立受控容器。初始化 Commit 事务回滚、提交后崩溃和结果落库后崩溃分别验证；截止时间不重置。HTTP/CLI 输入和计量说明见 [API.md](API.md#live-独立重执行)，专项记录见 [S5-live.md](acceptance/S5-live.md)。
+
+CLI 的两个 Live 输入文件分别有 1 MiB 读取上限；来源文件逐项读取，累计超过 64 MiB 立即停止，纯产物工作区不套用容器的 32 MiB 清单上限。`storage/roles.py` 将超长路径的引用角色映射为有界摘要键，短角色保持原值；完整路径仍在状态/产物表，现有 100 字符引用列及历史迁移不变。该辅助函数属于宿主存储层，镜像内路径校验源码保持冻结。
+
+完整 S5 仍在实施：复合 Recorded 来源，以及未知结果经可信核对后的其他来源路径尚待接通和验收。`MemoryWorkspace` 对工作区总字节施加 64 MiB 上限，超限必须缩小范围或明确失败，不物化宿主文件作为回退。耐久批次证据见 [S5-recorded-jobs.md](acceptance/S5-recorded-jobs.md)。
 
 调度进程故障用例启动仓库内受信任的 Worker 测试助手，并使用独立测试 Schema/临时 CAS；用户 Shell/Python 始终在容器中执行。实际容器基础设施与持久执行服务使用单独套件验证，准备方式与边界见 [sandbox/README.md](../sandbox/README.md)；完整五工具接入及本机验收见 [S4.md](acceptance/S4.md)。早期进展保留在 [S4-progress.md](acceptance/S4-progress.md) 与 [容器边界](acceptance/S4-sandbox-boundary.md)。
 

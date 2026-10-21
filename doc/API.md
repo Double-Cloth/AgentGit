@@ -77,7 +77,7 @@ serve 只监听 127.0.0.1。Origin 默认允许 http://127.0.0.1:8000、http://l
 | POST /repositories | name、expected_version=0 | 201，repository_id、version |
 | GET /repositories/{id} | 项目头与路径一致 | 项目、当前主分支 HEAD/version |
 | POST /branches | source_run_id、from_commit、name、expected_version=0 | 201，从安全检查点建立分支，保存不可变来源；同名冲突 |
-| POST /replays | mode=recorded、source_run_id、from_commit、until_commit、branch_name；expected_version=0 可省略 | 202，原子创建独立 Task/Job/Run/分支及来源，实际重算由 Worker 执行 |
+| POST /replays | source_run_id、from_commit、branch_name；recorded 要求 until_commit；live 可提供 overrides/budget；expected_version=0 可省略 | 202，原子创建独立 Task/Job/Run/分支及来源，执行由 Worker 负责 |
 | GET /replays/{job_id} | 项目头 | Job 状态、重放范围/证明进度、逻辑状态/用量、独立实际计量 |
 | GET /repositories/{id}/branches | after_name 可省略、limit=1..1000 | 分支 HEAD/version 与来源、has_more、next_after_name |
 | GET /repositories/{id}/commits | branch_name 默认 main、after_commit 可省略、limit=1..1000 | 当前分支从新到旧的 Commit manifest、has_more、next_after_commit |
@@ -125,7 +125,7 @@ HTTP 创建体示例（示例占位符须替换）：
 
 ### Recorded 耐久任务
 
-Recorded 自行创建新分支，不必预先执行 `branch`；同名分支冲突，不覆盖旧分支。通过 Fork 创建的历史分支不能用普通 `run` 隐式选择执行模式，应使用 Replay。当前入口只接受 Recorded，Live 与复合 Recorded 来源仍在实施。
+Replay 自行创建新分支，不必预先执行 `branch`；同名分支冲突，不覆盖旧分支。通过 Fork 创建的历史分支不能用普通 `run` 隐式选择执行模式，应使用 Replay。入口接受 Recorded 和 Live；复合 Recorded 来源仍在实施。
 
 ```powershell
 $replay = uv run --locked agentgit replay $repo.repository_id --source-run $job.run_id --from-commit $fromCommit --until-commit $untilCommit --branch-name recorded-a --key replay-001 | ConvertFrom-Json
@@ -144,6 +144,31 @@ Recorded 不接受 `overrides/config/budget/prompt/model` 等干预字段。提�
 `status --job`、`GET /jobs/{id}` 和 `GET /replays/{id}` 的 `replay` 字段区分三类事实：`status=completed` 是新 Job 已结束；`replay.verified=true` 是选定历史范围重算验证通过；`logical_status/logical_usage` 是原历史逻辑状态与用量。选择非终态终点也可完成 Recorded，不能因此认定原任务成功或修复有效。`actual.model_calls/tool_calls/cost_micro_units` 为零；`actual.elapsed_ms` 仅累计已结束尝试的实测耗时，`unmeasured_attempts` 明确标记崩溃等未完成计量的尝试，不把未知耗时记为零。
 
 实际重放暂停/恢复沿用 Run，取消/到期只结束新任务，不改历史逻辑状态；持久截止时间不因重启重置。崩溃接管创建新的 Recorded Run，重算并核验已保存前缀，继续保存剩余证明。原幂等响应保持最初 Job/Run ID，最新 Run 通过 Job 状态查询。版本/录制和耐久任务证据见 [S5-progress.md](acceptance/S5-progress.md)、[S5-recorded-jobs.md](acceptance/S5-recorded-jobs.md)。S5 尚未完成验收。
+
+### Live 独立重执行
+
+Live 只提供 `from_commit`，拒绝 `until_commit`。它创建新配置、Task、Job、Run 和工作区，重新执行剩余计划；不要求输出与来源一致。可选 `budget` 是新配置授权上限内的完整 `BudgetLimits`，不减去来源已花费的预算。历史累计用量保留，冻结 `budget_baseline` 后只按新增差额检查配额；恢复继续同一基线及持久截止时间。
+
+`overrides` 可含 `config`（完整 `AgentConfig`）、`plan`（完整 `Plan`）、`artifacts`、`execution`。计划不能修改或删除已完成节点，剩余节点的工具须获新配置授权。配置/计划干预会重新产生待执行决策；旧未完成 attempt、停止证书和待结算轨迹不会成为新 Job 的复用依据。
+
+产物干预使用安全相对路径，每项 `operation=write`（默认）必须在 `text` 与严格 `content_b64` 中二选一，`media_type` 可选；`operation=delete` 不能携带内容/MIME，且目标必须存在。重复路径、Windows 大小写冲突、越界路径和文件上限均拒绝。
+
+执行干预选择 `tool=code_exec/terminal_exec`、版本化文件 `path`，可指定 `node_key`、`cwd`、`stdin_path`、`timeout_ms`，Python 另可提供 `argv`。必须精确匹配一个就绪节点；后端依据新工作区重新生成输入清单和策略引用。终端命令写在文件中，不接收独立 `argv`。不能上传任意 CAS 引用、镜像、容器权限或审批。
+
+```json
+{"schema_version":1,"mode":"live","source_run_id":"<Run UUID>","from_commit":"<Commit digest>","branch_name":"live-a","overrides":{"artifacts":[{"path":"execution/statistics.py","text":"from pathlib import Path\nPath('result.txt').write_text('A')\n"}],"execution":{"tool":"code_exec","path":"execution/statistics.py"}}}
+```
+
+```powershell
+uv run --locked agentgit replay $repo.repository_id --mode live --source-run $job.run_id --from-commit $fromCommit --branch-name live-a --key live-a-001 --overrides-file overrides.json --budget-file budget.json
+uv run --locked agentgit worker --once
+```
+
+两个文件分别保存上述 `overrides` 对象和完整 `BudgetLimits` JSON；均可省略。Recorded 模式提供这两个文件会被拒绝。
+
+`replay.logical_usage` 是保留的累计用量，`budget_baseline/new_usage` 展示来源基线与新分支消耗；`actual.model_calls/tool_calls` 从新 Job 的物理调用账本统计，排除恢复复用，未知结果另报 `unknown_outcomes`。调用意图已发出但结果未知仍计入实际尝试，不声称外部服务一定收到。`actual.wall_ms` 是新 Job 已启动后的墙钟时间；模型仍为离线 Mock，成本为零。源 Run 的审批不能授权新 Run 的相同参数。
+
+新 Run 首次保存 `live.initialized`，将干预后的状态、文件和新环境固定为检查点；其后可作为 Recorded 来源，预算基线一并验证。跨越来源旧环境与 Live 新环境的 Recorded 范围会因环境不兼容拒绝。专项证据见 [S5-live.md](acceptance/S5-live.md)。
 
 错误含 error.code、message、evidence_refs（无证据时为空）、correlation_id，另有 X-Correlation-ID，不反射输入/URL/堆栈/令牌。validation=422、权限=403、不可访问=404、冲突=409、输出上限=413、配置/设施不可用=503、未预期错误=500。响应不缓存；JSON 日志写 stderr，仅含关联编号、方法、路由模板、状态、整数耗时，不含正文/认证头/查询/幂等键。
 

@@ -30,7 +30,7 @@ from agentgit.core.management import (
     SubmitRun,
 )
 from agentgit.core.models import parse_contract
-from agentgit.core.versions import NewBranch, RecordedReplay
+from agentgit.core.versions import NewBranch, parse_replay
 from agentgit.services.management import ManagementService
 from agentgit.storage.database import probe_database
 
@@ -166,7 +166,7 @@ def create_app(
         key: IdempotencyKey,
         service: Annotated[ManagementService, Depends(get_manager)],
     ) -> dict[str, Any]:
-        return service.replay(repo, parse_contract(encode(body), RecordedReplay), key)
+        return service.replay(repo, parse_replay(encode(body)), key)
 
     @app.get("/replays/{job_id}")
     def replay_status(

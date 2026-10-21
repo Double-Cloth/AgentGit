@@ -20,7 +20,7 @@ from agentgit.core.execution import (
     ExecutionResult,
 )
 from agentgit.core.models import CommitManifest, EffectClass, RunStatus, parse_contract
-from agentgit.core.research import AgentConfig, AgentState, CallTrace
+from agentgit.core.research import AgentConfig, AgentState, BudgetUsage, CallTrace
 from agentgit.core.snapshots import EventManifest, EventPayload, StateSnapshot
 from agentgit.replay.recorded import RecordedAdapter
 from agentgit.replay.recovery import rebuild_discard
@@ -211,7 +211,12 @@ class RecordedReplayer:
         self.read = guarded_read
 
     def validate_environment(
-        self, bundle: "RecordedBundle", config: AgentConfig, corpus: Corpus
+        self,
+        bundle: "RecordedBundle",
+        config: AgentConfig,
+        corpus: Corpus,
+        *,
+        budget_baseline: BudgetUsage | None = None,
     ) -> None:
         if not bundle.checkpoints:
             raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "Recorded 没有起点检查点")
@@ -219,12 +224,19 @@ class RecordedReplayer:
             max_file_bytes=config.limits.max_artifact_bytes, max_files=config.limits.max_files
         )
         try:
-            self._compatible(bundle, config, corpus, ToolRegistry(corpus, workspace, config))
+            self._compatible(
+                bundle, config, corpus, ToolRegistry(corpus, workspace, config), budget_baseline
+            )
         except _ReplayAbort as failure:
             raise failure.error from None
 
     def _compatible(
-        self, bundle: "RecordedBundle", config: AgentConfig, corpus: Corpus, tools: ToolRegistry
+        self,
+        bundle: "RecordedBundle",
+        config: AgentConfig,
+        corpus: Corpus,
+        tools: ToolRegistry,
+        budget_baseline: BudgetUsage | None = None,
     ) -> str:
         environment = bundle.environment
         lock = Path(__file__).resolve().parents[3] / "uv.lock"
@@ -249,14 +261,15 @@ class RecordedReplayer:
                 ErrorCode.UNSUPPORTED_SCHEMA, "Recorded 环境与当前纯 Runtime 不兼容"
             )
         state = parse_contract(encode(bundle.checkpoints[0][1].data), AgentState)
-        frozen_input = encode(
-            {
-                "schema_version": 1,
-                "goal": state.goal.model_dump(mode="json"),
-                "config": config.model_dump(mode="json"),
-                "corpus_digest": corpus.digest(),
-            }
-        )
+        controlled_input = {
+            "schema_version": 1,
+            "goal": state.goal.model_dump(mode="json"),
+            "config": config.model_dump(mode="json"),
+            "corpus_digest": corpus.digest(),
+        }
+        if budget_baseline is not None:
+            controlled_input["budget_baseline"] = budget_baseline.model_dump(mode="json")
+        frozen_input = encode(controlled_input)
         if self.read(environment.input_ref, ObjectType.BLOB) != frozen_input:
             raise AgentGitError(
                 ErrorCode.REPLAY_MISMATCH, "Recorded 配置、目标或语料与冻结输入不符"
@@ -270,9 +283,10 @@ class RecordedReplayer:
         corpus: Corpus,
         *,
         on_checkpoint: Callable[[RebuiltCheckpoint], None] | None = None,
+        budget_baseline: BudgetUsage | None = None,
     ) -> ReplayResult:
         try:
-            return self._run(bundle, config, corpus, on_checkpoint)
+            return self._run(bundle, config, corpus, on_checkpoint, budget_baseline)
         except _ReplayAbort as failure:
             raise failure.error from None
         except AgentGitError as error:
@@ -288,6 +302,7 @@ class RecordedReplayer:
         config: AgentConfig,
         corpus: Corpus,
         on_checkpoint: Callable[[RebuiltCheckpoint], None] | None,
+        budget_baseline: BudgetUsage | None,
     ) -> ReplayResult:
         if (
             not bundle.checkpoints
@@ -298,7 +313,7 @@ class RecordedReplayer:
             max_file_bytes=config.limits.max_artifact_bytes, max_files=config.limits.max_files
         )
         tools = ToolRegistry(corpus, workspace, config)
-        signature = self._compatible(bundle, config, corpus, tools)
+        signature = self._compatible(bundle, config, corpus, tools, budget_baseline)
         initial = bundle.checkpoints[0][1]
         initial_manifest = parse_contract(
             self.read(bundle.checkpoints[0][0], ObjectType.COMMIT), CommitManifest
@@ -395,6 +410,7 @@ class RecordedReplayer:
             journal,
             clock_ms=logical_clock,
             control=journal.control,
+            budget_baseline=budget_baseline,
         )
         if len(bundle.checkpoints) > 1:
             with suppress(_ReachedUntil):

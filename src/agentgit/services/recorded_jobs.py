@@ -119,7 +119,7 @@ class RecordedJobRunner:
         job = self.queue.get(self.lease.repository_id, self.lease.job_id)
         payload = self.queue.payload(job)
         spec = payload.replay
-        if spec is None or payload.code_revision != source_revision():
+        if spec is None or spec.mode != "recorded" or payload.code_revision != source_revision():
             raise AgentGitError(
                 ErrorCode.UNSUPPORTED_SCHEMA, "Recorded Job 固定代码与当前 Worker 不符"
             )
@@ -264,7 +264,7 @@ class RecordedJobRunner:
             save(rebuilt.snapshot, rebuilt.source_commit, rebuilt.event_type, rebuilt.details)
 
         RecordedReplayer(self.history.objects.get).run(
-            bundle, config, corpus, on_checkpoint=checkpoint
+            bundle, config, corpus, on_checkpoint=checkpoint, budget_baseline=spec.budget_baseline
         )
         if cursor != len(bundle.checkpoints):
             raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "Recorded 没有保存全部检查点证明")

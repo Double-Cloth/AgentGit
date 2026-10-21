@@ -23,7 +23,7 @@ from agentgit.core.management import (
 )
 from agentgit.core.models import parse_contract
 from agentgit.core.research import AgentState, BudgetUsage
-from agentgit.core.versions import NewBranch, RecordedReplay
+from agentgit.core.versions import LiveReplay, NewBranch, RecordedReplay
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.jobs import JobService
@@ -55,7 +55,9 @@ class ManagementService:
         self.versions = VersionService(self.history)
         self.replays = ReplayService(research)
 
-    def replay(self, repository_id: UUID, payload: RecordedReplay, key: str) -> dict[str, Any]:
+    def replay(
+        self, repository_id: UUID, payload: RecordedReplay | LiveReplay, key: str
+    ) -> dict[str, Any]:
         return self._mutate(
             "POST /replays",
             key,
@@ -348,6 +350,24 @@ class ManagementService:
             usage = parse_contract(encode(restored.data), AgentState).usage
         limits = self.jobs.payload(job).limits if job is not None else None
         limits = limits or config.limits
+        baseline = BudgetUsage()
+        if job is not None:
+            spec = self.jobs.payload(job).replay
+            if spec is not None and spec.mode == "live":
+                baseline = spec.budget_baseline
+                if snapshot is None:
+                    usage = baseline
+        spent = {
+            name: max(0, getattr(usage, name) - getattr(baseline, name))
+            for name in (
+                "steps",
+                "model_calls",
+                "tool_calls",
+                "tokens",
+                "replans",
+                "cost_micro_units",
+            )
+        }
         wall = (
             limits.max_wall_ms
             if job is None or job["deadline_at"] is None
@@ -356,11 +376,16 @@ class ManagementService:
         result["budget"] = {
             "limits": limits.model_dump(mode="json"),
             "usage": usage.model_dump(mode="json"),
+            **(
+                {"baseline": baseline.model_dump(mode="json"), "new_usage": spent}
+                if baseline != BudgetUsage()
+                else {}
+            ),
             "remaining": {
-                "steps": max(0, limits.max_steps - usage.steps),
-                "model_calls": max(0, limits.max_model_calls - usage.model_calls),
-                "tool_calls": max(0, limits.max_tool_calls - usage.tool_calls),
-                "tokens": max(0, limits.max_tokens - usage.tokens - usage.reserved_tokens),
+                "steps": max(0, limits.max_steps - spent["steps"]),
+                "model_calls": max(0, limits.max_model_calls - spent["model_calls"]),
+                "tool_calls": max(0, limits.max_tool_calls - spent["tool_calls"]),
+                "tokens": max(0, limits.max_tokens - spent["tokens"] - usage.reserved_tokens),
                 "wall_ms": wall,
             },
         }

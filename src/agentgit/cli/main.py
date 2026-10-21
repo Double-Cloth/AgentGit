@@ -18,7 +18,7 @@ from typer.core import TyperGroup
 from agentgit import __version__
 from agentgit.adapters.execution.policy import bundled_policy
 from agentgit.config import Settings
-from agentgit.core.canonical import encode
+from agentgit.core.canonical import decode, encode
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.management import (
     ControlRun,
@@ -30,7 +30,7 @@ from agentgit.core.management import (
 )
 from agentgit.core.models import parse_contract
 from agentgit.core.research import AgentConfig, BudgetLimits, ResearchGoal
-from agentgit.core.versions import NewBranch, RecordedReplay
+from agentgit.core.versions import NewBranch, parse_replay
 from agentgit.diagnostics import sandbox_prerequisites
 from agentgit.services.management import ManagementService
 from agentgit.storage.database import probe_database
@@ -184,28 +184,36 @@ def replay(
     repository_id: UUID,
     source_run: Annotated[UUID, typer.Option()],
     from_commit: Annotated[str, typer.Option()],
-    until_commit: Annotated[str, typer.Option()],
     branch_name: Annotated[str, typer.Option()],
     key: Annotated[str, typer.Option()],
+    until_commit: str | None = None,
     mode: str = "recorded",
+    overrides_file: Path | None = None,
+    budget_file: Path | None = None,
     testing: bool = False,
 ) -> None:
-    """提交带来源范围的新 Recorded Job，执行由独立 Worker 负责。"""
+    """提交独立 Replay Job；Live 干预和预算使用严格 JSON 文件。"""
     with management(testing) as service:
-        payload = parse_contract(
-            encode(
-                {
-                    "schema_version": 1,
-                    "mode": mode,
-                    "source_run_id": str(source_run),
-                    "from_commit": from_commit,
-                    "until_commit": until_commit,
-                    "branch_name": branch_name,
-                    "expected_version": 0,
-                }
-            ),
-            RecordedReplay,
-        )
+        value: dict[str, Any] = {
+            "schema_version": 1,
+            "mode": mode,
+            "source_run_id": str(source_run),
+            "from_commit": from_commit,
+            "branch_name": branch_name,
+            "expected_version": 0,
+        }
+        if until_commit is not None:
+            value["until_commit"] = until_commit
+        if mode != "live" and (overrides_file is not None or budget_file is not None):
+            raise AgentGitError(ErrorCode.VALIDATION, "只有 Live 可以提供干预或新预算文件")
+        for field, path in (("overrides", overrides_file), ("budget", budget_file)):
+            if path is not None:
+                with path.open("rb") as stream:
+                    raw = stream.read(1_048_577)
+                if len(raw) > 1_048_576:
+                    raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "Replay 输入文件超过上限")
+                value[field] = decode(raw)
+        payload = parse_replay(encode(value))
         emit(service.replay(repository_id, payload, key))
 
 
