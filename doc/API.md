@@ -1,6 +1,6 @@
 # 本地服务与 CLI（S4/S5）
 
-当前支持本机操作者、固定离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，以 AGENTGIT_* 进程环境为准。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0011_replay_jobs`。
+当前支持本机操作者、固定离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，以 AGENTGIT_* 进程环境为准。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0012_replay_source_index`。
 
 ## CLI 离线流程
 
@@ -125,7 +125,7 @@ HTTP 创建体示例（示例占位符须替换）：
 
 ### Recorded 耐久任务
 
-Replay 自行创建新分支，不必预先执行 `branch`；同名分支冲突，不覆盖旧分支。通过 Fork 创建的历史分支不能用普通 `run` 隐式选择执行模式，应使用 Replay。入口接受 Recorded 和 Live；复合 Recorded 来源仍在实施。
+Replay 自行创建新分支，不必预先执行 `branch`；同名分支冲突，不覆盖旧分支。通过 Fork 创建的历史分支不能用普通 `run` 隐式选择执行模式，应使用 Replay。入口接受 Recorded 和 Live，也允许已有 Recorded Run 作为再次 Recorded 的来源。
 
 ```powershell
 $replay = uv run --locked agentgit replay $repo.repository_id --source-run $job.run_id --from-commit $fromCommit --until-commit $untilCommit --branch-name recorded-a --key replay-001 | ConvertFrom-Json
@@ -144,6 +144,14 @@ Recorded 不接受 `overrides/config/budget/prompt/model` 等干预字段。提�
 `status --job`、`GET /jobs/{id}` 和 `GET /replays/{id}` 的 `replay` 字段区分三类事实：`status=completed` 是新 Job 已结束；`replay.verified=true` 是选定历史范围重算验证通过；`logical_status/logical_usage` 是原历史逻辑状态与用量。选择非终态终点也可完成 Recorded，不能因此认定原任务成功或修复有效。`actual.model_calls/tool_calls/cost_micro_units` 为零；`actual.elapsed_ms` 仅累计已结束尝试的实测耗时，`unmeasured_attempts` 明确标记崩溃等未完成计量的尝试，不把未知耗时记为零。
 
 实际重放暂停/恢复沿用 Run，取消/到期只结束新任务，不改历史逻辑状态；持久截止时间不因重启重置。崩溃接管创建新的 Recorded Run，重算并核验已保存前缀，继续保存剩余证明。原幂等响应保持最初 Job/Run ID，最新 Run 通过 Job 状态查询。版本/录制和耐久任务证据见 [S5-progress.md](acceptance/S5-progress.md)、[S5-recorded-jobs.md](acceptance/S5-recorded-jobs.md)。S5 尚未完成验收。
+
+### 从 Recorded 再次回放
+
+使用相同 `mode=recorded` 请求，把 `source_run_id` 指向已有 Recorded Run，起止点选择该 Run 的 base 或自身保存的连续检查点。恢复 Run 可从自身 base 继续选择范围；不接受任意祖先、其他 Run 的检查点或跳过的证明。
+
+服务逐层核验冻结 Job、不可变请求、证明顺序/归属、父关系、状态/环境及事件索引，再追溯原始录制驱动纯 Runtime。新的证明仍逐项对应用户选择的直接来源 Commit。来源中的 `replay.restored` 是零调用恢复边界，保留为独立检查点；后续状态必须实际重算，不能用旧证明快照代替。
+
+链中原始响应、执行日志或文件缺失仍失败，不因已有成功证明而跳过验证。全链共享 64 MiB 读取预算，最多 32 层解析，超限为 `output_limit`；不自动裁剪链或回退 Live。实际调用计量仍为零，暂停/恢复、取消、持久期限和崩溃接管保持原语义。详情与范围证据见 [S5-compound.md](acceptance/S5-compound.md)。
 
 ### Live 独立重执行
 

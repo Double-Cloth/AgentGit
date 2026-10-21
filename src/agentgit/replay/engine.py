@@ -303,12 +303,17 @@ class RecordedReplayer:
         corpus: Corpus,
         on_checkpoint: Callable[[RebuiltCheckpoint], None] | None,
         budget_baseline: BudgetUsage | None,
+        depth: int = 0,
     ) -> ReplayResult:
         if (
             not bundle.checkpoints
             or tuple(item[0] for item in bundle.checkpoints) != bundle.selection.commits
         ):
             raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "Recorded 检查点与选定来源范围不符")
+        if depth >= 32:
+            raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "Recorded 重算证明链超过 32 层")
+        if bundle.projection is not None:
+            return self._project(bundle, config, corpus, on_checkpoint, budget_baseline, depth)
         workspace = MemoryWorkspace(
             max_file_bytes=config.limits.max_artifact_bytes, max_files=config.limits.max_files
         )
@@ -449,4 +454,81 @@ class RecordedReplayer:
             tuple(journal.rebuilt),
             parse_contract(encode(final.data), AgentState),
             adapter.position,
+        )
+
+    def _project(
+        self,
+        bundle: "RecordedBundle",
+        config: AgentConfig,
+        corpus: Corpus,
+        on_checkpoint: Callable[[RebuiltCheckpoint], None] | None,
+        budget_baseline: BudgetUsage | None,
+        depth: int,
+    ) -> ReplayResult:
+        projection = bundle.projection
+        assert projection is not None
+        origin = projection.origin
+        self.validate_environment(bundle, config, corpus, budget_baseline=budget_baseline)
+        compressed = tuple(
+            commit
+            for index, commit in enumerate(projection.commits)
+            if index == 0 or commit != projection.commits[index - 1]
+        )
+        if (
+            origin.environment != bundle.environment
+            or len(projection.commits) != len(bundle.checkpoints)
+            or len(projection.events) != len(bundle.checkpoints)
+            or compressed != origin.selection.commits
+        ):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "Recorded 证明投影没有完整覆盖原路径")
+        cursor = 0
+        rebuilt: list[RebuiltCheckpoint] = []
+
+        def verify(snapshot: StateSnapshot, event_type: str, details: dict[str, Any]) -> None:
+            nonlocal cursor
+            commit, expected = bundle.checkpoints[cursor]
+            reference = object_digest(ObjectType.STATE, encode(snapshot.model_dump(mode="json")))
+            expected_ref = object_digest(ObjectType.STATE, encode(expected.model_dump(mode="json")))
+            manifest = parse_contract(self.read(commit, ObjectType.COMMIT), CommitManifest)
+            logical = projection.events[cursor]
+            if (
+                reference != expected_ref
+                or reference != manifest.state_ref
+                or (
+                    cursor > 0
+                    and (
+                        logical is None
+                        or logical[0] != event_type
+                        or encode(logical[1]) != encode(details)
+                    )
+                )
+            ):
+                raise AgentGitError(
+                    ErrorCode.REPLAY_MISMATCH, "原 Runtime 重算与复合检查点证明不符"
+                )
+            if cursor:
+                item = RebuiltCheckpoint(commit, reference, snapshot, event_type, details)
+                if on_checkpoint is not None:
+                    on_checkpoint(item)
+                rebuilt.append(item)
+            cursor += 1
+
+        initial = origin.checkpoints[0][1]
+        verify(initial, "replay.restored", {})
+        while cursor < len(bundle.checkpoints) and projection.commits[cursor] == compressed[0]:
+            verify(initial, "replay.restored", {})
+
+        def checkpoint(item: RebuiltCheckpoint) -> None:
+            if (
+                cursor >= len(bundle.checkpoints)
+                or projection.commits[cursor] != item.source_commit
+            ):
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "原重算检查点未匹配复合来源路径")
+            verify(item.snapshot, item.event_type, item.details)
+
+        result = self._run(origin, config, corpus, checkpoint, budget_baseline, depth + 1)
+        if cursor != len(bundle.checkpoints):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "复合 Recorded 没有重算全部检查点")
+        return ReplayResult(
+            bundle.checkpoints[0][0], tuple(rebuilt), result.state, result.consumed_calls
         )

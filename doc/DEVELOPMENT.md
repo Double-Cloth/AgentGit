@@ -69,7 +69,7 @@ CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障�
 
 ## S3 离线研究演示
 
-S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 head 已推进至 `0011_replay_jobs`。先升级开发库，再运行：
+S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 head 已推进至 `0012_replay_source_index`。先升级开发库，再运行：
 
 ```powershell
 uv run --locked alembic upgrade head
@@ -124,7 +124,11 @@ Live Job 已接入相同管理服务和 Worker：`prepare_live` 在内存中验�
 
 CLI 的两个 Live 输入文件分别有 1 MiB 读取上限；来源文件逐项读取，累计超过 64 MiB 立即停止，纯产物工作区不套用容器的 32 MiB 清单上限。`storage/roles.py` 将超长路径的引用角色映射为有界摘要键，短角色保持原值；完整路径仍在状态/产物表，现有 100 字符引用列及历史迁移不变。该辅助函数属于宿主存储层，镜像内路径校验源码保持冻结。
 
-完整 S5 仍在实施：复合 Recorded 来源，以及未知结果经可信核对后的其他来源路径尚待接通和验收。`MemoryWorkspace` 对工作区总字节施加 64 MiB 上限，超限必须缩小范围或明确失败，不物化宿主文件作为回退。耐久批次证据见 [S5-recorded-jobs.md](acceptance/S5-recorded-jobs.md)。
+复合 Recorded 由 `ProjectionReader` 验证直接来源的证明和自身 Job 恢复链，递归读取底层录制；`RecordedProjection` 只提供来源映射和待验证事件，`RecordedReplayer` 仍调用原 Runtime 重算底层状态，再逐层比较状态/产物摘要和逻辑事件。重复恢复点按零调用恢复处理，不重复消耗录制；不得把旧证明当成新运行成功结果。
+
+递归读取共享全链累计 64 MiB 预算，并限制 32 层；纯重算入口也有独立深度保护。`0012_replay_source_index` 增加 jobs(repository_id, origin_run_id) 索引，供恢复来源和复合读取定位冻结 Job；历史迁移快照不变，正式库保持只前进，隔离测试库允许往返。证据见 [S5-compound.md](acceptance/S5-compound.md)。
+
+完整 S5 仍在实施：未知结果经可信核对后的其他来源路径尚待接通和验收。`MemoryWorkspace` 对工作区总字节施加 64 MiB 上限，超限必须缩小范围或明确失败，不物化宿主文件作为回退。耐久批次证据见 [S5-recorded-jobs.md](acceptance/S5-recorded-jobs.md)。
 
 调度进程故障用例启动仓库内受信任的 Worker 测试助手，并使用独立测试 Schema/临时 CAS；用户 Shell/Python 始终在容器中执行。实际容器基础设施与持久执行服务使用单独套件验证，准备方式与边界见 [sandbox/README.md](../sandbox/README.md)；完整五工具接入及本机验收见 [S4.md](acceptance/S4.md)。早期进展保留在 [S4-progress.md](acceptance/S4-progress.md) 与 [容器边界](acceptance/S4-sandbox-boundary.md)。
 

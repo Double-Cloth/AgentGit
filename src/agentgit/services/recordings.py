@@ -1,5 +1,6 @@
 """只从已授权来源路径读取录制；不构造任何真实 Adapter 或执行服务。"""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -37,12 +38,20 @@ MAX_RECORDED_EVENTS = 50000
 
 
 @dataclass(frozen=True)
+class RecordedProjection:
+    origin: "RecordedBundle"
+    commits: tuple[str, ...]
+    events: tuple[tuple[str, dict[str, Any]] | None, ...]
+
+
+@dataclass(frozen=True)
 class RecordedBundle:
     selection: HistorySelection
     environment: EnvironmentManifest
     checkpoints: tuple[tuple[str, StateSnapshot], ...]
     recordings: tuple[Recording, ...]
     discards: tuple[RecordedDiscard, ...] = ()
+    projection: RecordedProjection | None = None
 
 
 class RecordingReader:
@@ -413,26 +422,6 @@ class RecordingReader:
         # 来源 Run 与路径归属在缺对象映射之前验证，跨项目仍统一 not_found。
         with self.history.engine.connect() as connection:
             self.history._run(connection, repository, UUID(request.source_run_id))
-        try:
-            selection = self.versions.select_range(repository, request)
-            return self._load(repository, selection, expected_environment)
-        except AgentGitError as error:
-            if error.code == ErrorCode.NOT_FOUND:
-                raise AgentGitError(
-                    ErrorCode.RECORDING_MISSING, "选定范围缺少录制或产物对象"
-                ) from None
-            raise
-
-    def _load(
-        self,
-        repository: UUID,
-        selection: HistorySelection,
-        environment: EnvironmentManifest,
-    ) -> RecordedBundle:
-        checkpoints: list[tuple[str, StateSnapshot]] = []
-        expected_events: list[LogicalEvent] = []
-        checkpoint_for_event: dict[int, str] = {}
-        boundary_commits: dict[int, str] = {}
         size = 0
 
         def account(payload: bytes) -> bytes:
@@ -444,6 +433,50 @@ class RecordingReader:
                 )
             return payload
 
+        try:
+            return self._read(repository, request, expected_environment, (), account)
+        except AgentGitError as error:
+            if error.code == ErrorCode.NOT_FOUND:
+                raise AgentGitError(
+                    ErrorCode.RECORDING_MISSING, "选定范围缺少录制或产物对象"
+                ) from None
+            raise
+
+    def _read(
+        self,
+        repository: UUID,
+        request: RecordedRange,
+        environment: EnvironmentManifest,
+        seen: tuple[UUID, ...],
+        account: Callable[[bytes], bytes],
+    ) -> RecordedBundle:
+        source = UUID(request.source_run_id)
+        if source in seen:
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "Recorded 来源证明链包含循环")
+        if len(seen) >= 32:
+            raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "Recorded 来源证明链超过 32 层")
+        selection = self.versions.select_range(repository, request)
+        with self.history.engine.connect() as connection:
+            run = self.history._run(connection, repository, source)
+        if run["mode"] == "recorded":
+            from agentgit.services.replay_projections import ProjectionReader
+
+            return ProjectionReader(self).load(
+                repository, selection, environment, (*seen, source), account
+            )
+        return self._load(repository, selection, environment, account)
+
+    def _load(
+        self,
+        repository: UUID,
+        selection: HistorySelection,
+        environment: EnvironmentManifest,
+        account: Callable[[bytes], bytes],
+    ) -> RecordedBundle:
+        checkpoints: list[tuple[str, StateSnapshot]] = []
+        expected_events: list[LogicalEvent] = []
+        checkpoint_for_event: dict[int, str] = {}
+        boundary_commits: dict[int, str] = {}
         for index, commit_id in enumerate(selection.commits):
             view = self.versions.checkout(repository, commit_id)
             account(encode(view))

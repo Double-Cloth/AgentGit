@@ -82,8 +82,6 @@ class ReplayService:
             source = dict(self.history._run(reading, repository, source_id))
             if source["agent_config_id"] is None or source["task_id"] is None:
                 raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "来源不是受支持的研究 Runtime")
-            if source["mode"] == "recorded":
-                raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "复合 Recorded 来源尚未接通")
             config_version = reading.execute(
                 sa.select(TABLES["agent_configs"].c.version).where(
                     TABLES["agent_configs"].c.repository_id == repository,
