@@ -44,6 +44,18 @@ class ModelAdapter(Protocol):
 
 
 class CallGateway(Protocol):
+    def recorded(
+        self,
+        *,
+        step: str,
+        attempt: int,
+        provider: str,
+        signature: str,
+        effect: EffectClass,
+        request: bytes,
+        max_bytes: int,
+    ) -> CallOutcome | None: ...
+
     def call(
         self,
         *,

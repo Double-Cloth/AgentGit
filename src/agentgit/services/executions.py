@@ -3,6 +3,7 @@
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from time import monotonic
 from typing import Any, cast
 from uuid import UUID
@@ -24,9 +25,10 @@ from agentgit.core.execution import (
     ExecutionPolicy,
     ExecutionResult,
     TerminalArguments,
+    execution_signature,
 )
 from agentgit.core.jobs import Lease
-from agentgit.core.models import EffectClass, parse_contract
+from agentgit.core.models import parse_contract
 from agentgit.core.snapshots import EventPayload
 from agentgit.services.history import TABLES, EventInput, HistoryService
 from agentgit.services.jobs import JobService
@@ -43,6 +45,7 @@ class _Plan:
     stdin: bytes
     references: frozenset[str]
     policy_object: StoredObject
+    media_types: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -182,21 +185,7 @@ class ExecutionService:
     def signature(self, provider: str) -> str:
         if provider not in SANDBOX_PROVIDERS:
             raise AgentGitError(ErrorCode.FORBIDDEN, "执行服务未登记该工具")
-        arguments = TerminalArguments if provider == "tool:terminal_exec/v1" else CodeArguments
-        return object_digest(
-            ObjectType.CALL,
-            encode(
-                {
-                    "schema_version": 1,
-                    "provider": provider,
-                    "version": "v1",
-                    "effect": EffectClass.NON_IDEMPOTENT_WRITE.value,
-                    "scope": "sandbox",
-                    "policy_ref": self.policy.digest(),
-                    "arguments": arguments.model_json_schema(),
-                }
-            ),
-        )
+        return execution_signature(provider, self.policy)
 
     def authorize_inputs(
         self,
@@ -206,6 +195,7 @@ class ExecutionService:
         files: dict[str, bytes],
         *,
         blobs: tuple[bytes, ...] = (),
+        media_types: dict[str, str] | None = None,
     ) -> tuple[str, tuple[str, ...]]:
         """仅供后端从当前工作区/已授权任务输入建立清单，不接受外部 CAS 猜测引用。"""
         validate_files(files)
@@ -220,7 +210,7 @@ class ExecutionService:
                 ExecutionFile(
                     path=path,
                     object_ref=item.id,
-                    media_type=item.media_type,
+                    media_type=(media_types or {}).get(path, item.media_type),
                     byte_length=len(payload),
                 )
             )
@@ -313,8 +303,26 @@ class ExecutionService:
         )
         # 同一 Job 串行执行，只保留当前调用，避免按调用数累积完整输入字节。
         self._plans = {
-            context.call_id: _Plan(request, files, command, stdin, frozenset(references), policy)
+            context.call_id: _Plan(
+                request,
+                files,
+                command,
+                stdin,
+                frozenset(references),
+                policy,
+                {item.path: item.media_type for item in manifest.files},
+            )
         }
+
+    @staticmethod
+    def _media_type(path: str) -> str:
+        return {
+            ".md": "text/markdown",
+            ".json": "application/json",
+            ".py": "text/x-python",
+            ".sh": "text/x-shellscript",
+            ".txt": "text/plain",
+        }.get(PurePosixPath(path).suffix.lower(), "application/octet-stream")
 
     @staticmethod
     def _text(payload: bytes) -> str:
@@ -603,7 +611,7 @@ class ExecutionService:
                         path=path,
                         object_ref=item.id,
                         byte_length=len(content),
-                        media_type=item.media_type,
+                        media_type=plan.media_types.get(path, self._media_type(path)),
                     )
                 )
             manifest = self.history.objects.put_json(

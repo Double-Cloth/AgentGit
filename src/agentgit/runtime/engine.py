@@ -76,6 +76,20 @@ class ResearchRuntime:
                 self._failure(exc)
             if self.state.status not in (RunStatus.PLANNING, RunStatus.RUNNING):
                 return self.state
+        if self.state.status in (RunStatus.PLANNING, RunStatus.RUNNING):
+            try:
+                self._consume_recorded()
+            except AgentGitError as exc:
+                if exc.code in (
+                    ErrorCode.VERSION_CONFLICT,
+                    ErrorCode.OBJECT_CORRUPT,
+                    ErrorCode.REPLAY_MISMATCH,
+                ):
+                    raise
+                if not self._control_point(frozenset({"cancel", "budget_exhausted"})):
+                    self._failure(exc)
+            if self.state.status not in (RunStatus.PLANNING, RunStatus.RUNNING):
+                return self.state
         if self._control_point():
             return self.state
         if self.state.status == RunStatus.QUEUED:
@@ -109,8 +123,10 @@ class ResearchRuntime:
                 self._failure(exc)
         return self.state
 
-    def _control_point(self) -> bool:
+    def _control_point(self, only: frozenset[str] | None = None) -> bool:
         action = self.control() if self.control is not None else None
+        if only is not None and action not in only:
+            return False
         if action == "pause":
             resume: RunStatus = (
                 RunStatus.PLANNING if self.state.status == RunStatus.QUEUED else self.state.status
@@ -142,16 +158,71 @@ class ResearchRuntime:
             return True
         return False
 
-    def _model(self) -> None:
-        state, limits = self.state, self.config.limits
-        request = encode(
+    def _model_request(self) -> bytes:
+        return encode(
             ModelRequest(
                 prompt=self.config.prompt,
-                phase="plan" if state.status == RunStatus.PLANNING else "act",
-                state=state,
+                phase="plan" if self.state.status == RunStatus.PLANNING else "act",
+                state=self.state,
                 evaluation_time=self.tools.corpus.evaluation_time,
+                available_tools=self.config.tools,
+                execution_context=self.tools.context(),
             ).model_dump(mode="json")
         )
+
+    def _consume_recorded(self) -> None:
+        while self.state.status in (RunStatus.PLANNING, RunStatus.RUNNING):
+            decision = self.state.pending_tool
+            if decision is not None:
+                self._validate_tool_step(decision)
+                attempt = self.state.attempts.get(decision.node_key, 0) + 1
+                outcome = self.gateway.recorded(
+                    step=decision.node_key,
+                    attempt=attempt,
+                    provider=f"tool:{decision.tool}/v1",
+                    signature=self.tools.signature(decision.tool),
+                    effect=self.tools.effect(decision.tool),
+                    request=encode(decision.arguments),
+                    max_bytes=self.config.limits.max_response_bytes,
+                )
+                if outcome is None:
+                    return
+                self.state = evolve(
+                    self.state,
+                    usage=evolve(self.state.usage, tool_calls=self.state.usage.tool_calls + 1),
+                    attempts={**self.state.attempts, decision.node_key: attempt},
+                )
+                if outcome.error is None:
+                    self.tools.prepare(decision.tool, decision.arguments)
+                self._observe_tool(decision, attempt, outcome, settling=True)
+            else:
+                request = self._model_request()
+                outcome = self.gateway.recorded(
+                    step=f"model-{self.state.usage.steps + 1}",
+                    attempt=1,
+                    provider="llm:mock-research/v1",
+                    signature=self.model.signature,
+                    effect=EffectClass.READ_ONLY,
+                    request=request,
+                    max_bytes=self.config.limits.max_response_bytes,
+                )
+                if outcome is None:
+                    return
+                usage = self.state.usage
+                self.state = evolve(
+                    self.state,
+                    usage=evolve(
+                        usage,
+                        steps=usage.steps + 1,
+                        model_calls=usage.model_calls + 1,
+                        reserved_tokens=len(request) + self.config.limits.max_response_bytes,
+                    ),
+                )
+                self._observe_model(outcome, len(request), settling=True)
+
+    def _model(self) -> None:
+        state, limits = self.state, self.config.limits
+        request = self._model_request()
         if len(request) > limits.max_context_bytes:
             raise AgentGitError(ErrorCode.CONTEXT_LIMIT, "上下文超过上限，未进行有损摘要")
         reserve = len(request) + limits.max_response_bytes
@@ -200,7 +271,8 @@ class ResearchRuntime:
         )
         if outcome.error:
             raise outcome.error
-        self._wall()
+        if not settling:
+            self._wall()
         if not outcome.payload:
             raise AgentGitError(ErrorCode.MODEL_EMPTY, "模型返回空响应")
         try:
@@ -230,8 +302,7 @@ class ResearchRuntime:
         elif isinstance(decision, ToolDecision):
             self._decision(decision)
         elif isinstance(decision, FinalDecision):
-            if settling and self.control is not None and self.control() == "cancel":
-                self._control_point()
+            if settling and self._control_point(frozenset({"cancel", "budget_exhausted"})):
                 return
             if self.state.plan is None or len(self.state.completed) != len(self.state.plan.nodes):
                 raise AgentGitError(ErrorCode.PLAN_INVALID, "尚未完成计划不能结束任务")
@@ -268,12 +339,17 @@ class ResearchRuntime:
             "read": "source_read",
             "write_report": "artifact_write",
             "write_sources": "artifact_write",
+            "write_execution_code": "artifact_write",
+            "write_execution_command": "artifact_write",
+            "code_exec": "code_exec",
+            "terminal_exec": "terminal_exec",
         }
         if decision.tool != expected[ready[decision.node_key].kind]:
             raise AgentGitError(ErrorCode.PLAN_INVALID, "工具与计划节点类型不一致")
 
     def _tool(self, decision: ToolDecision) -> None:
         self._validate_tool_step(decision)
+        self.tools.prepare(decision.tool, decision.arguments)
         usage = self.state.usage
         if usage.tool_calls >= self.config.limits.max_tool_calls:
             raise AgentGitError(ErrorCode.BUDGET_EXHAUSTED, "工具调用预算已耗尽")
@@ -295,11 +371,19 @@ class ResearchRuntime:
         )
         self._observe_tool(decision, attempt, outcome)
 
-    def _observe_tool(self, decision: ToolDecision, attempt: int, outcome: CallOutcome) -> None:
+    def _observe_tool(
+        self, decision: ToolDecision, attempt: int, outcome: CallOutcome, *, settling: bool = False
+    ) -> None:
         self.state = evolve(self.state, messages=(*self.state.messages, outcome.trace))
         if outcome.error:
+            if outcome.error.code in {
+                ErrorCode.EXECUTION_CANCELLED,
+                ErrorCode.EXECUTION_TIMEOUT,
+            } and self._control_point(frozenset({"cancel", "budget_exhausted"})):
+                return
             raise outcome.error
-        self._wall()
+        if not settling:
+            self._wall()
         if not outcome.payload:
             raise AgentGitError(ErrorCode.TOOL_EMPTY, "工具返回空响应")
         result = decode(outcome.payload)
@@ -337,6 +421,10 @@ class ResearchRuntime:
                 ),
             }
             self.state = evolve(self.state, working_memory=memory)
+        elif decision.tool in {"code_exec", "terminal_exec"}:
+            self.tools.observe_execution(
+                decision.tool, decision.arguments, outcome.payload, outcome.trace
+            )
         else:
             if set(result) != {"schema_version", "path", "content_ref"} or result[
                 "path"
@@ -424,7 +512,7 @@ class ResearchRuntime:
         else:
             assert decision is not None
             self._validate_tool_step(decision)
-            self._observe_tool(decision, trace.attempt, settlement.outcome)
+            self._observe_tool(decision, trace.attempt, settlement.outcome, settling=True)
 
     def _failure(self, error: AgentGitError) -> None:
         retryable = {

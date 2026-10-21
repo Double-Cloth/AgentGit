@@ -12,6 +12,16 @@ from agentgit.core.snapshots import ArtifactEntry
 SANDBOX_PROVIDERS = frozenset({"tool:terminal_exec/v1", "tool:code_exec/v1"})
 
 
+class PreparedImage(Contract):
+    platform: Literal["linux/amd64"]
+    image_id: Annotated[str, Field(pattern=r"^sha256:[a-f0-9]{64}$")]
+    base_digest: str
+    debian_snapshot: str
+    python: Literal["3.12.14"]
+    packages_sha256: Digest
+    source_sha256: dict[str, Digest]
+
+
 class ExecutionPolicy(Contract):
     version: Literal["sandbox-v1"] = "sandbox-v1"
     image_id: Annotated[str, Field(pattern=r"^sha256:[a-f0-9]{64}$")]
@@ -55,6 +65,12 @@ class ExecutionManifest(Contract):
         return self
 
 
+class ExecutionContext(Contract):
+    input_manifest_ref: Digest
+    execution_policy_ref: Digest
+    files: tuple[ExecutionFile, ...]
+
+
 class ExecutionArguments(Contract):
     cwd: Annotated[str, Field(min_length=1, max_length=240)] = "."
     stdin_ref: Digest | None = None
@@ -89,6 +105,26 @@ class CodeArguments(ExecutionArguments):
         if any("\0" in item for item in self.argv) or sum(map(len, self.argv)) > 16384:
             raise ValueError("argv 含 NUL 或超过总长度限制")
         return self
+
+
+def execution_signature(provider: str, policy: ExecutionPolicy) -> str:
+    if provider not in SANDBOX_PROVIDERS:
+        raise ValueError("执行签名只适用于已登记的容器工具")
+    arguments = TerminalArguments if provider == "tool:terminal_exec/v1" else CodeArguments
+    return object_digest(
+        ObjectType.CALL,
+        encode(
+            {
+                "schema_version": 1,
+                "provider": provider,
+                "version": "v1",
+                "effect": "NON_IDEMPOTENT_WRITE",
+                "scope": "sandbox",
+                "policy_ref": policy.digest(),
+                "arguments": arguments.model_json_schema(),
+            }
+        ),
+    )
 
 
 ExecutionFailure = Literal[

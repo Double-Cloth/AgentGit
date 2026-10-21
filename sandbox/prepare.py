@@ -91,8 +91,16 @@ def main() -> None:
             json.dumps(lock, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n"
         )
         temporary.replace(path)
+        catalog = ROOT / "src/agentgit/adapters/execution/image.lock.json"
+        staged = catalog.with_suffix(".json.tmp")
+        staged.write_bytes(path.read_bytes())
+        staged.replace(catalog)
     elif digest != existing["packages_sha256"]:
         raise RuntimeError("镜像依赖清单摘要不匹配")
+    elif (
+        ROOT / "src/agentgit/adapters/execution/image.lock.json"
+    ).read_bytes() != path.read_bytes():
+        raise RuntimeError("包内执行策略与准备目录不一致，须显式重新记录")
     print(json.dumps({"verified": True, "image_id": image_id, "packages_sha256": digest}))
 
 

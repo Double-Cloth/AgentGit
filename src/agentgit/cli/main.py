@@ -16,6 +16,7 @@ from typer._click.exceptions import ClickException
 from typer.core import TyperGroup
 
 from agentgit import __version__
+from agentgit.adapters.execution.policy import bundled_policy
 from agentgit.config import Settings
 from agentgit.core.canonical import encode
 from agentgit.core.errors import AgentGitError, ErrorCode
@@ -125,11 +126,19 @@ def configure(
     expected_version: int = typer.Option(..., min=0),
     key: str = typer.Option(...),
     file: Path | None = None,
+    with_execution: bool = False,
     testing: bool = False,
 ) -> None:
     """创建不可变配置版本，可从严格 JSON 文件读取。"""
     with management(testing) as service:
+        if with_execution and file is not None:
+            raise AgentGitError(ErrorCode.VALIDATION, "--with-execution 与 --file 不能同时使用")
         config = AgentConfig()
+        if with_execution:
+            config = AgentConfig(
+                tools=(*config.tools, "code_exec", "terminal_exec"),
+                execution_policy=bundled_policy(),
+            )
         if file is not None:
             with file.open("rb") as stream:
                 raw = stream.read(1_048_577)

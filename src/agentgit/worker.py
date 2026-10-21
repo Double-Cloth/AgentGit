@@ -251,6 +251,12 @@ class Worker:
             run["checkpoint_commit_id"],
             branch["version"],
         )
+        if config.execution_policy is not None:
+            session.bind_execution(
+                ExecutionService(
+                    history, self.queue, lease, config.execution_policy, fault=self.fault
+                )
+            )
         session.expected_environment, session.expected_code_revision = (
             environment,
             payload.code_revision,

@@ -76,7 +76,7 @@ uv run --locked alembic upgrade head
 uv run --locked python examples/research_agent/run.py
 ```
 
-具体输入、产物位置、预算演示与 Mock 计量说明见 [研究示例](../examples/research_agent/README.md)，实测证据见 [S3.md](acceptance/S3.md)。只使用固定合成资料，没有真实模型/互联网依赖。每次演示创建独立 Repository、Run 和受控工作区；实际用户代码执行须等待 S4 容器实现。
+具体输入、产物位置、预算演示与 Mock 计量说明见 [研究示例](../examples/research_agent/README.md)，实测证据见 [S3.md](acceptance/S3.md)。只使用固定合成资料，没有真实模型/互联网依赖。每次演示创建独立 Repository、Run 和受控工作区；S4 容器工具使用下文独立 Worker 入口。
 
 新增 Python/语料文件已纳入 uv 的本地构建缓存键，避免非 editable 安装复用旧构建；配置依据 [uv 缓存文档](https://docs.astral.sh/uv/concepts/cache/#dynamic-metadata)。执行 `uv build --out-dir .agentgit/packages` 可生成 sdist/wheel，非 editable 包内语料加载已验证。开发时仍使用默认 editable 的 `uv sync --locked`。
 
@@ -98,11 +98,11 @@ Job 固定代码摘要、配置、输入、语料和初始计划版本；Worker 
 uv run --locked pytest tests/integration/test_jobs.py tests/integration/test_kernel_migrations.py
 ```
 
-调度进程故障用例启动仓库内受信任的 Worker 测试助手，并使用独立测试 Schema/临时 CAS；它们不构成用户 Shell/Python 执行功能。容器内部基础设施已另行实现并实际测试，准备方式与边界见 [sandbox/README.md](../sandbox/README.md)；生产工具与持久化接入仍未完成，`doctor --sandbox` 继续返回 `execution_ready=false`。进展和验收缺口见 [S4-progress.md](acceptance/S4-progress.md) 与 [容器边界](acceptance/S4-sandbox-boundary.md)。
+调度进程故障用例启动仓库内受信任的 Worker 测试助手，并使用独立测试 Schema/临时 CAS；它们不构成用户 Shell/Python 执行功能。实际容器基础设施与持久执行服务使用单独套件验证，准备方式与边界见 [sandbox/README.md](../sandbox/README.md)；五工具接入见下文。S4 尚未验收，`doctor --sandbox` 继续返回 `execution_ready=false`。早期进展见 [S4-progress.md](acceptance/S4-progress.md) 与 [容器边界](acceptance/S4-sandbox-boundary.md)。
 
 ## S4 工具策略与精确审批
 
-`RecordedCallGateway` 必须提供 `ApprovalService`；缺少策略、未注册 provider、签名或效果分类不匹配均在调用前拒绝。研究 Session 从受信任的本地 Tool Registry 与模型签名生成策略，允许现有三个工具和离线模型。模型和远程说明不能修改效果分类。`ToolPolicy` 的外部写与不可逆动作不能预授权；断网 sandbox 策略预授权只适用于后续受控容器 Adapter，不授权宿主或网络能力。
+`RecordedCallGateway` 必须提供 `ApprovalService`；缺少策略、未注册 provider、签名或效果分类不匹配均在调用前拒绝。研究 Session 从受信任的本地 Tool Registry 与模型签名生成策略，按配置允许基础工具、容器工具和离线模型。模型和远程说明不能修改效果分类。`ToolPolicy` 的外部写与不可逆动作不能预授权；断网 sandbox 策略预授权只适用于受控容器 Adapter，不授权宿主或网络能力。
 
 非预授权动作保存原文/策略和 approval.requested，Run/Job 转为 waiting_approval，保留 checkpoint/分支绑定并释放租约。审批是操作元数据，不改变绑定检查点；已保存 pending decision 和预算是恢复依据。ApprovalService.decide 要求 actor、状态版本、检查点和策略匹配；同决定幂等，相反决定冲突。HTTP/CLI 共用管理事务，决定只重新排队，不直接启动动作。
 
@@ -118,7 +118,7 @@ uv run --locked pytest tests/integration/test_jobs.py tests/integration/test_ker
 
 Worker 恢复该停止点时只消费核对结果，严格核验调用前状态、occurrence、请求、签名、预算与证据链接。已计入的步骤/调用数不会重置或重复增加，模型的预留按原请求与确认响应结算；未知轨迹替换为同一逻辑调用的确认轨迹。随后推进新检查点，再处理已有取消或到期预算，不再发送原写动作。核对后的 Worker 若崩溃，可创建新恢复 Run 继续；原 Run 检查点保留。
 
-`tests/helpers/effectful_worker.py` 仅用于独立 fake 服务的审批→断连→未知→核对→完成验证，不改变普通工具分类。运行 `uv run --locked pytest tests/integration/test_reconciliation.py`，证据见 [S4-reconciliation.md](acceptance/S4-reconciliation.md)。业务 HTTP/CLI 已接入；真容器执行继续在 S4 后续步骤实现。
+`tests/helpers/effectful_worker.py` 仅用于独立 fake 服务的审批→断连→未知→核对→完成验证，不改变普通工具分类。运行 `uv run --locked pytest tests/integration/test_reconciliation.py`，证据见 [S4-reconciliation.md](acceptance/S4-reconciliation.md)。业务 HTTP/CLI 已接入；真容器执行见下文。
 
 ## S4 执行记录与受管工具后端
 
@@ -140,4 +140,8 @@ uv run --locked pytest tests/unit tests/integration tests/sandbox tests/executio
 
 共享 fixture 位于 `tests/conftest.py`，仅请求时连接相应基础设施，默认单元测试仍不访问 Docker/数据库。新增 Linux 容器 CI job 会在准备阶段构建并显式冻结本次测试镜像，再运行容器及执行服务套件、保存报告和测试摘要；该摘要不自动发布为开发/生产策略。远程 CI 是否通过必须看实际运行，不能以本地通过替代。
 
-目前尚未把两个工具接入研究 Agent 的生产 Registry/配置/计划与预算观察，也未完成清理后新 attempt 的策略和预算续跑。因此 `doctor --sandbox` 保持 `execution_ready=false`，S4 未验收；不得据此开启 S5。详细证据见 [执行记录](acceptance/S4-execution-ledger.md)。最新规划的 S6 Electron 桌面及必选 S11 按 [实施方案](AgentGit_实施方案_v1.0.0.md) 继续执行。
+两个容器工具现已接入生产 Registry、Agent 配置/计划、Worker、录制观察和工作区推进。`agentgit config --with-execution` 使用包内固定镜像策略，严格核验已审阅源码；普通配置无需 Docker。当前 workspace 的字节和 MIME 登记为本 Run/检查点输入；结果须匹配当前调用完整录制，核验所有文件后分阶段替换目录，替换失败恢复原目录。模型不接触 Docker 身份/参数。
+
+完整结果在观察前崩溃，恢复先只消费已保存的调用，不创建缺失意图、不启动 Adapter；结算原预算、恢复完整文件后才处理取消或持久期限。新调用仍执行正常预算和权限检查。五工具 CLI/HTTP 入口与产物说明见 [API.md](API.md#五工具容器流程)。
+
+清理后新 attempt 的策略和预算续跑尚待完成。因此 `doctor --sandbox` 保持 `execution_ready=false`，S4 未验收；不得据此开启 S5。详细证据见 [执行记录](acceptance/S4-execution-ledger.md) 与 [生产五工具](acceptance/S4-five-tools.md)。最新规划的 S6 Electron 桌面及必选 S11 按 [实施方案](AgentGit_实施方案_v1.0.0.md) 继续执行。

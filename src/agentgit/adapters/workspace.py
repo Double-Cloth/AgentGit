@@ -1,7 +1,9 @@
 """每个 Run 独立的受控文件工作区；不执行文件内容。"""
 
 import os
+import shutil
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 
 from agentgit.core.errors import AgentGitError, ErrorCode
@@ -67,3 +69,54 @@ class ArtifactWorkspace:
                 raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "产物读取超过上限")
             result[name] = content
         return result
+
+    def replace(self, files: dict[str, bytes], media_types: dict[str, str]) -> None:
+        """完整校验并分阶段物化，文件替换失败时恢复原目录。"""
+        validate_artifact_paths(files)
+        if set(files) != set(media_types) or len(files) > self.max_files:
+            raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "执行产物清单或文件数量超过工作区限制")
+        if any(len(content) > self.max_file_bytes for content in files.values()):
+            raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "执行产物超过工作区单文件限制")
+        self.contents()
+        parent = self.root.parent.resolve()
+        staging = Path(tempfile.mkdtemp(prefix=".agentgit-workspace-", dir=parent))
+        backup = staging / "previous"
+        promoted = False
+        try:
+            candidate = ArtifactWorkspace(
+                staging / "files", max_file_bytes=self.max_file_bytes, max_files=self.max_files
+            )
+            for name, content in sorted(files.items()):
+                candidate.write_bytes(name, content, media_types[name])
+            # 移动与递归清理前核对绝对路径，所有目标均属于当前 Run 的工作区父目录。
+            if (
+                self.root.is_symlink()
+                or self.root.is_junction()
+                or not self.root.resolve().is_relative_to(parent)
+                or not staging.resolve().is_relative_to(parent)
+            ):
+                raise AgentGitError(ErrorCode.FORBIDDEN, "工作区替换目标越界")
+            self.root.rename(backup)
+            try:
+                candidate.root.rename(self.root)
+            except OSError:
+                backup.rename(self.root)
+                raise
+            self.media_types = dict(media_types)
+            promoted = True
+        except OSError:
+            raise AgentGitError(
+                ErrorCode.OBJECT_CORRUPT, "工作区完整物化失败，需从安全检查点恢复"
+            ) from None
+        finally:
+            if not promoted and backup.exists():
+                raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "工作区备份仍待恢复")
+            if (
+                staging.is_symlink()
+                or staging.is_junction()
+                or not staging.resolve().is_relative_to(parent)
+            ):
+                raise AgentGitError(ErrorCode.FORBIDDEN, "工作区临时目录清理目标越界")
+            # 成功物化后的旧副本仅为操作数据，不影响完整的新工作区。
+            with suppress(OSError):
+                shutil.rmtree(staging)

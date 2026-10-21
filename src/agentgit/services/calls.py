@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 
-from agentgit.core.canonical import ObjectType, encode
+from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.execution import SANDBOX_PROVIDERS
 from agentgit.core.models import CallIntent, CallOccurrence, EffectClass, parse_contract
@@ -42,6 +42,72 @@ class RecordedCallGateway:
             materialize,
             after_result,
         )
+
+    def recorded(
+        self,
+        *,
+        step: str,
+        attempt: int,
+        provider: str,
+        signature: str,
+        effect: EffectClass,
+        request: bytes,
+        max_bytes: int,
+    ) -> CallOutcome | None:
+        """仅消费已耐久保存的结果；缺失时绝不创建意图或调用 Adapter。"""
+        occurrence = CallOccurrence(
+            logical_step_id=step,
+            call_index=0,
+            attempt=attempt,
+            provider=provider,
+            signature_digest=signature,
+            request_digest=object_digest(ObjectType.BLOB, request),
+        )
+        if self.authorization is None:
+            raise AgentGitError(ErrorCode.FORBIDDEN, "录制消费缺少冻结工具策略")
+        self.authorization.policy.rule(occurrence, effect)
+        if self.origin_runs:
+            origin = self._reuse_origin(occurrence, effect, max_bytes)
+            if origin is not None:
+                return origin
+        head, _ = self.checkpoint()
+        calls = TABLES["external_calls"]
+        with self.history.engine.begin() as connection:
+            run = self.history._run(connection, self.repository_id, self.run_id, lock=True)
+            self.history.assert_writer(connection, self.repository_id, self.run_id)
+            if run["checkpoint_commit_id"] != head:
+                raise AgentGitError(ErrorCode.VERSION_CONFLICT, "录制消费的检查点已改变")
+            row = (
+                connection.execute(
+                    sa.select(calls).where(
+                        calls.c.repository_id == self.repository_id,
+                        calls.c.run_id == self.run_id,
+                        calls.c.logical_step_id == step,
+                        calls.c.call_index == 0,
+                        calls.c.attempt == attempt,
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if row is None:
+                return None
+            intent = parse_contract(
+                self.history.objects.get(row["intent_ref"], ObjectType.CALL), CallIntent
+            )
+            if (
+                intent.occurrence != occurrence
+                or intent.effect != effect
+                or intent.checkpoint != head
+                or intent.max_response_bytes != max_bytes
+            ):
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "录制身份、检查点或响应限制不符")
+            if row["result_ref"] is None:
+                raise AgentGitError(
+                    ErrorCode.OUTCOME_UNKNOWN, "已有调用没有完整结果，禁止越过未决动作"
+                )
+            saved = self.history.objects.get_json(row["result_ref"], ObjectType.CALL)
+        return self._cached_outcome(occurrence, saved)
 
     def call(
         self,

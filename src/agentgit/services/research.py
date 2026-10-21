@@ -4,6 +4,7 @@ import hashlib
 import platform
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
@@ -12,14 +13,22 @@ from sqlalchemy.engine import Connection
 
 from agentgit import __version__
 from agentgit.adapters.corpus import Corpus
+from agentgit.adapters.execution.policy import bundled_policy
 from agentgit.adapters.mock import MockResearchModel
 from agentgit.adapters.tools import ToolRegistry
 from agentgit.adapters.workspace import ArtifactWorkspace
 from agentgit.core.canonical import ObjectType, encode
 from agentgit.core.effects import ToolPolicy, ToolRule
 from agentgit.core.errors import AgentGitError, ErrorCode
+from agentgit.core.execution import ExecutionContext, ExecutionManifest, ExecutionResult
 from agentgit.core.models import EffectClass, EnvironmentManifest, parse_contract
-from agentgit.core.research import AgentConfig, AgentState, ResearchGoal
+from agentgit.core.research import (
+    AgentConfig,
+    AgentState,
+    CallTrace,
+    ResearchGoal,
+    SavedCallOutcome,
+)
 from agentgit.runtime.engine import ResearchRuntime
 from agentgit.runtime.ports import CallSettlement, ModelAdapter
 from agentgit.services.approvals import ApprovalService
@@ -30,6 +39,9 @@ from agentgit.storage.database import transaction
 from agentgit.storage.schema import build_metadata
 
 TABLES = build_metadata().tables
+
+if TYPE_CHECKING:
+    from agentgit.services.executions import ExecutionService
 
 
 class ResearchService:
@@ -46,6 +58,8 @@ class ResearchService:
         expected_version: int | None = None,
     ) -> UUID:
         config = config or AgentConfig()
+        if config.execution_policy is not None and config.execution_policy != bundled_policy():
+            raise AgentGitError(ErrorCode.FORBIDDEN, "新配置只能绑定后端当前已审阅的固定执行策略")
         obj = self.history.objects.put(ObjectType.BLOB, encode(config.model_dump(mode="json")))
         config_id = uuid4()
         with transaction(self.history.engine, connection) as connection:
@@ -153,6 +167,11 @@ class ResearchService:
             )
             if task is None:
                 raise AgentGitError(ErrorCode.NOT_FOUND, "任务不可访问")
+            config = self.config(repository_id, task["agent_config_id"])
+            if config.execution_policy is not None:
+                raise AgentGitError(
+                    ErrorCode.FORBIDDEN, "容器工具任务必须提交持久 Job，由独立 Worker 执行"
+                )
             if task["active_run_id"] is not None:
                 status = connection.execute(
                     sa.select(runs.c.status).where(runs.c.id == task["active_run_id"])
@@ -191,7 +210,6 @@ class ResearchService:
             connection.execute(
                 task_table.update().where(task_table.c.id == task_id).values(active_run_id=run_id)
             )
-        config = self.config(repository_id, task["agent_config_id"])
         goal = parse_contract(
             self.history.objects.get(task["goal_ref"], ObjectType.BLOB), ResearchGoal
         )
@@ -246,6 +264,79 @@ class ResearchSession:
         self.after_checkpoint: Callable[[], None] | None = None
         self.authorization: ApprovalService | None = None
         self.settlement: CallSettlement | None = None
+        self.execution_service: ExecutionService | None = None
+
+    def bind_execution(self, service: "ExecutionService") -> None:
+        if service.policy != self.config.execution_policy:
+            raise AgentGitError(ErrorCode.FORBIDDEN, "执行服务与冻结配置的策略不符")
+        self.execution_service = service
+        self.tools.input_context = self._execution_context
+        self.tools.execution_files = self._execution_files
+
+    def _execution_context(self) -> ExecutionContext:
+        if self.execution_service is None or self.head is None:
+            raise AgentGitError(ErrorCode.FORBIDDEN, "容器工具必须具有持久 Job 和安全检查点")
+        manifest_ref, _ = self.execution_service.authorize_inputs(
+            self.repository_id,
+            self.run_id,
+            self.head,
+            self.workspace.contents(),
+            media_types=self.workspace.media_types,
+        )
+        manifest = parse_contract(
+            self.history.objects.get(manifest_ref, ObjectType.ARTIFACT_MANIFEST), ExecutionManifest
+        )
+        return ExecutionContext(
+            input_manifest_ref=manifest_ref,
+            execution_policy_ref=self.execution_service.policy.digest(),
+            files=manifest.files,
+        )
+
+    def _execution_files(
+        self, result: ExecutionResult, trace: CallTrace
+    ) -> tuple[dict[str, bytes], dict[str, str]]:
+        calls = TABLES["external_calls"]
+        with self.history.engine.connect() as connection:
+            row = (
+                connection.execute(
+                    sa.select(calls).where(
+                        calls.c.repository_id == self.repository_id,
+                        calls.c.run_id == self.run_id,
+                        calls.c.logical_step_id == trace.logical_step_id,
+                        calls.c.call_index == trace.call_index,
+                        calls.c.attempt == trace.attempt,
+                        calls.c.provider == trace.provider,
+                        calls.c.signature_digest == trace.signature_digest,
+                        calls.c.request_digest == trace.request_ref,
+                    )
+                )
+                .mappings()
+                .first()
+            )
+        if row is None or row["result_ref"] is None:
+            raise AgentGitError(ErrorCode.RECORDING_MISSING, "执行观察缺少当前 Run 的录制来源")
+        saved = parse_contract(
+            self.history.objects.get(row["result_ref"], ObjectType.CALL), SavedCallOutcome
+        )
+        if (
+            not saved.complete
+            or saved.error is not None
+            or saved.response_ref != trace.response_ref
+        ):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "执行观察与完整录制结果不符")
+        assert result.output_manifest_ref is not None
+        manifest = parse_contract(
+            self.history.objects.get(result.output_manifest_ref, ObjectType.ARTIFACT_MANIFEST),
+            ExecutionManifest,
+        )
+        files: dict[str, bytes] = {}
+        media: dict[str, str] = {}
+        for item in manifest.files:
+            payload = self.history.objects.get(item.object_ref, ObjectType.BLOB)
+            if len(payload) != item.byte_length:
+                raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "输出文件长度与录制清单不符")
+            files[item.path], media[item.path] = payload, item.media_type
+        return files, media
 
     def _environment(self, model: ModelAdapter) -> EnvironmentManifest:
         package = Path(__file__).resolve().parents[1]
@@ -283,6 +374,8 @@ class ResearchSession:
         wall_budget_ms: int | None = None,
     ) -> AgentState:
         model = model or MockResearchModel()
+        if self.config.execution_policy is not None and self.execution_service is None:
+            raise AgentGitError(ErrorCode.FORBIDDEN, "容器工具必须通过持久 Job/Worker 执行")
         self.environment = self._environment(model)
         if (
             self.expected_code_revision is not None
@@ -302,6 +395,8 @@ class ResearchSession:
         )
         if gateway.authorization is None and self.authorization is not None:
             gateway.authorization = self.authorization
+        if self.execution_service is not None:
+            gateway.managed = self.execution_service
         if gateway.authorization is None:
             rules = [
                 ToolRule(
@@ -317,7 +412,7 @@ class ResearchSession:
                     provider=f"tool:{name}/v1",
                     signature_digest=self.tools.signature(name),
                     effect=self.tools.effect(name),
-                    scope="local",
+                    scope="sandbox" if name in {"terminal_exec", "code_exec"} else "local",
                     preauthorized=True,
                 )
                 for name in sorted(self.config.tools)

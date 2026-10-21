@@ -1,6 +1,6 @@
 # S4 本地服务与 CLI
 
-当前支持本机操作者、固定离线模型、三个基础工具。terminal_exec/code_exec 真容器执行仍在实现中。配置不会自动读取 .env，以 AGENTGIT_* 进程环境为准。先运行 `uv run --locked alembic upgrade head`，当前 head 为 0008_call_resolutions。
+当前支持本机操作者、固定离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具。S4 尚未整体验收。配置不会自动读取 .env，以 AGENTGIT_* 进程环境为准。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0009_sandbox_executions`。
 
 ## CLI 离线流程
 
@@ -19,6 +19,27 @@ uv run --locked agentgit artifacts $repo.repository_id $job.run_id
 每个新动作使用新的幂等键，仅重试同一动作时复用。同键异参冲突，终态不原地重启。已有主分支先用 `agentgit status <repository_id>` 读取 branch.version/head_commit_id，再作为 run 的 --expected-branch-version/--expected-head；省略 --expected-head 表示预期空 HEAD。
 
 config --file 读取 AgentConfig JSON；run --budget-file 读取 BudgetLimits JSON，均须 schema_version=1。预算默认继承 Task；显式预算每项不得扩大 Task/配置上限。worker 持续领取，--once 处理一次/空队列后退出；单次失败、预算耗尽或未知结果非零。命令与参数错误输出单个 JSON，--help 提供帮助。CLI 的本机身份由 AGENTGIT_OPERATOR_ID 设置，默认 local-operator，直接复用服务，不依赖 HTTP。
+
+## 五工具容器流程
+
+先按 [sandbox/README.md](../sandbox/README.md) 准备并核验已锁定镜像，再为新项目创建五工具配置：
+
+```powershell
+$repo = uv run --locked agentgit init '容器研究' --key execution-project-001 | ConvertFrom-Json
+$config = uv run --locked agentgit config $repo.repository_id --with-execution --expected-version 0 --key execution-config-001 | ConvertFrom-Json
+$task = uv run --locked agentgit task $repo.repository_id $config.config_id '比较三个框架，计算统计并整理产物' --config-version 1 --key execution-task-001 | ConvertFrom-Json
+$job = uv run --locked agentgit run $repo.repository_id $task.task_id --config-version 1 --expected-branch-version 0 --key execution-run-001 | ConvertFrom-Json
+uv run --locked agentgit worker --once
+uv run --locked agentgit artifacts $repo.repository_id $job.run_id
+```
+
+`--with-execution` 使用包内已审阅策略启用两个执行工具，不能与 `--file` 同用。默认配置仍是三个基础工具，不探测 Docker。HTTP 的 `POST /agents` 可提交相同完整 `AgentConfig`：增加两个工具并绑定 `bundled_policy()` 对应策略；不同镜像或资源策略在创建配置时拒绝。工具只能由持久 Job/Worker 执行，不提供绕过任务的通用执行接口。
+
+离线计划先生成报告和来源，再由实际 Python 脚本读取 `sources.json` 计算统计，实际 Shell 整理文件。成功有 7 个产物，统计在 `results/statistics.json`，整理后的报告在 `results/report.md`；13 次工具调用、15 次 Mock 模型调用。命令/脚本也作为产物保存，外部测试核验统计答案，验收器不进入容器。也支持仅授权一个执行工具。
+
+只有完整成功、清理确认且通过校验的 manifest 才推进工作区。失败保留旧文件，完整结果保存后崩溃则复用录制并先结算调用预算，再处理取消或到期；缺完整结果的执行仍保持待核对，清理后新 attempt 的预算续跑尚待实现。当前 `doctor --sandbox` 继续报告 `execution_ready=false`。
+
+## 控制运行
 
 活动 Run 的 pause/resume/cancel 均要求 --expected-version 和 --key，例如：
 

@@ -1,6 +1,6 @@
 # 固定执行镜像与底层隔离验证
 
-本目录属于 S4 的镜像准备和内部基础设施验证。持久执行记录与受管后端已接入调用网关，见 [执行记录](../doc/acceptance/S4-execution-ledger.md)；生产 Tool Registry/计划/预算观察及完整恢复接入仍未完成。不能以本套件通过代替 S4 验收，也不开放通用执行 HTTP/CLI。`doctor --sandbox` 继续报告 `execution_ready=false`。
+本目录属于 S4 的镜像准备和内部基础设施验证。持久执行记录与受管后端已接入调用网关，见 [执行记录](../doc/acceptance/S4-execution-ledger.md)；生产 Tool Registry/计划/预算观察、工作区推进和五工具 Job 现已接入，启动方式见 [API/CLI](../doc/API.md#五工具容器流程)。清理后新 attempt 的预算续跑及最终 S4 验收仍未完成，不开放通用执行 HTTP/CLI。`doctor --sandbox` 继续报告 `execution_ready=false`。
 
 ## 已冻结内容
 
@@ -26,10 +26,10 @@ docker build --provenance=false -f sandbox/Dockerfile -t agentgit-sandbox:v1 .
 docker image inspect agentgit-sandbox:v1 --format '{{.Id}}'
 uv run --locked python sandbox/prepare.py --record --image-id sha256:<上一步的完整摘要>
 uv run --locked pytest tests/sandbox
-git diff -- sandbox/image.lock.json sandbox/packages.lock
+git diff -- sandbox/image.lock.json sandbox/packages.lock src/agentgit/adapters/execution/image.lock.json
 ```
 
-`--record` 只接受显式内容摘要，核对实际镜像内源码、Python 和完整包清单后更新锁文件。tag 只用于准备阶段查找构建结果；执行器不使用它。构建器版本/存储模式和构建元数据可能影响本地镜像内容地址，不保证不同机器重新构建得到相同 digest；新摘要必须作为新策略版本审阅提交，不能静默修改已冻结 Job 的镜像或降级到 tag。已经冻结的调用必须预置它所绑定的原镜像。
+`--record` 只接受显式内容摘要，核对实际镜像内源码、Python 和完整包清单后更新锁文件及包内副本。普通核验检查两份锁文件一致；生产配置从包内副本读取已审阅策略，并核验当前可信源码摘要，不通过 Docker 探测或运行时下载选择策略。tag 只用于准备阶段查找构建结果；执行器不使用它。构建器版本/存储模式和构建元数据可能影响本地镜像内容地址，不保证不同机器重新构建得到相同 digest；新摘要必须作为新策略版本审阅提交，不能静默修改已冻结 Job 的镜像或降级到 tag。已经冻结的调用必须预置它所绑定的原镜像。
 
 可用 `docker save --output <本地受控文件> <锁定的 sha256 地址>` 保存预置镜像，再以 `docker load --input <该文件>` 恢复；镜像包不得入 Git。恢复后仍运行 `prepare.py` 核验锁定内容地址与内容，不能只看 tag。
 
@@ -47,6 +47,6 @@ Engine API 的非 TTY 多路流分别采集 stdout/stderr，各保留 1 MiB 原�
 
 ## 剩余 S4 接入
 
-`sandbox_executions`、请求/结果 Schema、授权输入 manifest/CAS、Job 租约下的 intent 先落库、取消/丢失租约清理和完整结果复用已由 `services/executions.py` 与调用网关接入。`SandboxContainer` 只供受管内部执行服务及本套件使用。生产 Registry/配置/计划、结果观察与工作区推进、恢复后的新 attempt 和预算仍待接入；全部 S4-T09–T20 通过后才能开放两个生产工具并验收 S4。
+`sandbox_executions`、请求/结果 Schema、授权输入 manifest/CAS、Job 租约下的 intent 先落库、取消/丢失租约清理和完整结果复用已由 `services/executions.py` 与调用网关接入。`SandboxContainer` 只供受管内部执行服务及本套件使用。生产 Registry/配置/计划与完整工作区推进现已接入；恢复后的新 attempt 和预算仍待完成，全部 S4-T09–T20 通过后才能验收 S4。
 
 协议依据：[Docker Engine API 1.44](https://docs.docker.com/reference/api/engine/version/v1.44/)、[Moby 25 的冻结 API 定义](https://github.com/moby/moby/blob/v25.0.0/api/swagger.yaml)、[Docker Engine API 概览](https://docs.docker.com/reference/api/engine/)。固定使用已有全部隔离字段的 1.44，避免要求较新的 1.51；仍需实际 cgroup v2/资源能力检查。Engine 的本地管道由固定参数的 `docker system dial-stdio` 连接，stdin 半关闭与非 TTY stdout/stderr 多路帧已由真实容器验证；不新增 Docker SDK 依赖。
