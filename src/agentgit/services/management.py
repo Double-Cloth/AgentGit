@@ -353,7 +353,7 @@ class ManagementService:
         baseline = BudgetUsage()
         if job is not None:
             spec = self.jobs.payload(job).replay
-            if spec is not None and spec.mode == "live":
+            if spec is not None and spec.budget_baseline is not None:
                 baseline = spec.budget_baseline
                 if snapshot is None:
                     usage = baseline

@@ -28,8 +28,9 @@ from agentgit.core.models import (
 from agentgit.core.research import AgentState, SavedCallOutcome
 from agentgit.core.snapshots import EventManifest, EventPayload, LogicalEvent, StateSnapshot
 from agentgit.core.versions import RecordedRange
-from agentgit.replay.recorded import Recording
+from agentgit.replay.recorded import Recording, UncertainRecording
 from agentgit.replay.recovery import CleanupProof, DiscardEvent, RecordedDiscard
+from agentgit.replay.settlements import RecordedSettlement
 from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.versions import HistorySelection, VersionService
 
@@ -52,6 +53,7 @@ class RecordedBundle:
     recordings: tuple[Recording, ...]
     discards: tuple[RecordedDiscard, ...] = ()
     projection: RecordedProjection | None = None
+    settlements: tuple[RecordedSettlement, ...] = ()
 
 
 class RecordingReader:
@@ -477,6 +479,7 @@ class RecordingReader:
         expected_events: list[LogicalEvent] = []
         checkpoint_for_event: dict[int, str] = {}
         boundary_commits: dict[int, str] = {}
+        checkpoint_after_event: dict[int, str] = {}
         for index, commit_id in enumerate(selection.commits):
             view = self.versions.checkout(repository, commit_id)
             account(encode(view))
@@ -500,6 +503,7 @@ class RecordingReader:
                 checkpoint_for_event.update(
                     {event.seq: selection.commits[index - 1] for event in events.events}
                 )
+                checkpoint_after_event.update({event.seq: commit_id for event in events.events})
                 boundary_commits[manifest.event_range.last_seq] = commit_id
         with self.history.engine.connect() as connection:
             events_table, calls = TABLES["events"], TABLES["external_calls"]
@@ -547,8 +551,9 @@ class RecordingReader:
         }
         if len(by_key) != len(call_rows):
             raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "来源调用索引包含重复 occurrence")
-        completed: dict[tuple[str, int, int], tuple[int, dict[str, Any]]] = {}
+        completed: dict[tuple[str, int, int], tuple[int, dict[str, Any], str]] = {}
         discards: list[RecordedDiscard] = []
+        settlements: list[RecordedSettlement] = []
         for event in indexed_events:
             if event.type == "sandbox.execution_discarded":
                 if event.seq not in boundary_commits:
@@ -569,7 +574,31 @@ class RecordingReader:
                 account(discard.request)
                 discards.append(discard)
                 continue
-            if event.type not in ("tool.completed", "llm.completed", "call.failed"):
+            if event.type == "call.reconciled":
+                from agentgit.services.recorded_settlements import SettlementReader
+
+                data = parse_contract(
+                    account(self.history.objects.get(event.payload_ref, ObjectType.EVENT)),
+                    EventPayload,
+                ).data
+                settlements.append(
+                    SettlementReader(self).load(
+                        repository,
+                        selection.source_run_id,
+                        checkpoint_for_event[event.seq],
+                        checkpoint_after_event[event.seq],
+                        data,
+                        environment,
+                        account,
+                    )
+                )
+                continue
+            if event.type not in (
+                "tool.completed",
+                "llm.completed",
+                "call.failed",
+                "call.outcome_unknown",
+            ):
                 continue
             terminal = parse_contract(
                 account(self.history.objects.get(event.payload_ref, ObjectType.EVENT)), EventPayload
@@ -578,7 +607,7 @@ class RecordingReader:
             identity = (item.logical_step_id, item.call_index, item.attempt)
             if identity in completed:
                 raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "来源事件重复完成同一 occurrence")
-            completed[identity] = (event.seq, terminal)
+            completed[identity] = (event.seq, terminal, event.type)
         recordings: list[Recording] = []
         seen: set[tuple[str, int, int]] = set()
         for event in indexed_events:
@@ -590,7 +619,7 @@ class RecordingReader:
             occurrence = parse_contract(encode(payload.data.get("occurrence")), CallOccurrence)
             key = (occurrence.logical_step_id, occurrence.call_index, occurrence.attempt)
             row = by_key.get(key)
-            if row is None or row["result_ref"] is None:
+            if row is None:
                 raise AgentGitError(ErrorCode.RECORDING_MISSING, "调用 occurrence 没有完整录制结果")
             if key in seen:
                 raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "来源事件重复启动同一 occurrence")
@@ -639,32 +668,48 @@ class RecordingReader:
             )
             if not declared:
                 raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "冻结环境未声明原调用签名")
+            terminal_record = completed.get(key)
+            uncertain = terminal_record is not None and terminal_record[2] == "call.outcome_unknown"
+            result_ref = row["result_ref"]
+            if uncertain:
+                assert terminal_record is not None
+                result_ref = terminal_record[1].get("result_ref")
+            if not isinstance(result_ref, str):
+                raise AgentGitError(ErrorCode.RECORDING_MISSING, "调用缺少完整结果或历史未知诊断")
             saved = parse_contract(
                 self._owned(
                     repository,
-                    row["result_ref"],
+                    result_ref,
                     ObjectType.CALL,
                     "external_call",
                     call_id,
-                    "result",
+                    "uncertain_diagnostic" if uncertain else "result",
                 ),
                 SavedCallOutcome,
             )
-            terminal_record = completed.get(key)
             if event.type == "call.reused":
                 if payload.data.get("result_ref") != row["result_ref"]:
                     raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "复用事件与录制结果不符")
             elif (
                 terminal_record is None
                 or terminal_record[0] <= event.seq
-                or terminal_record[1].get("result_ref") != row["result_ref"]
+                or terminal_record[1].get("result_ref") != result_ref
                 or terminal_record[1].get("error") != saved.error
                 or terminal_record[1].get("occurrence") != occurrence.model_dump(mode="json")
             ):
                 raise AgentGitError(ErrorCode.RECORDING_MISSING, "范围内没有匹配的调用完成事件")
-            if row["status"] != ("failed" if saved.error else "succeeded"):
+            if uncertain:
+                if (
+                    event.type == "call.reused"
+                    or saved.error is None
+                    or saved.error["code"] != ErrorCode.OUTCOME_UNKNOWN.value
+                    or row["status"] not in ("succeeded", "outcome_unknown")
+                ):
+                    raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "历史未知诊断与调用状态不符")
+            elif row["status"] != ("failed" if saved.error else "succeeded"):
                 raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "调用状态与保存结果不符")
-            record = Recording(
+            record_type = UncertainRecording if uncertain else Recording
+            record = record_type(
                 intent,
                 saved,
                 self._owned(
@@ -690,9 +735,16 @@ class RecordingReader:
             account(record.request)
             account(record.response)
             physical = self._physical(repository, row, family)
-            if occurrence.provider in SANDBOX_PROVIDERS:
+            if occurrence.provider in SANDBOX_PROVIDERS and not uncertain:
                 self._execution(repository, physical, record)
             recordings.append(record)
+        if len({item.at_commit for item in settlements}) != len(settlements):
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "未知检查点包含重复可信核对事件")
         return RecordedBundle(
-            selection, environment, tuple(checkpoints), tuple(recordings), tuple(discards)
+            selection,
+            environment,
+            tuple(checkpoints),
+            tuple(recordings),
+            tuple(discards),
+            settlements=tuple(settlements),
         )

@@ -26,7 +26,7 @@ from agentgit.replay.recorded import RecordedAdapter
 from agentgit.replay.recovery import rebuild_discard
 from agentgit.replay.workspace import MemoryWorkspace
 from agentgit.runtime.engine import ResearchRuntime
-from agentgit.runtime.ports import CallOutcome
+from agentgit.runtime.ports import CallOutcome, CallSettlement
 from agentgit.services.environment import source_revision
 
 if TYPE_CHECKING:
@@ -417,6 +417,7 @@ class RecordedReplayer:
             control=journal.control,
             budget_baseline=budget_baseline,
         )
+        settled: set[str] = set()
         if len(bundle.checkpoints) > 1:
             with suppress(_ReachedUntil):
                 while journal.position + 1 < len(bundle.checkpoints):
@@ -441,11 +442,48 @@ class RecordedReplayer:
                         )
                         journal.save(runtime.state, event_type, details)
                         continue
+                    if runtime.state.status == RunStatus.OUTCOME_UNKNOWN:
+                        target = bundle.checkpoints[journal.position + 1][0]
+                        resolutions = [
+                            item
+                            for item in bundle.settlements
+                            if item.at_commit == journal.head and item.source_commit == target
+                        ]
+                        if len(resolutions) != 1 or journal.head in settled:
+                            raise AgentGitError(
+                                ErrorCode.RECORDING_MISSING, "未知检查点缺少唯一可信核对录制"
+                            )
+                        settlement = resolutions[0]
+                        record = settlement.record
+                        if record.intent.max_response_bytes != config.limits.max_response_bytes:
+                            raise AgentGitError(
+                                ErrorCode.REPLAY_MISMATCH, "核对录制响应上限与原预算不符"
+                            )
+                        outcome = record.outcome()
+                        if outcome.error is not None:
+                            raise AgentGitError(
+                                ErrorCode.REPLAY_MISMATCH, "核对结果不是完整成功回执"
+                            )
+                        if record.intent.occurrence.provider == "tool:artifact_write/v1":
+                            write = parse_contract(record.request, WriteArguments)
+                            workspace.write(write.path, write.text, write.media_type)
+                        runtime.settlement = CallSettlement(
+                            settlement.before, record.request, outcome
+                        )
+                        settled.add(journal.head)
                     before = journal.position
-                    runtime.run()
-                    if journal.position == before or runtime.state.status != RunStatus.PAUSED:
+                    try:
+                        runtime.run()
+                    finally:
+                        runtime.settlement = None
+                    if journal.position == before or runtime.state.status not in (
+                        RunStatus.PAUSED,
+                        RunStatus.OUTCOME_UNKNOWN,
+                    ):
                         raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "Runtime 未抵达指定终点")
         adapter.assert_consumed()
+        if len(settled) != len(bundle.settlements):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "范围内仍有未消费的可信核对录制")
         if journal.position + 1 != len(bundle.checkpoints):
             raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "Runtime 未抵达指定终点")
         final = journal.rebuilt[-1].snapshot if journal.rebuilt else initial

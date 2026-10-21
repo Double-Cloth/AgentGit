@@ -382,3 +382,48 @@ def test_live_artifact_paths_up_to_contract_limit_survive_input_ownership_and_co
     assert manager.replay_status(session.repository_id, UUID(recorded["job_id"]))["replay"][
         "verified"
     ]
+
+
+def test_recorded_partial_live_range_reports_remaining_quota_against_frozen_baseline(
+    history, replay_source
+):
+    session, _, commits, _ = replay_source
+    manager = ManagementService(session.service)
+    live = manager.replay(
+        session.repository_id,
+        LiveReplay(
+            source_run_id=str(session.run_id),
+            from_commit=commits[16],
+            branch_name="quota-live",
+            budget=BudgetLimits(max_steps=2, max_model_calls=2),
+        ),
+        "quota-live",
+    )
+    assert Worker(manager.jobs).run_once()["status"] == "completed"
+    job = manager.jobs.get(session.repository_id, UUID(live["job_id"]))
+    baseline = manager.jobs.payload(job).replay.budget_baseline
+    chain = VersionService(history).log(session.repository_id, branch_name="quota-live")["items"]
+    selected = [
+        item for item in reversed(chain) if item["environment_ref"] == chain[0]["environment_ref"]
+    ]
+    target = next(
+        item["commit_id"]
+        for item in selected
+        if history.restore(session.repository_id, item["commit_id"]).data["usage"]["model_calls"]
+        == baseline.model_calls + 1
+    )
+    replay = manager.replay(
+        session.repository_id,
+        RecordedReplay(
+            source_run_id=live["run_id"],
+            from_commit=selected[0]["commit_id"],
+            until_commit=target,
+            branch_name="quota-recorded",
+        ),
+        "quota-recorded",
+    )
+    assert Worker(manager.jobs).run_once()["status"] == "completed"
+    report = manager.replay_status(session.repository_id, UUID(replay["job_id"]))
+    assert report["budget"]["remaining"]["steps"] == 1
+    assert report["budget"]["remaining"]["model_calls"] == 1
+    assert report["budget"]["baseline"] == baseline.model_dump(mode="json")

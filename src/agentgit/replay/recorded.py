@@ -1,12 +1,12 @@
 """仅消费已录制字节，不持有模型、工具、容器或网络客户端。"""
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from agentgit.core.canonical import ObjectType, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.models import CallIntent, CallOccurrence, EffectClass
-from agentgit.core.research import CallTrace, SavedCallOutcome
+from agentgit.core.research import CallTrace, SavedCallOutcome, evolve
 from agentgit.runtime.ports import CallOutcome
 
 
@@ -45,6 +45,29 @@ class Recording:
             error_code=failure.code.value if failure else None,
         )
         return CallOutcome(self.response, trace, failure, self.saved.response_bytes)
+
+
+@dataclass(frozen=True)
+class UncertainRecording(Recording):
+    """仅重现已核验的历史未知诊断，不把它当作确认结果。"""
+
+    def outcome(self) -> CallOutcome:
+        error = self.saved.error
+        if self.reused or error is None or error["code"] != ErrorCode.OUTCOME_UNKNOWN.value:
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "未知录制缺少明确诊断")
+        known = Recording(
+            self.intent,
+            evolve(self.saved, error=None),
+            self.request,
+            self.response,
+            self.source_call_id,
+            self.reused,
+        ).outcome()
+        return replace(
+            known,
+            trace=evolve(known.trace, error_code=ErrorCode.OUTCOME_UNKNOWN.value),
+            error=AgentGitError(ErrorCode.OUTCOME_UNKNOWN, error["message"]),
+        )
 
 
 class RecordedAdapter:

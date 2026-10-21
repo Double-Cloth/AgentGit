@@ -128,7 +128,9 @@ CLI 的两个 Live 输入文件分别有 1 MiB 读取上限；来源文件逐项
 
 递归读取共享全链累计 64 MiB 预算，并限制 32 层；纯重算入口也有独立深度保护。`0012_replay_source_index` 增加 jobs(repository_id, origin_run_id) 索引，供恢复来源和复合读取定位冻结 Job；历史迁移快照不变，正式库保持只前进，隔离测试库允许往返。证据见 [S5-compound.md](acceptance/S5-compound.md)。
 
-完整 S5 仍在实施：未知结果经可信核对后的其他来源路径尚待接通和验收。`MemoryWorkspace` 对工作区总字节施加 64 MiB 上限，超限必须缩小范围或明确失败，不物化宿主文件作为回退。耐久批次证据见 [S5-recorded-jobs.md](acceptance/S5-recorded-jobs.md)。
+原 Runtime 直接保存未知检查点的模型来源已接通：未知诊断使用独立 `UncertainRecording` 类型，确认回执通过 `SettlementReader` 核验并作为 `RecordedSettlement` 提供给原 Runtime `_settle`。两段事实分别重算，未到确认范围时不能提前采用结果；原有普通 Recording 的未知结果禁用规则保持不变。详见 [S5-settlement.md](acceptance/S5-settlement.md)。
+
+完整 S5 仍在实施：接管封存的未知来源和自定义外部写来源等路径尚待接通和验收。`MemoryWorkspace` 对工作区总字节施加 64 MiB 上限，超限必须缩小范围或明确失败，不物化宿主文件作为回退。耐久批次证据见 [S5-recorded-jobs.md](acceptance/S5-recorded-jobs.md)。
 
 调度进程故障用例启动仓库内受信任的 Worker 测试助手，并使用独立测试 Schema/临时 CAS；用户 Shell/Python 始终在容器中执行。实际容器基础设施与持久执行服务使用单独套件验证，准备方式与边界见 [sandbox/README.md](../sandbox/README.md)；完整五工具接入及本机验收见 [S4.md](acceptance/S4.md)。早期进展保留在 [S4-progress.md](acceptance/S4-progress.md) 与 [容器边界](acceptance/S4-sandbox-boundary.md)。
 

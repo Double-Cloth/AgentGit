@@ -153,6 +153,8 @@ Recorded 不接受 `overrides/config/budget/prompt/model` 等干预字段。提�
 
 链中原始响应、执行日志或文件缺失仍失败，不因已有成功证明而跳过验证。全链共享 64 MiB 读取预算，最多 32 层解析，超限为 `output_limit`；不自动裁剪链或回退 Live。实际调用计量仍为零，暂停/恢复、取消、持久期限和崩溃接管保持原语义。详情与范围证据见 [S5-compound.md](acceptance/S5-compound.md)。
 
+对于原 Runtime 已保存未知状态、之后取得可信核对回执的模型历史，Recorded 会先重现未知诊断，再结算确认结果，保留原预算和控制顺序。缺诊断、缺证据或结果链接错配会失败，不调用 Resolver 重查。若终点是确认之前的未知检查点，可验证该历史状态，但仍显示 `logical_status=outcome_unknown`，不能把 `verified` 当作任务成功。接管封存及自定义外部写等其他路径的支持边界见 [S5-settlement.md](acceptance/S5-settlement.md)。
+
 ### Live 独立重执行
 
 Live 只提供 `from_commit`，拒绝 `until_commit`。它创建新配置、Task、Job、Run 和工作区，重新执行剩余计划；不要求输出与来源一致。可选 `budget` 是新配置授权上限内的完整 `BudgetLimits`，不减去来源已花费的预算。历史累计用量保留，冻结 `budget_baseline` 后只按新增差额检查配额；恢复继续同一基线及持久截止时间。
@@ -176,7 +178,7 @@ uv run --locked agentgit worker --once
 
 `replay.logical_usage` 是保留的累计用量，`budget_baseline/new_usage` 展示来源基线与新分支消耗；`actual.model_calls/tool_calls` 从新 Job 的物理调用账本统计，排除恢复复用，未知结果另报 `unknown_outcomes`。调用意图已发出但结果未知仍计入实际尝试，不声称外部服务一定收到。`actual.wall_ms` 是新 Job 已启动后的墙钟时间；模型仍为离线 Mock，成本为零。源 Run 的审批不能授权新 Run 的相同参数。
 
-新 Run 首次保存 `live.initialized`，将干预后的状态、文件和新环境固定为检查点；其后可作为 Recorded 来源，预算基线一并验证。跨越来源旧环境与 Live 新环境的 Recorded 范围会因环境不兼容拒绝。专项证据见 [S5-live.md](acceptance/S5-live.md)。
+新 Run 首次保存 `live.initialized`，将干预后的状态、文件和新环境固定为检查点；其后可作为 Recorded 来源，预算基线一并验证，部分范围的 `budget.remaining` 也只扣除该基线之后的用量。跨越来源旧环境与 Live 新环境的 Recorded 范围会因环境不兼容拒绝。专项证据见 [S5-live.md](acceptance/S5-live.md)。
 
 错误含 error.code、message、evidence_refs（无证据时为空）、correlation_id，另有 X-Correlation-ID，不反射输入/URL/堆栈/令牌。validation=422、权限=403、不可访问=404、冲突=409、输出上限=413、配置/设施不可用=503、未预期错误=500。响应不缓存；JSON 日志写 stderr，仅含关联编号、方法、路由模板、状态、整数耗时，不含正文/认证头/查询/幂等键。
 
