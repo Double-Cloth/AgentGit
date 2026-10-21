@@ -1,6 +1,6 @@
 # 固定执行镜像与底层隔离验证
 
-本目录属于 S4 的镜像准备和内部基础设施验证。生产 Tool Registry、持久执行记录、预算与恢复接入尚未完成；不能以本套件通过代替 S4 验收，也不开放通用执行 HTTP/CLI。`doctor --sandbox` 继续报告 `execution_ready=false`。
+本目录属于 S4 的镜像准备和内部基础设施验证。持久执行记录与受管后端已接入调用网关，见 [执行记录](../doc/acceptance/S4-execution-ledger.md)；生产 Tool Registry/计划/预算观察及完整恢复接入仍未完成。不能以本套件通过代替 S4 验收，也不开放通用执行 HTTP/CLI。`doctor --sandbox` 继续报告 `execution_ready=false`。
 
 ## 已冻结内容
 
@@ -47,6 +47,6 @@ Engine API 的非 TTY 多路流分别采集 stdout/stderr，各保留 1 MiB 原�
 
 ## 剩余 S4 接入
 
-本目录没有实现 `sandbox_executions`、生产工具请求/结果 Schema、授权输入 manifest/CAS、Job 租约下的 intent 先落库、取消/丢失租约清理、完整结果录制复用和重新 attempt 预算。`SandboxContainer` 只供后续内部执行服务及本套件使用。只有这些接入和 S4-T09–T20 全部通过后，才能开放两个生产工具并验收 S4。
+`sandbox_executions`、请求/结果 Schema、授权输入 manifest/CAS、Job 租约下的 intent 先落库、取消/丢失租约清理和完整结果复用已由 `services/executions.py` 与调用网关接入。`SandboxContainer` 只供受管内部执行服务及本套件使用。生产 Registry/配置/计划、结果观察与工作区推进、恢复后的新 attempt 和预算仍待接入；全部 S4-T09–T20 通过后才能开放两个生产工具并验收 S4。
 
-协议依据：[Docker Engine API 1.51](https://docs.docker.com/reference/api/engine/version/v1.51/)、[Docker Engine API 概览](https://docs.docker.com/reference/api/engine/)。Engine 的本地管道由固定参数的 `docker system dial-stdio` 连接，stdin 半关闭与非 TTY stdout/stderr 多路帧已由真实容器验证；不新增 Docker SDK 依赖。
+协议依据：[Docker Engine API 1.44](https://docs.docker.com/reference/api/engine/version/v1.44/)、[Moby 25 的冻结 API 定义](https://github.com/moby/moby/blob/v25.0.0/api/swagger.yaml)、[Docker Engine API 概览](https://docs.docker.com/reference/api/engine/)。固定使用已有全部隔离字段的 1.44，避免要求较新的 1.51；仍需实际 cgroup v2/资源能力检查。Engine 的本地管道由固定参数的 `docker system dial-stdio` 连接，stdin 半关闭与非 TTY stdout/stderr 多路帧已由真实容器验证；不新增 Docker SDK 依赖。

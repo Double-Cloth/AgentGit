@@ -12,7 +12,7 @@ from typing import IO, Any, cast
 
 from agentgit.core.errors import AgentGitError, ErrorCode
 
-_API = "/v1.51"
+_API = "/v1.44"
 _MAX_JSON = 2 * 1024 * 1024
 _MAX_INPUT = 34 * 1024 * 1024
 _ID = re.compile(r"^[a-f0-9]{64}$")

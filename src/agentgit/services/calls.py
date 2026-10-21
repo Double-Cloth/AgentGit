@@ -8,12 +8,14 @@ import sqlalchemy as sa
 
 from agentgit.core.canonical import ObjectType, encode
 from agentgit.core.errors import AgentGitError, ErrorCode
+from agentgit.core.execution import SANDBOX_PROVIDERS
 from agentgit.core.models import CallIntent, CallOccurrence, EffectClass, parse_contract
 from agentgit.core.research import CallTrace, SavedCallOutcome
 from agentgit.core.snapshots import EventPayload
 from agentgit.runtime.ports import CallOutcome
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.history import TABLES, EventInput, HistoryService
+from agentgit.services.managed_calls import ManagedCallContext, ManagedCalls
 from agentgit.storage.objects import StoredObject
 
 
@@ -29,10 +31,12 @@ class RecordedCallGateway:
         materialize: Callable[[str, bytes, bytes], None] | None = None,
         after_result: Callable[[], None] | None = None,
         authorization: ApprovalService | None = None,
+        managed: ManagedCalls | None = None,
     ):
         self.history, self.repository_id, self.run_id = history, repository_id, run_id
         self.checkpoint = checkpoint
         self.authorization = authorization
+        self.managed = managed
         self.origin_runs, self.materialize, self.after_result = (
             origin_runs,
             materialize,
@@ -83,6 +87,18 @@ class RecordedCallGateway:
         )
         calls = TABLES["external_calls"]
         call_id = uuid4()
+        context = ManagedCallContext(
+            self.repository_id,
+            self.run_id,
+            call_id,
+            occurrence,
+            head,
+            request,
+            intent.id,
+            max_bytes,
+        )
+        if provider in SANDBOX_PROVIDERS and self.managed is not None:
+            self.managed.stage(context)
         started_event = EventInput(
             "llm.requested" if provider.startswith("llm:") else "tool.started",
             step,
@@ -156,6 +172,8 @@ class RecordedCallGateway:
                 "cancel",
             ):
                 raise AgentGitError(ErrorCode.CONTROL_REQUESTED, "调用意图保存前收到控制请求")
+            if provider in SANDBOX_PROVIDERS and self.managed is None:
+                raise AgentGitError(ErrorCode.FORBIDDEN, "容器工具缺少受租约保护的执行服务")
             admission_error = self.authorization.admit(
                 connection, run, occurrence, effect, max_bytes, call_id
             )
@@ -181,6 +199,9 @@ class RecordedCallGateway:
                         status="started",
                     )
                 )
+                if provider in SANDBOX_PROVIDERS:
+                    assert self.managed is not None
+                    self.managed.prepare(connection, context)
                 seq = int(run["last_event_seq"]) + 1
                 history._event(
                     connection, self.repository_id, self.run_id, seq, started_event, started_payload
@@ -200,7 +221,12 @@ class RecordedCallGateway:
         response_bytes = 0
         complete = True
         try:
-            response = invoke()
+            if provider in SANDBOX_PROVIDERS:
+                assert self.managed is not None
+                managed_result = self.managed.invoke(context)
+                response, error = managed_result.payload, managed_result.error
+            else:
+                response = invoke()
             if not isinstance(response, bytes):
                 response = b""
                 raise AgentGitError(ErrorCode.VALIDATION, "Adapter 响应必须为 bytes")
@@ -263,6 +289,9 @@ class RecordedCallGateway:
                 history._ref(
                     connection, self.repository_id, obj, "external_call", str(call_id), role
                 )
+            if provider in SANDBOX_PROVIDERS:
+                assert self.managed is not None
+                self.managed.record(connection, context, response_obj, result_obj)
             connection.execute(
                 calls.update()
                 .where(calls.c.id == call_id, calls.c.status == "started")

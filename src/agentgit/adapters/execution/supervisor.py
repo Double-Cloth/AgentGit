@@ -70,7 +70,10 @@ def counters() -> dict[str, int]:
             if label in keys:
                 result[f"{name}:{label}"] = int(value)
     result["memory.peak"] = int(Path("/sys/fs/cgroup/memory.peak").read_text())
-    if len(result) != 6:
+    for name in ("workspace", "tmp"):
+        space = _linux_os.statvfs("/" + name)
+        result[f"{name}.free_bytes"] = space.f_bavail * space.f_frsize
+    if len(result) != 8:
         raise invalid()
     return result
 

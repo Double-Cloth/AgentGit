@@ -1,5 +1,7 @@
-"""每个 S2 用例在真实测试库的独立 Schema 中运行迁移。"""
+"""共用基础设施；仅实际请求 fixture 的套件访问 PostgreSQL 或 Docker。"""
 
+import hashlib
+import json
 import re
 from pathlib import Path
 from uuid import uuid4
@@ -9,6 +11,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 
+from agentgit.adapters.execution.engine import DockerEngine
 from agentgit.config import Settings, database_url
 from agentgit.services.history import HistoryService
 from agentgit.storage.database import make_engine
@@ -29,7 +32,7 @@ def history(tmp_path):
         connect_args={"options": f"-csearch_path={schema}", "connect_timeout": 3},
         hide_parameters=True,
     )
-    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     config.attributes["testing"] = True
     try:
         with engine.begin() as connection:
@@ -41,3 +44,21 @@ def history(tmp_path):
         with admin.begin() as connection:
             connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
         admin.dispose()
+
+
+@pytest.fixture(scope="session")
+def engine():
+    return DockerEngine.local()
+
+
+@pytest.fixture(scope="session")
+def image_id(engine):
+    root = Path(__file__).resolve().parents[1]
+    lock = json.loads((root / "sandbox/image.lock.json").read_text(encoding="utf-8"))
+    for relative, digest in lock["source_sha256"].items():
+        assert hashlib.sha256((root / relative).read_bytes()).hexdigest() == digest, relative
+    image = engine.request("GET", f"/images/{lock['image_id']}/json")
+    assert image["Id"] == lock["image_id"]
+    assert image["Os"] == "linux"
+    assert image["Architecture"] == "amd64"
+    return lock["image_id"]

@@ -69,7 +69,7 @@ CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障�
 
 ## S3 离线研究演示
 
-S3 验收时 Schema head 为 `0004_research_tasks`；当前 head 已推进至 `0008_call_resolutions`。先升级开发库，再运行：
+S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 head 已推进至 `0009_sandbox_executions`。先升级开发库，再运行：
 
 ```powershell
 uv run --locked alembic upgrade head
@@ -119,3 +119,25 @@ uv run --locked pytest tests/integration/test_jobs.py tests/integration/test_ker
 Worker 恢复该停止点时只消费核对结果，严格核验调用前状态、occurrence、请求、签名、预算与证据链接。已计入的步骤/调用数不会重置或重复增加，模型的预留按原请求与确认响应结算；未知轨迹替换为同一逻辑调用的确认轨迹。随后推进新检查点，再处理已有取消或到期预算，不再发送原写动作。核对后的 Worker 若崩溃，可创建新恢复 Run 继续；原 Run 检查点保留。
 
 `tests/helpers/effectful_worker.py` 仅用于独立 fake 服务的审批→断连→未知→核对→完成验证，不改变普通工具分类。运行 `uv run --locked pytest tests/integration/test_reconciliation.py`，证据见 [S4-reconciliation.md](acceptance/S4-reconciliation.md)。业务 HTTP/CLI 已接入；真容器执行继续在 S4 后续步骤实现。
+
+## S4 执行记录与受管工具后端
+
+`ExecutionService` 接入 `RecordedCallGateway` 的受管动作扩展：在事务外校验输入字节，在短事务内复核 Run/检查点授权、Job 租约和策略，并与 `external_calls` 意图原子创建 `sandbox_executions`。事务提交后才创建固定容器；普通 `invoke` 不能接管容器工具。结果保存事务同时附着日志、文件、操作证据、完整调用结果和执行记录。
+
+`ExecutionPolicy` 固定断网与资源上限，签名绑定镜像/依赖/解释器及请求 Schema；请求只携带策略引用。`authorize_inputs` 仅供后端从当前工作区和授权任务输入登记，不是任意 CAS 上传接口。读取字节前及保存 intent 时均复查当前 Run/检查点的引用归属，不能凭其他 Run/项目的对象摘要读取输入。终端命令最多 16 KiB，Python 片段最多 64 KiB；支持 Python 片段或工作区脚本、相对 cwd、argv/stdin。不支持语言和不够 8 KiB 完整结果封装的响应预算在启动前拒绝，原始日志单独有界存入 CAS。
+
+非零退出、超时、取消、资源限制及非法导出保存稳定错误和诊断，失败不发布输出 manifest。资源证据不可取得时不凭退出码推断原因。容器 ID、墙钟、cgroup 及清理前状态另存操作 metadata，不进入可重放执行结果。暂停等待安全点；取消和失去租约会停止整个容器。取消结果不直接把 Run 标成已取消，仍须由 Runtime 安全点落实；失效租约不能保存迟到结果。
+
+Worker 接管时在心跳保护下先核对当前及恢复来源 Run 的未清理执行，按持久身份清理旧容器并保存审计证据。确认清理不等于恢复丢失的输出；没有完整结果仍保持待核对，不重新发送原调用。完整保存后、checkpoint 提交前的故障可直接复用结果，复用不需要 Docker 或执行服务实例。
+
+真实服务套件需 PostgreSQL 与预置镜像同时可用：
+
+```powershell
+uv run --locked python sandbox/prepare.py
+uv run --locked pytest tests/execution
+uv run --locked pytest tests/unit tests/integration tests/sandbox tests/execution
+```
+
+共享 fixture 位于 `tests/conftest.py`，仅请求时连接相应基础设施，默认单元测试仍不访问 Docker/数据库。新增 Linux 容器 CI job 会在准备阶段构建并显式冻结本次测试镜像，再运行容器及执行服务套件、保存报告和测试摘要；该摘要不自动发布为开发/生产策略。远程 CI 是否通过必须看实际运行，不能以本地通过替代。
+
+目前尚未把两个工具接入研究 Agent 的生产 Registry/配置/计划与预算观察，也未完成清理后新 attempt 的策略和预算续跑。因此 `doctor --sandbox` 保持 `execution_ready=false`，S4 未验收；不得据此开启 S5。详细证据见 [执行记录](acceptance/S4-execution-ledger.md)。最新规划的 S6 Electron 桌面及必选 S11 按 [实施方案](AgentGit_实施方案_v1.0.0.md) 继续执行。

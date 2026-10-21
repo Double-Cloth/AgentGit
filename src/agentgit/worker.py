@@ -28,6 +28,7 @@ from agentgit.runtime.ports import CallSettlement, ModelAdapter
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.calls import RecordedCallGateway
 from agentgit.services.environment import source_revision
+from agentgit.services.executions import ExecutionService
 from agentgit.services.history import TABLES, EventInput, HistoryService
 from agentgit.services.jobs import JobService
 from agentgit.services.recovery import prepare_recovery, recovery_origins
@@ -78,7 +79,9 @@ class Worker:
             return None
         try:
             if lease.recovery_required:
-                prepared = prepare_recovery(self.queue, lease)
+                with LeaseHeartbeat(self.queue, lease):
+                    ExecutionService.reconcile(self.queue, lease)
+                    prepared = prepare_recovery(self.queue, lease)
                 if prepared is None:
                     return self._summary(lease)
                 lease = prepared

@@ -61,6 +61,7 @@ class SandboxContainer:
         self.identity = identity
         self.timeout_ms = timeout_ms
         self.container_id: str | None = None
+        self.creation_attempted = False
         self._loaded = False
         self._executed = False
 
@@ -81,9 +82,10 @@ class SandboxContainer:
             raise EngineError()
 
     def create(self) -> str:
-        if self.container_id is not None:
+        if self.container_id is not None or self.creation_attempted:
             raise invalid()
         self.preflight()
+        self.creation_attempted = True
         created = self.engine.request(
             "POST",
             f"/containers/create?name={self.identity.name}",
@@ -196,26 +198,40 @@ class SandboxContainer:
             raise invalid()
         return files, receipt
 
-    def cleanup(self) -> bool:
-        """停止、删除并核对消失；连接失败时必须向调用方报告未确认。"""
+    def stop(self) -> bool:
+        """确认整个容器停止，暂留 exec 状态供输出收尾。"""
         try:
             # create 响应丢失时按已持久化的稳定名称核对，不能盲目新建。
             lookup = self.container_id or self.identity.name
             try:
                 state = self.engine.request("GET", f"/containers/{lookup}/json")
             except EngineError as error:
-                return error.status == 404
+                if error.status == 404:
+                    self.container_id = None
+                    return True
+                return False
             if any(
                 state.get("Config", {}).get("Labels", {}).get(key) != value
                 for key, value in self.identity.labels.items()
             ):
                 return False
             container_id = state["Id"]
+            self.container_id = container_id
             if state["State"]["Running"]:
                 self.engine.request("POST", f"/containers/{container_id}/kill")
                 state = self.engine.request("GET", f"/containers/{container_id}/json")
-            if state["State"]["Running"]:
-                return False
+            return state["State"]["Running"] is False
+        except (EngineError, KeyError, TypeError):
+            return False
+
+    def cleanup(self) -> bool:
+        """停止、删除并核对消失；连接失败时必须向调用方报告未确认。"""
+        if not self.stop():
+            return False
+        if self.container_id is None:
+            return True
+        container_id = self.container_id
+        try:
             self.engine.request("DELETE", f"/containers/{container_id}?v=true")
             try:
                 self.engine.request("GET", f"/containers/{container_id}/json")
