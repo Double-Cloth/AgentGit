@@ -23,10 +23,12 @@ from agentgit.core.management import (
 )
 from agentgit.core.models import parse_contract
 from agentgit.core.research import AgentState, BudgetUsage
+from agentgit.core.versions import NewBranch
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.jobs import JobService
 from agentgit.services.research import ResearchService
+from agentgit.services.versions import VersionService
 from agentgit.storage.database import make_engine
 from agentgit.storage.objects import ObjectStore
 
@@ -49,6 +51,52 @@ class ManagementService:
             raise AgentGitError(ErrorCode.CONFIGURATION, "本机操作者身份无效")
         self.research, self.history, self.actor = research, research.history, actor
         self.jobs = JobService(research)
+        self.versions = VersionService(self.history)
+
+    def create_branch(self, repository_id: UUID, payload: NewBranch, key: str) -> dict[str, Any]:
+        return self._mutate(
+            "POST /branches",
+            key,
+            repository_id,
+            payload.model_dump(mode="json"),
+            lambda connection: self.versions.fork(
+                repository_id,
+                payload,
+                actor=self.actor,
+                connection=connection,
+            ),
+        )
+
+    def branches(
+        self, repository_id: UUID, *, after_name: str | None = None, limit: int = 100
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = public(
+            self.versions.branches(repository_id, after_name=after_name, limit=limit)
+        )
+        return result
+
+    def commits(
+        self,
+        repository_id: UUID,
+        *,
+        branch_name: str = "main",
+        after_commit: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        return self.versions.log(
+            repository_id,
+            branch_name=branch_name,
+            after_commit=after_commit,
+            limit=limit,
+        )
+
+    def checkout(self, repository_id: UUID, commit_id: str) -> dict[str, Any]:
+        return self.versions.checkout(repository_id, commit_id)
+
+    def diff(
+        self, repository_id: UUID, left: str, right: str, *, after: int = 0, limit: int = 100
+    ) -> dict[str, Any]:
+        return self.versions.diff(repository_id, left, right, after=after, limit=limit)
 
     @classmethod
     def from_settings(cls, settings: Settings, *, testing: bool = False) -> "ManagementService":

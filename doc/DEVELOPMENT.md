@@ -69,7 +69,7 @@ CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障�
 
 ## S3 离线研究演示
 
-S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 head 已推进至 `0009_sandbox_executions`。先升级开发库，再运行：
+S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 head 已推进至 `0010_branch_forks`。先升级开发库，再运行：
 
 ```powershell
 uv run --locked alembic upgrade head
@@ -97,6 +97,16 @@ Job 固定代码摘要、配置、输入、语料和初始计划版本；Worker 
 ```powershell
 uv run --locked pytest tests/integration/test_jobs.py tests/integration/test_kernel_migrations.py
 ```
+
+## S5 版本与录制基础
+
+`VersionService` 提供来源 Run 路径校验、安全 Fork、只读 Checkout、分支历史和结构化 Diff；入口见 [API.md](API.md)。`0010_branch_forks` 保存不可变来源 Run、起点和操作者，Fork 与幂等响应在同一事务中提交。名称冲突不覆盖分支；未核对的写入检查点拒绝 Fork，已可信清理的容器失败需匹配精确的停止证据。
+
+Checkout 只读 CAS/数据库，不物化工作区或启动工具。Diff 使用 JSON Pointer 展示字段、数组、产物摘要/MIME 与调用变化；二进制文件只比较摘要。共同祖先基于经过校验的单父 Commit 路径，历史及输出有界，分页不会把超限结果标为完整。
+
+`RecordingReader.load()` 必须提供来源 Run、起止 Commit 和预期 `EnvironmentManifest`。读取器逐项核验事件、调用 occurrence、参数/签名/响应、对象所有权，以及执行工具的输入、策略、日志和输出 manifest；缺对象返回 `recording_missing`，环境不兼容或错配直接失败。`RecordedAdapter` 仅持有录制字节，精确顺序消费且不调用传入的真实执行回调，禁止 Live 回退。
+
+这些能力尚不等于完成 Recorded 重放：逐检查点状态/产物重算、独立运行计量、Recorded/Live 耐久 Job、Live 新预算与授权仍在 S5 后续实现。因此当前没有 `POST /replays` 或 `agentgit replay` 成功入口，也不将读取历史快照计为重放验收。
 
 调度进程故障用例启动仓库内受信任的 Worker 测试助手，并使用独立测试 Schema/临时 CAS；用户 Shell/Python 始终在容器中执行。实际容器基础设施与持久执行服务使用单独套件验证，准备方式与边界见 [sandbox/README.md](../sandbox/README.md)；完整五工具接入及本机验收见 [S4.md](acceptance/S4.md)。早期进展保留在 [S4-progress.md](acceptance/S4-progress.md) 与 [容器边界](acceptance/S4-sandbox-boundary.md)。
 

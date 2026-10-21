@@ -1,6 +1,6 @@
-# S4 本地服务与 CLI
+# 本地服务与 CLI（S4/S5）
 
-当前支持本机操作者、固定离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，以 AGENTGIT_* 进程环境为准。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0009_sandbox_executions`。
+当前支持本机操作者、固定离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，以 AGENTGIT_* 进程环境为准。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0010_branch_forks`。
 
 ## CLI 离线流程
 
@@ -76,6 +76,11 @@ serve 只监听 127.0.0.1。Origin 默认允许 http://127.0.0.1:8000、http://l
 | GET /health、/ready | 公开 | 存活/真实数据库就绪，失败 503 |
 | POST /repositories | name、expected_version=0 | 201，repository_id、version |
 | GET /repositories/{id} | 项目头与路径一致 | 项目、当前主分支 HEAD/version |
+| POST /branches | source_run_id、from_commit、name、expected_version=0 | 201，从安全检查点建立分支，保存不可变来源；同名冲突 |
+| GET /repositories/{id}/branches | after_name 可省略、limit=1..1000 | 分支 HEAD/version 与来源、has_more、next_after_name |
+| GET /repositories/{id}/commits | branch_name 默认 main、after_commit 可省略、limit=1..1000 | 当前分支从新到旧的 Commit manifest、has_more、next_after_commit |
+| GET /commits/{id} | 项目头 | 完整 manifest、环境和 snapshot，只读且核验内容 |
+| GET /diff | left_commit、right_commit、after≥0、limit=1..1000 | common_ancestor（可为 null）、字段/产物/调用变化、total_changes、next_after、has_more |
 | POST /agents | config 可省略、expected_version | 201，不可变 config_id、递增 version |
 | POST /tasks | config_id、config_version、goal、expected_version=0 | 201，task_id |
 | POST /tasks/{id}/runs | config_version、expected_branch_version、expected_head；branch_name 默认 main；budget 可省略 | 202，耐久 job_id/run_id |
@@ -95,6 +100,28 @@ goal 示例：`{"schema_version":1,"text":"比较三个 fixture 框架"}`。conf
 ```
 
 API/CLI 共用事务和幂等记录。同 actor/route/key 成功重试返回原响应，即使状态已推进；业务修改、响应引用、幂等记录同时提交，失败全回滚。实时状态使用 GET/status。旧版本或分支占用为 409，已有结果/审批不重复执行。
+
+## S5 分支、历史与差异
+
+使用已完成任务的 Run 和 Commit，先读取历史，再选择安全节点：
+
+```powershell
+uv run --locked agentgit log $repo.repository_id --branch-name main --limit 20
+uv run --locked agentgit checkout $repo.repository_id $commitId
+uv run --locked agentgit branch $repo.repository_id --name experiment-a --source-run $job.run_id --from-commit $commitId --key fork-a-001
+uv run --locked agentgit branch $repo.repository_id --limit 20
+uv run --locked agentgit diff $repo.repository_id $leftCommit $rightCommit --limit 100
+```
+
+`$commitId/$leftCommit/$rightCommit` 必须是本项目完整的 64 位小写摘要。Fork 的 `source_run_id` 必填，用于限定来源路径及检查尚未核对的效果；不能只凭摘要继承旧运行的权限。新分支 version=0、HEAD=from_commit，原分支和历史保持不变。Checkout 返回历史数据，不创建可执行工作区。分页分别使用 `--after-name`、`--after-commit`、`--after` 延续服务返回的游标。
+
+HTTP 创建体示例（示例占位符须替换）：
+
+```json
+{"schema_version":1,"source_run_id":"<Run UUID>","from_commit":"<Commit digest>","name":"experiment-a","expected_version":0}
+```
+
+当前 S5 仍在实施；Recorded 读取器和无客户端 Adapter 已具备严格匹配，但尚未开放完整 Replay 提交入口。读取快照或录制不代表已经逐检查点重算通过，状态见 [S5-progress.md](acceptance/S5-progress.md)。
 
 错误含 error.code、message、evidence_refs（无证据时为空）、correlation_id，另有 X-Correlation-ID，不反射输入/URL/堆栈/令牌。validation=422、权限=403、不可访问=404、冲突=409、输出上限=413、配置/设施不可用=503、未预期错误=500。响应不缓存；JSON 日志写 stderr，仅含关联编号、方法、路由模板、状态、整数耗时，不含正文/认证头/查询/幂等键。
 

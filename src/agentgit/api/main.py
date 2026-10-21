@@ -30,6 +30,7 @@ from agentgit.core.management import (
     SubmitRun,
 )
 from agentgit.core.models import parse_contract
+from agentgit.core.versions import NewBranch
 from agentgit.services.management import ManagementService
 from agentgit.storage.database import probe_database
 
@@ -148,6 +149,61 @@ def create_app(
         service: Annotated[ManagementService, Depends(get_manager)],
     ) -> dict[str, Any]:
         return service.create_agent(repo, parse_contract(encode(body), NewAgent), key)
+
+    @app.post("/branches", status_code=201)
+    def branch(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_branch(repo, parse_contract(encode(body), NewBranch), key)
+
+    @app.get("/repositories/{repository_id}/branches")
+    def branches(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_name: Annotated[str | None, Query(max_length=100)] = None,
+        limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    ) -> dict[str, Any]:
+        if repo != repository_id:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.branches(repo, after_name=after_name, limit=limit)
+
+    @app.get("/repositories/{repository_id}/commits")
+    def commits(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        branch_name: Annotated[str, Query(min_length=1, max_length=100)] = "main",
+        after_commit: str | None = None,
+        limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    ) -> dict[str, Any]:
+        if repo != repository_id:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.commits(
+            repo, branch_name=branch_name, after_commit=after_commit, limit=limit
+        )
+
+    @app.get("/commits/{commit_id}")
+    def commit(
+        commit_id: str,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.checkout(repo, commit_id)
+
+    @app.get("/diff")
+    def diff(
+        left_commit: str,
+        right_commit: str,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    ) -> dict[str, Any]:
+        return service.diff(repo, left_commit, right_commit, after=after, limit=limit)
 
     @app.post("/tasks", status_code=201)
     def task(
