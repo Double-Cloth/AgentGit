@@ -5,9 +5,22 @@ import shutil
 import tempfile
 from contextlib import suppress
 from pathlib import Path
+from typing import Protocol
 
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.paths import validate_artifact_paths
+
+
+class Workspace(Protocol):
+    media_types: dict[str, str]
+
+    def write(self, path: str, text: str, media_type: str) -> None: ...
+
+    def write_bytes(self, path: str, payload: bytes, media_type: str) -> None: ...
+
+    def contents(self) -> dict[str, bytes]: ...
+
+    def replace(self, files: dict[str, bytes], media_types: dict[str, str]) -> None: ...
 
 
 class ArtifactWorkspace:

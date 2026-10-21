@@ -273,7 +273,13 @@ def test_expired_lease_kills_old_container_and_rejects_late_result(execution):
                 .where(TABLES["jobs"].c.id == execution["lease"].job_id)
                 .values(lease_until=sa.func.clock_timestamp() - sa.text("interval '1 second'"))
             )
-        takeover = execution["queue"].claim("takeover-worker")
+        takeover = None
+        claim_deadline = monotonic() + 3
+        # SKIP LOCKED 允许跳过旧线程的短事务；等待其释放，不放松租约/fencing 断言。
+        while takeover is None and monotonic() < claim_deadline:
+            takeover = execution["queue"].claim("takeover-worker")
+            if takeover is None:
+                sleep(0.05)
         assert takeover is not None and takeover.fencing_token > execution["lease"].fencing_token
         with pytest.raises(AgentGitError) as caught:
             running.result(timeout=12)

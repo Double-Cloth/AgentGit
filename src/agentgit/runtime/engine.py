@@ -11,6 +11,7 @@ from agentgit.core.models import EffectClass, RunStatus, parse_contract
 from agentgit.core.research import (
     AgentConfig,
     AgentState,
+    BudgetUsage,
     Evidence,
     FinalDecision,
     ModelRequest,
@@ -44,6 +45,7 @@ class ResearchRuntime:
         control: Callable[[], str | None] | None = None,
         wall_budget_ms: int | None = None,
         settlement: CallSettlement | None = None,
+        budget_baseline: BudgetUsage | None = None,
     ):
         self.state, self.config, self.model, self.tools = state, config, model, tools
         self.gateway, self.journal = gateway, journal
@@ -51,6 +53,19 @@ class ResearchRuntime:
         self.started_at = self.clock_ms()
         self.control, self.wall_budget_ms = control, wall_budget_ms
         self.settlement = settlement
+        self.budget_baseline = budget_baseline or BudgetUsage()
+        if any(
+            getattr(state.usage, name) < getattr(self.budget_baseline, name)
+            for name in (
+                "steps",
+                "model_calls",
+                "tool_calls",
+                "tokens",
+                "replans",
+                "cost_micro_units",
+            )
+        ):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "预算基线不能超过当前逻辑用量")
 
     def _save(self, event_type: str, **details: object) -> None:
         self.journal.save(self.state, event_type, dict(details))
@@ -228,9 +243,9 @@ class ResearchRuntime:
         reserve = len(request) + limits.max_response_bytes
         usage = state.usage
         if (
-            usage.steps >= limits.max_steps
-            or usage.model_calls >= limits.max_model_calls
-            or usage.tokens + reserve > limits.max_tokens
+            usage.steps - self.budget_baseline.steps >= limits.max_steps
+            or usage.model_calls - self.budget_baseline.model_calls >= limits.max_model_calls
+            or usage.tokens - self.budget_baseline.tokens + reserve > limits.max_tokens
         ):
             raise AgentGitError(ErrorCode.BUDGET_EXHAUSTED, "模型步骤、调用或 Token 预留预算不足")
         self.state = evolve(
@@ -351,7 +366,7 @@ class ResearchRuntime:
         self._validate_tool_step(decision)
         self.tools.prepare(decision.tool, decision.arguments)
         usage = self.state.usage
-        if usage.tool_calls >= self.config.limits.max_tool_calls:
+        if usage.tool_calls - self.budget_baseline.tool_calls >= self.config.limits.max_tool_calls:
             raise AgentGitError(ErrorCode.BUDGET_EXHAUSTED, "工具调用预算已耗尽")
         attempt = self.state.attempts.get(decision.node_key, 0) + 1
         if (
@@ -531,7 +546,10 @@ class ResearchRuntime:
             ErrorCode.NOT_FOUND,
         }
         usage = self.state.usage
-        if error.code in retryable and usage.replans < self.config.limits.max_replans:
+        if (
+            error.code in retryable
+            and usage.replans - self.budget_baseline.replans < self.config.limits.max_replans
+        ):
             self.state = evolve(
                 self.state,
                 status=RunStatus.PLANNING,

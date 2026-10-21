@@ -18,7 +18,7 @@ from typer.core import TyperGroup
 from agentgit import __version__
 from agentgit.adapters.execution.policy import bundled_policy
 from agentgit.config import Settings
-from agentgit.core.canonical import encode
+from agentgit.core.canonical import decode, encode
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.management import (
     ControlRun,
@@ -30,6 +30,7 @@ from agentgit.core.management import (
 )
 from agentgit.core.models import parse_contract
 from agentgit.core.research import AgentConfig, BudgetLimits, ResearchGoal
+from agentgit.core.versions import NewBranch, parse_replay
 from agentgit.diagnostics import sandbox_prerequisites
 from agentgit.services.management import ManagementService
 from agentgit.storage.database import probe_database
@@ -176,6 +177,117 @@ def task(
             NewTask,
         )
         emit(service.create_task(repository_id, payload, key))
+
+
+@app.command("replay")
+def replay(
+    repository_id: UUID,
+    source_run: Annotated[UUID, typer.Option()],
+    from_commit: Annotated[str, typer.Option()],
+    branch_name: Annotated[str, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    until_commit: str | None = None,
+    mode: str = "recorded",
+    overrides_file: Path | None = None,
+    budget_file: Path | None = None,
+    testing: bool = False,
+) -> None:
+    """提交独立 Replay Job；Live 干预和预算使用严格 JSON 文件。"""
+    with management(testing) as service:
+        value: dict[str, Any] = {
+            "schema_version": 1,
+            "mode": mode,
+            "source_run_id": str(source_run),
+            "from_commit": from_commit,
+            "branch_name": branch_name,
+            "expected_version": 0,
+        }
+        if until_commit is not None:
+            value["until_commit"] = until_commit
+        if mode != "live" and (overrides_file is not None or budget_file is not None):
+            raise AgentGitError(ErrorCode.VALIDATION, "只有 Live 可以提供干预或新预算文件")
+        for field, path in (("overrides", overrides_file), ("budget", budget_file)):
+            if path is not None:
+                with path.open("rb") as stream:
+                    raw = stream.read(1_048_577)
+                if len(raw) > 1_048_576:
+                    raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "Replay 输入文件超过上限")
+                value[field] = decode(raw)
+        payload = parse_replay(encode(value))
+        emit(service.replay(repository_id, payload, key))
+
+
+@app.command("branch")
+def branch(
+    repository_id: UUID,
+    name: str | None = None,
+    source_run: UUID | None = None,
+    from_commit: str | None = None,
+    key: str | None = None,
+    after_name: str | None = None,
+    limit: int = typer.Option(100, min=1, max=1000),
+    testing: bool = False,
+) -> None:
+    """无 name 时列出分支；创建时必须提供来源 Run、检查点和幂等键。"""
+    with management(testing) as service:
+        if name is None:
+            if any(value is not None for value in (source_run, from_commit, key)):
+                raise AgentGitError(ErrorCode.VALIDATION, "列出分支不能携带创建参数")
+            emit(service.branches(repository_id, after_name=after_name, limit=limit))
+            return
+        if source_run is None or from_commit is None or key is None or after_name is not None:
+            raise AgentGitError(ErrorCode.VALIDATION, "创建分支必须提供来源 Run、检查点和幂等键")
+        payload = parse_contract(
+            encode(
+                {
+                    "schema_version": 1,
+                    "name": name,
+                    "source_run_id": str(source_run),
+                    "from_commit": from_commit,
+                    "expected_version": 0,
+                }
+            ),
+            NewBranch,
+        )
+        emit(service.create_branch(repository_id, payload, key))
+
+
+@app.command("log")
+def history_log(
+    repository_id: UUID,
+    branch_name: str = "main",
+    after_commit: str | None = None,
+    limit: int = typer.Option(100, min=1, max=1000),
+    testing: bool = False,
+) -> None:
+    """从分支 HEAD 向父节点分页读取，不改变当前工作区或分支。"""
+    with management(testing) as service:
+        emit(
+            service.commits(
+                repository_id, branch_name=branch_name, after_commit=after_commit, limit=limit
+            )
+        )
+
+
+@app.command("checkout")
+def checkout(repository_id: UUID, commit_id: str, testing: bool = False) -> None:
+    """只读检查 Commit、完整状态和产物引用，不执行历史命令。"""
+    with management(testing) as service:
+        emit(service.checkout(repository_id, commit_id))
+
+
+@app.command("diff")
+def structural_diff(
+    repository_id: UUID,
+    left_commit: str,
+    right_commit: str,
+    after: int = typer.Option(0, min=0),
+    limit: int = typer.Option(100, min=1, max=1000),
+    testing: bool = False,
+) -> None:
+    """分页显示 JSON Pointer、产物 hash 与调用差异及共同祖先。"""
+    with management(testing) as service:
+        emit(service.diff(repository_id, left_commit, right_commit, after=after, limit=limit))
 
 
 @app.command("run")

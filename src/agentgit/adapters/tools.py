@@ -6,7 +6,7 @@ from typing import Annotated, Any
 from pydantic import Field
 
 from agentgit.adapters.corpus import Corpus
-from agentgit.adapters.workspace import ArtifactWorkspace
+from agentgit.adapters.workspace import Workspace
 from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.execution import (
@@ -35,7 +35,7 @@ class WriteArguments(Contract):
 
 
 class ToolRegistry:
-    def __init__(self, corpus: Corpus, workspace: ArtifactWorkspace, config: AgentConfig):
+    def __init__(self, corpus: Corpus, workspace: Workspace, config: AgentConfig):
         self.corpus, self.workspace, self.allowed = corpus, workspace, frozenset(config.tools)
         self.executions: dict[str, int] = {}
         self.policy = config.execution_policy

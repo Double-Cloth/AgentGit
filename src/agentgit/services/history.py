@@ -23,6 +23,7 @@ from agentgit.core.snapshots import (
 )
 from agentgit.storage.database import transaction
 from agentgit.storage.objects import FaultHook, ObjectStore, StoredObject
+from agentgit.storage.roles import path_reference_role
 from agentgit.storage.schema import build_metadata
 
 TABLES = build_metadata().tables
@@ -419,7 +420,7 @@ class HistoryService:
                     ("manifest", manifest_obj),
                 ):
                     self._ref(connection, repository_id, obj, "commit", manifest_obj.id, role)
-                connection.execute(
+                created_commit = connection.execute(
                     insert(TABLES["commits"])
                     .values(
                         id=manifest_obj.id,
@@ -429,8 +430,27 @@ class HistoryService:
                         event_manifest_ref=event_obj.id,
                     )
                     .on_conflict_do_nothing()
-                )
-                if expected_head is not None:
+                    .returning(TABLES["commits"].c.id)
+                ).first()
+                if created_commit is None:
+                    existing = self._commit_row(connection, repository_id, manifest_obj.id)
+                    parents = TABLES["commit_parents"]
+                    existing_parents = tuple(
+                        connection.execute(
+                            sa.select(parents.c.parent_id)
+                            .where(
+                                parents.c.repository_id == repository_id,
+                                parents.c.commit_id == manifest_obj.id,
+                            )
+                            .order_by(parents.c.parent_order)
+                        ).scalars()
+                    )
+                    if existing_parents != manifest.parents or any(
+                        existing[name] != getattr(manifest, name)
+                        for name in ("state_ref", "environment_ref", "event_manifest_ref")
+                    ):
+                        raise _error(ErrorCode.OBJECT_CORRUPT, "已存在 Commit 的内容或父关系不符")
+                elif expected_head is not None:
                     connection.execute(
                         insert(TABLES["commit_parents"])
                         .values(
@@ -453,7 +473,7 @@ class HistoryService:
                         obj,
                         "commit",
                         manifest_obj.id,
-                        f"artifact:{item.path}",
+                        path_reference_role("artifact", item.path),
                     )
                     connection.execute(
                         insert(TABLES["artifacts"])

@@ -13,6 +13,7 @@ from agentgit.core.jobs import TERMINAL_RUNS, JobPayload, Lease, Submission
 from agentgit.core.models import parse_contract
 from agentgit.core.research import BudgetLimits
 from agentgit.core.snapshots import EventPayload
+from agentgit.core.versions import LiveReplaySpec, RecordedReplaySpec
 from agentgit.services.environment import source_revision
 from agentgit.services.history import TABLES, EventInput
 from agentgit.services.research import ResearchService
@@ -37,27 +38,31 @@ class JobService:
         expected_head: str | None,
         branch_name: str = "main",
         budget: BudgetLimits | None = None,
+        replay: RecordedReplaySpec | LiveReplaySpec | None = None,
+        connection: Connection | None = None,
     ) -> Submission:
         if not actor or not key or len(actor) > 200 or len(key) > 200:
             raise AgentGitError(ErrorCode.VALIDATION, "操作者和幂等键必须为有界非空字符串")
         route = f"POST /tasks/{task_id}/runs"
+        submission_connection = connection
+        request_payload = {
+            "schema_version": 1,
+            "repository_id": str(repository_id),
+            "task_id": str(task_id),
+            "config_version": config_version,
+            "head": expected_head,
+            "branch_version": expected_branch_version,
+            "branch_name": branch_name,
+            "budget": budget.model_dump(mode="json") if budget is not None else None,
+        }
+        if replay is not None:
+            request_payload["replay"] = replay.model_dump(mode="json")
         request_digest = object_digest(
             ObjectType.BLOB,
-            encode(
-                {
-                    "schema_version": 1,
-                    "repository_id": str(repository_id),
-                    "task_id": str(task_id),
-                    "config_version": config_version,
-                    "head": expected_head,
-                    "branch_version": expected_branch_version,
-                    "branch_name": branch_name,
-                    "budget": budget.model_dump(mode="json") if budget is not None else None,
-                }
-            ),
+            encode(request_payload),
         )
         tasks, configs, nodes = TABLES["tasks"], TABLES["agent_configs"], TABLES["task_nodes"]
-        with self.history.engine.connect() as connection:
+        with transaction(self.history.engine, submission_connection) as connection:
             task = (
                 connection.execute(
                     sa.select(tasks).where(
@@ -84,7 +89,9 @@ class JobService:
                     nodes.c.task_id == task_id
                 )
             ).scalar_one()
-        config = self.research.config(repository_id, task["agent_config_id"])
+        config = self.research.config(
+            repository_id, task["agent_config_id"], connection=submission_connection
+        )
         task_budget = parse_contract(
             self.history.objects.get(task["budget_ref"], ObjectType.BLOB), BudgetLimits
         )
@@ -96,6 +103,7 @@ class JobService:
         ):
             raise AgentGitError(ErrorCode.FORBIDDEN, "Run 预算不能扩大 Task 或配置上限")
         payload = JobPayload(
+            replay=replay,
             config_id=str(task["agent_config_id"]),
             goal_ref=task["goal_ref"],
             code_revision=source_revision(),
@@ -115,7 +123,7 @@ class JobService:
             ObjectType.BLOB, encode(submitted.model_dump(mode="json"))
         )
         idem, branches, runs = TABLES["idempotency_keys"], TABLES["branches"], TABLES["runs"]
-        with self.history.engine.begin() as connection:
+        with transaction(self.history.engine, submission_connection) as connection:
             scope = encode([actor, route, key]).decode("utf-8")
             connection.execute(
                 sa.select(sa.func.pg_advisory_xact_lock(sa.func.hashtextextended(scope, 0)))
@@ -198,6 +206,25 @@ class JobService:
                 or branch["version"] != expected_branch_version
             ):
                 raise AgentGitError(ErrorCode.VERSION_CONFLICT, "分支已被占用或版本已改变")
+            forks = TABLES["branch_forks"]
+            fork = (
+                connection.execute(
+                    sa.select(forks).where(
+                        forks.c.repository_id == repository_id, forks.c.branch_name == branch_name
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if replay is None and fork is not None:
+                raise AgentGitError(ErrorCode.FORBIDDEN, "历史分支必须通过 Replay 明确选择执行模式")
+            if replay is not None and (
+                fork is None
+                or fork["source_run_id"] != UUID(replay.source_run_id)
+                or fork["from_commit_id"] != replay.from_commit
+                or expected_head != replay.from_commit
+            ):
+                raise AgentGitError(ErrorCode.FORBIDDEN, "重放 Job 必须绑定相同来源的独立分支")
             connection.execute(
                 runs.insert().values(
                     id=run_id,
@@ -207,8 +234,10 @@ class JobService:
                     branch_name=branch_name,
                     base_commit_id=expected_head,
                     checkpoint_commit_id=expected_head,
-                    origin_run_id=current["active_run_id"],
-                    mode="live",
+                    origin_run_id=UUID(replay.source_run_id)
+                    if replay
+                    else current["active_run_id"],
+                    mode=replay.mode if replay else "live",
                     status="queued",
                 )
             )

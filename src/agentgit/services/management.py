@@ -23,10 +23,13 @@ from agentgit.core.management import (
 )
 from agentgit.core.models import parse_contract
 from agentgit.core.research import AgentState, BudgetUsage
+from agentgit.core.versions import LiveReplay, NewBranch, RecordedReplay
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.jobs import JobService
+from agentgit.services.replays import ReplayService
 from agentgit.services.research import ResearchService
+from agentgit.services.versions import VersionService
 from agentgit.storage.database import make_engine
 from agentgit.storage.objects import ObjectStore
 
@@ -49,6 +52,66 @@ class ManagementService:
             raise AgentGitError(ErrorCode.CONFIGURATION, "本机操作者身份无效")
         self.research, self.history, self.actor = research, research.history, actor
         self.jobs = JobService(research)
+        self.versions = VersionService(self.history)
+        self.replays = ReplayService(research)
+
+    def replay(
+        self, repository_id: UUID, payload: RecordedReplay | LiveReplay, key: str
+    ) -> dict[str, Any]:
+        return self._mutate(
+            "POST /replays",
+            key,
+            repository_id,
+            payload.model_dump(mode="json"),
+            lambda connection: self.replays.submit(
+                repository_id, payload, actor=self.actor, key=key, connection=connection
+            ),
+        )
+
+    def create_branch(self, repository_id: UUID, payload: NewBranch, key: str) -> dict[str, Any]:
+        return self._mutate(
+            "POST /branches",
+            key,
+            repository_id,
+            payload.model_dump(mode="json"),
+            lambda connection: self.versions.fork(
+                repository_id,
+                payload,
+                actor=self.actor,
+                connection=connection,
+            ),
+        )
+
+    def branches(
+        self, repository_id: UUID, *, after_name: str | None = None, limit: int = 100
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = public(
+            self.versions.branches(repository_id, after_name=after_name, limit=limit)
+        )
+        return result
+
+    def commits(
+        self,
+        repository_id: UUID,
+        *,
+        branch_name: str = "main",
+        after_commit: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        return self.versions.log(
+            repository_id,
+            branch_name=branch_name,
+            after_commit=after_commit,
+            limit=limit,
+        )
+
+    def checkout(self, repository_id: UUID, commit_id: str) -> dict[str, Any]:
+        return self.versions.checkout(repository_id, commit_id)
+
+    def diff(
+        self, repository_id: UUID, left: str, right: str, *, after: int = 0, limit: int = 100
+    ) -> dict[str, Any]:
+        return self.versions.diff(repository_id, left, right, after=after, limit=limit)
 
     @classmethod
     def from_settings(cls, settings: Settings, *, testing: bool = False) -> "ManagementService":
@@ -257,12 +320,6 @@ class ManagementService:
         usage = BudgetUsage()
         with self.history.engine.connect() as connection:
             snapshots, jobs = TABLES["snapshots"], TABLES["jobs"]
-            snapshot = connection.execute(
-                sa.select(snapshots.c.run_id).where(
-                    snapshots.c.repository_id == repository_id,
-                    snapshots.c.commit_id == row["checkpoint_commit_id"],
-                )
-            ).first()
             job = (
                 connection.execute(sa.select(jobs).where(jobs.c.run_id == run_id))
                 .mappings()
@@ -281,11 +338,36 @@ class ManagementService:
                     origin = self.history._run(connection, repository_id, origin)["origin_run_id"]
                 if job["origin_run_id"] not in allowed:
                     raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "预算来源链未到达 Job 根")
+            snapshot = connection.execute(
+                sa.select(snapshots.c.run_id).where(
+                    snapshots.c.repository_id == repository_id,
+                    snapshots.c.commit_id == row["checkpoint_commit_id"],
+                    snapshots.c.run_id.in_(allowed),
+                )
+            ).first()
         if snapshot is not None and snapshot.run_id in allowed:
             restored = self.history.restore(repository_id, row["checkpoint_commit_id"])
             usage = parse_contract(encode(restored.data), AgentState).usage
         limits = self.jobs.payload(job).limits if job is not None else None
         limits = limits or config.limits
+        baseline = BudgetUsage()
+        if job is not None:
+            spec = self.jobs.payload(job).replay
+            if spec is not None and spec.budget_baseline is not None:
+                baseline = spec.budget_baseline
+                if snapshot is None:
+                    usage = baseline
+        spent = {
+            name: max(0, getattr(usage, name) - getattr(baseline, name))
+            for name in (
+                "steps",
+                "model_calls",
+                "tool_calls",
+                "tokens",
+                "replans",
+                "cost_micro_units",
+            )
+        }
         wall = (
             limits.max_wall_ms
             if job is None or job["deadline_at"] is None
@@ -294,14 +376,23 @@ class ManagementService:
         result["budget"] = {
             "limits": limits.model_dump(mode="json"),
             "usage": usage.model_dump(mode="json"),
+            **(
+                {"baseline": baseline.model_dump(mode="json"), "new_usage": spent}
+                if baseline != BudgetUsage()
+                else {}
+            ),
             "remaining": {
-                "steps": max(0, limits.max_steps - usage.steps),
-                "model_calls": max(0, limits.max_model_calls - usage.model_calls),
-                "tool_calls": max(0, limits.max_tool_calls - usage.tool_calls),
-                "tokens": max(0, limits.max_tokens - usage.tokens - usage.reserved_tokens),
+                "steps": max(0, limits.max_steps - spent["steps"]),
+                "model_calls": max(0, limits.max_model_calls - spent["model_calls"]),
+                "tool_calls": max(0, limits.max_tool_calls - spent["tool_calls"]),
+                "tokens": max(0, limits.max_tokens - spent["tokens"] - usage.reserved_tokens),
                 "wall_ms": wall,
             },
         }
+        if job is not None:
+            report = self.replays.report(repository_id, job["id"])
+            if report is not None:
+                result["replay"] = report
         return result
 
     def job(self, repository_id: UUID, job_id: UUID) -> dict[str, Any]:
@@ -331,6 +422,15 @@ class ManagementService:
                 for key in ("control_request", "control_status", "state_version", "budget")
             }
         )
+        if "replay" in run:
+            result["replay"] = run["replay"]
+            result["mode"] = run["mode"]
+        return result
+
+    def replay_status(self, repository_id: UUID, job_id: UUID) -> dict[str, Any]:
+        result = self.job(repository_id, job_id)
+        if "replay" not in result:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "重放任务不可访问")
         return result
 
     def events(

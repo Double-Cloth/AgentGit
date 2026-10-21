@@ -25,6 +25,7 @@ from agentgit.core.models import EffectClass, EnvironmentManifest, parse_contrac
 from agentgit.core.research import (
     AgentConfig,
     AgentState,
+    BudgetUsage,
     CallTrace,
     ResearchGoal,
     SavedCallOutcome,
@@ -92,9 +93,11 @@ class ResearchService:
             )
         return config_id
 
-    def config(self, repository_id: UUID, config_id: UUID) -> AgentConfig:
+    def config(
+        self, repository_id: UUID, config_id: UUID, *, connection: Connection | None = None
+    ) -> AgentConfig:
         table = TABLES["agent_configs"]
-        with self.history.engine.connect() as connection:
+        with transaction(self.history.engine, connection) as connection:
             row = (
                 connection.execute(
                     sa.select(table).where(
@@ -118,7 +121,7 @@ class ResearchService:
         *,
         connection: Connection | None = None,
     ) -> UUID:
-        config = self.config(repository_id, config_id)
+        config = self.config(repository_id, config_id, connection=connection)
         if set(goal.frameworks) != {source.framework for source in self.corpus.sources.values()}:
             raise AgentGitError(ErrorCode.VALIDATION, "S3 仅支持固定三框架比较任务")
         task_id = uuid4()
@@ -265,6 +268,8 @@ class ResearchSession:
         self.authorization: ApprovalService | None = None
         self.settlement: CallSettlement | None = None
         self.execution_service: ExecutionService | None = None
+        self.budget_baseline: BudgetUsage | None = None
+        self.initialization: dict[str, object] | None = None
 
     def bind_execution(self, service: "ExecutionService") -> None:
         if service.policy != self.config.execution_policy:
@@ -343,14 +348,15 @@ class ResearchSession:
         lock = package.parent.parent / "uv.lock"
         if not lock.is_file():
             raise AgentGitError(ErrorCode.CONFIGURATION, "S3 示例需从含 uv.lock 的项目环境运行")
-        payload = encode(
-            {
-                "schema_version": 1,
-                "goal": self.state.goal.model_dump(mode="json"),
-                "corpus_digest": self.service.corpus.digest(),
-                "config": self.config.model_dump(mode="json"),
-            }
-        )
+        controlled_input = {
+            "schema_version": 1,
+            "goal": self.state.goal.model_dump(mode="json"),
+            "corpus_digest": self.service.corpus.digest(),
+            "config": self.config.model_dump(mode="json"),
+        }
+        if self.budget_baseline is not None:
+            controlled_input["budget_baseline"] = self.budget_baseline.model_dump(mode="json")
+        payload = encode(controlled_input)
         input_ref = self.history.register_input(self.repository_id, payload)
         return EnvironmentManifest(
             runtime_version=__version__,
@@ -386,6 +392,9 @@ class ResearchSession:
             )
         if self.expected_environment is not None and self.environment != self.expected_environment:
             raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "恢复环境与原检查点不兼容")
+        if self.initialization is not None:
+            self.save(self.state, "live.initialized", self.initialization)
+            self.initialization = None
         gateway = (
             self.gateway_factory()
             if self.gateway_factory is not None
@@ -431,6 +440,7 @@ class ResearchSession:
             control=control,
             wall_budget_ms=wall_budget_ms,
             settlement=self.settlement,
+            budget_baseline=self.budget_baseline,
         ).run()
 
     def save(

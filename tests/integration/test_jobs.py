@@ -353,6 +353,20 @@ def test_heartbeat_renews_lease_while_adapter_is_waiting(queued):
         assert result.result(timeout=20)["status"] == "completed"
 
 
+def test_claim_skips_locked_job_and_can_claim_after_release(queued):
+    queue, _, _, _, _ = queued
+    response = submit(queued)
+    with queue.history.engine.begin() as connection:
+        connection.execute(
+            sa.select(TABLES["jobs"].c.id)
+            .where(TABLES["jobs"].c.id == UUID(response.job_id))
+            .with_for_update()
+        ).scalar_one()
+        assert queue.claim("locked-competitor") is None
+    lease = queue.claim("after-release")
+    assert lease is not None and lease.job_id == UUID(response.job_id)
+
+
 def test_late_adapter_response_cannot_commit_after_takeover(queued):
     queue, repo, _, _, _ = queued
     response = submit(queued)

@@ -23,7 +23,7 @@ from agentgit.core.models import (
     parse_contract,
 )
 from agentgit.core.research import AgentState, ResearchGoal, evolve
-from agentgit.core.snapshots import EventPayload
+from agentgit.core.snapshots import EventPayload, StateSnapshot
 from agentgit.runtime.ports import CallSettlement, ModelAdapter
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.calls import RecordedCallGateway
@@ -32,8 +32,10 @@ from agentgit.services.execution_recovery import discard_stopped, occurrence_of,
 from agentgit.services.executions import ExecutionService
 from agentgit.services.history import TABLES, EventInput, HistoryService
 from agentgit.services.jobs import JobService
+from agentgit.services.recorded_jobs import RecordedJobRunner
 from agentgit.services.recovery import prepare_recovery, recovery_origins
 from agentgit.services.research import ResearchService, ResearchSession
+from agentgit.storage.roles import path_reference_role
 
 
 class LeaseHeartbeat:
@@ -79,6 +81,18 @@ class Worker:
         if lease is None:
             return None
         try:
+            payload = self.queue.payload(self.queue.get(lease.repository_id, lease.job_id))
+            if payload.replay is not None and payload.replay.mode == "recorded":
+                if lease.recovery_required:
+                    with LeaseHeartbeat(self.queue, lease):
+                        prepared = prepare_recovery(self.queue, lease)
+                    if prepared is None:
+                        return self._summary(lease)
+                    lease = prepared
+                with LeaseHeartbeat(self.queue, lease):
+                    self.fault("after_claim")
+                    RecordedJobRunner(self.queue, lease, self.fault).run()
+                return self._summary(lease)
             if lease.recovery_required:
                 with LeaseHeartbeat(self.queue, lease):
                     ExecutionService.reconcile(self.queue, lease)
@@ -219,6 +233,31 @@ class Worker:
         state = AgentState(goal=goal, plan_version=payload.initial_plan_version)
         environment = None
         snapshot = None
+        live = (
+            payload.replay if payload.replay is not None and payload.replay.mode == "live" else None
+        )
+        if live is not None:
+            with history.engine.connect() as connection:
+                request = (
+                    connection.execute(
+                        sa.select(TABLES["replay_requests"]).where(
+                            TABLES["replay_requests"].c.repository_id == lease.repository_id,
+                            TABLES["replay_requests"].c.job_id == lease.job_id,
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+                if request is None or any(
+                    request[key] != value
+                    for key, value in (
+                        ("mode", "live"),
+                        ("source_run_id", UUID(live.source_run_id)),
+                        ("from_commit_id", live.from_commit),
+                        ("environment_ref", live.environment_ref),
+                    )
+                ):
+                    raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "Live Job 与不可变来源不符")
         if has_snapshot:
             snapshot = history.restore(lease.repository_id, run["checkpoint_commit_id"])
             state = parse_contract(encode(snapshot.data), AgentState)
@@ -231,6 +270,41 @@ class Worker:
                 history.objects.get(manifest.environment_ref, ObjectType.ENVIRONMENT),
                 EnvironmentManifest,
             )
+        elif live is not None:
+            if run["checkpoint_commit_id"] != live.from_commit:
+                raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "Live 初始检查点与冻结来源不符")
+            with history.engine.connect() as connection:
+                refs = TABLES["object_refs"]
+                owned = connection.execute(
+                    sa.select(refs.c.object_id).where(
+                        refs.c.repository_id == lease.repository_id,
+                        refs.c.owner_type == "replay_input",
+                        refs.c.owner_id == str(lease.job_id),
+                        refs.c.role == "state",
+                        refs.c.object_id == live.initial_state_ref,
+                    )
+                ).first()
+            if owned is None:
+                raise AgentGitError(ErrorCode.FORBIDDEN, "Live 初始状态缺少当前 Job 归属")
+            snapshot = parse_contract(
+                history.objects.get(live.initial_state_ref, ObjectType.STATE), StateSnapshot
+            )
+            state = parse_contract(encode(snapshot.data), AgentState)
+            if state.goal != goal or state.usage != live.budget_baseline:
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "Live 初始目标或预算基线不符")
+            with history.engine.connect() as connection:
+                for artifact in snapshot.artifacts:
+                    owned = connection.execute(
+                        sa.select(refs.c.object_id).where(
+                            refs.c.repository_id == lease.repository_id,
+                            refs.c.owner_type == "replay_input",
+                            refs.c.owner_id == str(lease.job_id),
+                            refs.c.role == path_reference_role("file", artifact.path),
+                            refs.c.object_id == artifact.object_ref,
+                        )
+                    ).first()
+                    if owned is None:
+                        raise AgentGitError(ErrorCode.FORBIDDEN, "Live 初始产物缺少当前 Job 归属")
         workspace = ArtifactWorkspace(
             research.data_root / "workspaces" / str(lease.run_id) / f"lease-{lease.fencing_token}",
             max_file_bytes=config.limits.max_artifact_bytes,
@@ -255,6 +329,14 @@ class Worker:
             run["checkpoint_commit_id"],
             branch["version"],
         )
+        if live is not None:
+            session.budget_baseline = live.budget_baseline
+            if not has_snapshot:
+                session.initialization = {
+                    "source_run_id": live.source_run_id,
+                    "from_commit": live.from_commit,
+                    "initial_state_ref": live.initial_state_ref,
+                }
         if config.execution_policy is not None:
             session.bind_execution(
                 ExecutionService(

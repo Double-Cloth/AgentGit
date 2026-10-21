@@ -1,6 +1,6 @@
-# S4 本地服务与 CLI
+# 本地服务与 CLI（S4/S5）
 
-当前支持本机操作者、固定离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，以 AGENTGIT_* 进程环境为准。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0009_sandbox_executions`。
+当前支持本机操作者、固定离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，以 AGENTGIT_* 进程环境为准。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0012_replay_source_index`。
 
 ## CLI 离线流程
 
@@ -76,6 +76,13 @@ serve 只监听 127.0.0.1。Origin 默认允许 http://127.0.0.1:8000、http://l
 | GET /health、/ready | 公开 | 存活/真实数据库就绪，失败 503 |
 | POST /repositories | name、expected_version=0 | 201，repository_id、version |
 | GET /repositories/{id} | 项目头与路径一致 | 项目、当前主分支 HEAD/version |
+| POST /branches | source_run_id、from_commit、name、expected_version=0 | 201，从安全检查点建立分支，保存不可变来源；同名冲突 |
+| POST /replays | source_run_id、from_commit、branch_name；recorded 要求 until_commit；live 可提供 overrides/budget；expected_version=0 可省略 | 202，原子创建独立 Task/Job/Run/分支及来源，执行由 Worker 负责 |
+| GET /replays/{job_id} | 项目头 | Job 状态、重放范围/证明进度、逻辑状态/用量、独立实际计量 |
+| GET /repositories/{id}/branches | after_name 可省略、limit=1..1000 | 分支 HEAD/version 与来源、has_more、next_after_name |
+| GET /repositories/{id}/commits | branch_name 默认 main、after_commit 可省略、limit=1..1000 | 当前分支从新到旧的 Commit manifest、has_more、next_after_commit |
+| GET /commits/{id} | 项目头 | 完整 manifest、环境和 snapshot，只读且核验内容 |
+| GET /diff | left_commit、right_commit、after≥0、limit=1..1000 | common_ancestor（可为 null）、字段/产物/调用变化、total_changes、next_after、has_more |
 | POST /agents | config 可省略、expected_version | 201，不可变 config_id、递增 version |
 | POST /tasks | config_id、config_version、goal、expected_version=0 | 201，task_id |
 | POST /tasks/{id}/runs | config_version、expected_branch_version、expected_head；branch_name 默认 main；budget 可省略 | 202，耐久 job_id/run_id |
@@ -95,6 +102,83 @@ goal 示例：`{"schema_version":1,"text":"比较三个 fixture 框架"}`。conf
 ```
 
 API/CLI 共用事务和幂等记录。同 actor/route/key 成功重试返回原响应，即使状态已推进；业务修改、响应引用、幂等记录同时提交，失败全回滚。实时状态使用 GET/status。旧版本或分支占用为 409，已有结果/审批不重复执行。
+
+## S5 分支、历史与差异
+
+使用已完成任务的 Run 和 Commit，先读取历史，再选择安全节点：
+
+```powershell
+uv run --locked agentgit log $repo.repository_id --branch-name main --limit 20
+uv run --locked agentgit checkout $repo.repository_id $commitId
+uv run --locked agentgit branch $repo.repository_id --name experiment-a --source-run $job.run_id --from-commit $commitId --key fork-a-001
+uv run --locked agentgit branch $repo.repository_id --limit 20
+uv run --locked agentgit diff $repo.repository_id $leftCommit $rightCommit --limit 100
+```
+
+`$commitId/$leftCommit/$rightCommit` 必须是本项目完整的 64 位小写摘要。Fork 的 `source_run_id` 必填，用于限定来源路径及检查尚未核对的效果；不能只凭摘要继承旧运行的权限。新分支 version=0、HEAD=from_commit，原分支和历史保持不变。Checkout 返回历史数据，不创建可执行工作区。分页分别使用 `--after-name`、`--after-commit`、`--after` 延续服务返回的游标。
+
+HTTP 创建体示例（示例占位符须替换）：
+
+```json
+{"schema_version":1,"source_run_id":"<Run UUID>","from_commit":"<Commit digest>","name":"experiment-a","expected_version":0}
+```
+
+### Recorded 耐久任务
+
+Replay 自行创建新分支，不必预先执行 `branch`；同名分支冲突，不覆盖旧分支。通过 Fork 创建的历史分支不能用普通 `run` 隐式选择执行模式，应使用 Replay。入口接受 Recorded 和 Live，也允许已有 Recorded Run 作为再次 Recorded 的来源。
+
+```powershell
+$replay = uv run --locked agentgit replay $repo.repository_id --source-run $job.run_id --from-commit $fromCommit --until-commit $untilCommit --branch-name recorded-a --key replay-001 | ConvertFrom-Json
+uv run --locked agentgit worker --once
+uv run --locked agentgit status $repo.repository_id $replay.job_id --job
+```
+
+HTTP 创建体（替换示例占位符），使用既有身份/项目/幂等头：
+
+```json
+{"schema_version":1,"mode":"recorded","source_run_id":"<Run UUID>","from_commit":"<Commit digest>","until_commit":"<Commit digest>","branch_name":"recorded-a","expected_version":0}
+```
+
+Recorded 不接受 `overrides/config/budget/prompt/model` 等干预字段。提交先验证范围、完整录制及环境兼容性，只保存耐久任务，不创建执行工作区或调用模型/工具。运行中丢失记录或产物会失败，不回退 Live。起点必须可安全 Fork；`from=until` 合法，只恢复起点，不伪称执行过调用。
+
+`status --job`、`GET /jobs/{id}` 和 `GET /replays/{id}` 的 `replay` 字段区分三类事实：`status=completed` 是新 Job 已结束；`replay.verified=true` 是选定历史范围重算验证通过；`logical_status/logical_usage` 是原历史逻辑状态与用量。选择非终态终点也可完成 Recorded，不能因此认定原任务成功或修复有效。`actual.model_calls/tool_calls/cost_micro_units` 为零；`actual.elapsed_ms` 仅累计已结束尝试的实测耗时，`unmeasured_attempts` 明确标记崩溃等未完成计量的尝试，不把未知耗时记为零。
+
+实际重放暂停/恢复沿用 Run，取消/到期只结束新任务，不改历史逻辑状态；持久截止时间不因重启重置。崩溃接管创建新的 Recorded Run，重算并核验已保存前缀，继续保存剩余证明。原幂等响应保持最初 Job/Run ID，最新 Run 通过 Job 状态查询。版本/录制和耐久任务证据见 [S5-progress.md](acceptance/S5-progress.md)、[S5-recorded-jobs.md](acceptance/S5-recorded-jobs.md)，完整阶段验收见 [S5.md](acceptance/S5.md)。
+
+### 从 Recorded 再次回放
+
+使用相同 `mode=recorded` 请求，把 `source_run_id` 指向已有 Recorded Run，起止点选择该 Run 的 base 或自身保存的连续检查点。恢复 Run 可从自身 base 继续选择范围；不接受任意祖先、其他 Run 的检查点或跳过的证明。
+
+服务逐层核验冻结 Job、不可变请求、证明顺序/归属、父关系、状态/环境及事件索引，再追溯原始录制驱动纯 Runtime。新的证明仍逐项对应用户选择的直接来源 Commit。来源中的 `replay.restored` 是零调用恢复边界，保留为独立检查点；后续状态必须实际重算，不能用旧证明快照代替。
+
+链中原始响应、执行日志或文件缺失仍失败，不因已有成功证明而跳过验证。全链共享 64 MiB 读取预算，最多 32 层解析，超限为 `output_limit`；不自动裁剪链或回退 Live。实际调用计量仍为零，暂停/恢复、取消、持久期限和崩溃接管保持原语义。详情与范围证据见 [S5-compound.md](acceptance/S5-compound.md)。
+
+对于原 Runtime 已保存未知状态、之后取得可信核对回执的模型历史，Recorded 会先重现未知诊断，再结算确认结果，保留原预算和控制顺序。缺诊断、缺证据或结果链接错配会失败，不调用 Resolver 重查。若终点是确认之前的未知检查点，可验证该历史状态，但仍显示 `logical_status=outcome_unknown`，不能把 `verified` 当作任务成功。接管封存及自定义外部写等其他路径的支持边界见 [S5-settlement.md](acceptance/S5-settlement.md)。
+
+### Live 独立重执行
+
+Live 只提供 `from_commit`，拒绝 `until_commit`。它创建新配置、Task、Job、Run 和工作区，重新执行剩余计划；不要求输出与来源一致。可选 `budget` 是新配置授权上限内的完整 `BudgetLimits`，不减去来源已花费的预算。历史累计用量保留，冻结 `budget_baseline` 后只按新增差额检查配额；恢复继续同一基线及持久截止时间。
+
+`overrides` 可含 `config`（完整 `AgentConfig`）、`plan`（完整 `Plan`）、`artifacts`、`execution`。计划不能修改或删除已完成节点，剩余节点的工具须获新配置授权。配置/计划干预会重新产生待执行决策；旧未完成 attempt、停止证书和待结算轨迹不会成为新 Job 的复用依据。
+
+产物干预使用安全相对路径，每项 `operation=write`（默认）必须在 `text` 与严格 `content_b64` 中二选一，`media_type` 可选；`operation=delete` 不能携带内容/MIME，且目标必须存在。重复路径、Windows 大小写冲突、越界路径和文件上限均拒绝。
+
+执行干预选择 `tool=code_exec/terminal_exec`、版本化文件 `path`，可指定 `node_key`、`cwd`、`stdin_path`、`timeout_ms`，Python 另可提供 `argv`。必须精确匹配一个就绪节点；后端依据新工作区重新生成输入清单和策略引用。终端命令写在文件中，不接收独立 `argv`。不能上传任意 CAS 引用、镜像、容器权限或审批。
+
+```json
+{"schema_version":1,"mode":"live","source_run_id":"<Run UUID>","from_commit":"<Commit digest>","branch_name":"live-a","overrides":{"artifacts":[{"path":"execution/statistics.py","text":"from pathlib import Path\nPath('result.txt').write_text('A')\n"}],"execution":{"tool":"code_exec","path":"execution/statistics.py"}}}
+```
+
+```powershell
+uv run --locked agentgit replay $repo.repository_id --mode live --source-run $job.run_id --from-commit $fromCommit --branch-name live-a --key live-a-001 --overrides-file overrides.json --budget-file budget.json
+uv run --locked agentgit worker --once
+```
+
+两个文件分别保存上述 `overrides` 对象和完整 `BudgetLimits` JSON；均可省略。Recorded 模式提供这两个文件会被拒绝。
+
+`replay.logical_usage` 是保留的累计用量，`budget_baseline/new_usage` 展示来源基线与新分支消耗；`actual.model_calls/tool_calls` 从新 Job 的物理调用账本统计，排除恢复复用，未知结果另报 `unknown_outcomes`。调用意图已发出但结果未知仍计入实际尝试，不声称外部服务一定收到。`actual.wall_ms` 是新 Job 已启动后的墙钟时间；模型仍为离线 Mock，成本为零。源 Run 的审批不能授权新 Run 的相同参数。
+
+新 Run 首次保存 `live.initialized`，将干预后的状态、文件和新环境固定为检查点；其后可作为 Recorded 来源，预算基线一并验证，部分范围的 `budget.remaining` 也只扣除该基线之后的用量。跨越来源旧环境与 Live 新环境的 Recorded 范围会因环境不兼容拒绝。专项证据见 [S5-live.md](acceptance/S5-live.md)。
 
 错误含 error.code、message、evidence_refs（无证据时为空）、correlation_id，另有 X-Correlation-ID，不反射输入/URL/堆栈/令牌。validation=422、权限=403、不可访问=404、冲突=409、输出上限=413、配置/设施不可用=503、未预期错误=500。响应不缓存；JSON 日志写 stderr，仅含关联编号、方法、路由模板、状态、整数耗时，不含正文/认证头/查询/幂等键。
 

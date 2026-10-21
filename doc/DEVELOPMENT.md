@@ -69,7 +69,7 @@ CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障�
 
 ## S3 离线研究演示
 
-S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 head 已推进至 `0009_sandbox_executions`。先升级开发库，再运行：
+S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 head 已推进至 `0012_replay_source_index`。先升级开发库，再运行：
 
 ```powershell
 uv run --locked alembic upgrade head
@@ -97,6 +97,42 @@ Job 固定代码摘要、配置、输入、语料和初始计划版本；Worker 
 ```powershell
 uv run --locked pytest tests/integration/test_jobs.py tests/integration/test_kernel_migrations.py
 ```
+
+## S5 版本与录制基础
+
+`VersionService` 提供来源 Run 路径校验、安全 Fork、只读 Checkout、分支历史和结构化 Diff；入口见 [API.md](API.md)。`0010_branch_forks` 保存不可变来源 Run、起点和操作者，Fork 与幂等响应在同一事务中提交。名称冲突不覆盖分支；未核对的写入检查点拒绝 Fork，已可信清理的容器失败需匹配精确的停止证据。
+
+Checkout 只读 CAS/数据库，不物化工作区或启动工具。Diff 使用 JSON Pointer 展示字段、数组、产物摘要/MIME 与调用变化；二进制文件只比较摘要。共同祖先基于经过校验的单父 Commit 路径，历史及输出有界，分页不会把超限结果标为完整。
+
+`RecordingReader.load()` 必须提供来源 Run、起止 Commit 和预期 `EnvironmentManifest`。读取器逐项核验事件、调用 occurrence、参数/签名/响应、对象所有权，以及执行工具的输入、策略、日志和输出 manifest；缺对象返回 `recording_missing`，环境不兼容或错配直接失败。`RecordedAdapter` 仅持有录制字节，精确顺序消费且不调用传入的真实执行回调，禁止 Live 回退。
+
+`RecordedReplayer` 现在用原 `ResearchRuntime` 和 `MemoryWorkspace` 逐检查点重算状态与产物，比较来源 Commit 的 state_ref；只把起点快照用于恢复，后续快照作为比较证据。普通调用、执行输入上下文、产物写入和成功执行输出均在内存中重建。模型/工具响应严格由 `RecordedAdapter` 提供，不实例化执行服务或宿主工作区。
+
+Recorded 同时校验当前代码、Python、依赖锁、模型/工具签名、Prompt、固定语料/评价时间/种子及完整输入，不接受改变配置。逻辑调用计数沿用历史，实际模型/工具调用为零；暂停/恢复、取消、步骤/工具预算和当前版本的墙钟停止事件已覆盖。墙钟触发点从相同代码的录制事件恢复，实际回放耗时不写回逻辑预算。
+
+来源中 `call.reused` 表示崩溃前已有完整结果，重算沿用 Runtime 缓存消费入口，保持先结算、后取消/到期的顺序；普通录制不会误走恢复路径。已验证结果保存后、观察前崩溃的正常继续/取消/到期三个真实执行来源。
+
+`sandbox.execution_discarded` 由单独的纯状态逻辑重建：读取器先验证原物理调用、固定策略/输入、同来源链、唯一清理证明及该 Run 的丢弃引用归属，重算器再比较原安全状态或精确的 `outcome_unknown` 状态，保留旧轨迹、扣除一次旧尝试用量并追加停止证书。丢弃本身没有调用响应，不补造成功结果。之后继续消费新 attempt 的录制，或按原取消/截止时间/预算/尝试上限停止。缺清理证明或输入漂移明确失败，不访问引擎补齐证明。
+
+Recorded 已接入耐久 Job、Worker、`POST /replays` 和 `agentgit replay`，操作见 [API.md](API.md#recorded-耐久任务)。`0011_replay_jobs` 增加不可变 `replay_requests/replay_checkpoints`，绑定来源范围、独立 Job 和逐检查点状态摘要；数据库复核来源顺序、父关系和新 Run 归属。提交复用原配置、创建独立 Task，不继承原工作区或动作授权，也不执行 Runtime。Worker 在租约和心跳下重算，证明随 Commit 同事务保存。
+
+Recorded 的实际暂停/取消/期限与来源逻辑状态分别记录；重启后先验证已保存前缀，再保存剩余证明。实际耗时通过操作事件记录，未完成计量的崩溃尝试明确展示为未知；原逻辑预算不归零。等价分支允许共享 Commit 内容，但已发布父边只校验、不再次插入；父边不可补写和篡改的数据库保护不变。预算读取按当前 Job 的 Run 来源链过滤快照，避免共享 Commit 的其他 Run 被误选。
+
+Live Job 已接入相同管理服务和 Worker：`prepare_live` 在内存中验证干预、生成独立初始快照，提交事务登记新配置/Task/Job、分支来源及 `replay_input` 归属。Worker 只从当前 Job 的初始输入或自身恢复链物化新工作区，先保存 `live.initialized`。新环境显式绑定 `budget_baseline`，Runtime 保留累计 occurrence 编号，按用量差额检查新增预算。Recorded 重算 Live 来源时必须验证同一基线。
+
+新 Job 的 `origin_run_id` 恢复边界在第一次执行时为空；来源 Run 仅用于历史 provenance，不提供结果复用和旧审批。接管后恢复链止于该 Job 的初始 Run。执行干预重新绑定文件、清单和固定策略，每次实际尝试仍创建独立受控容器。初始化 Commit 事务回滚、提交后崩溃和结果落库后崩溃分别验证；截止时间不重置。HTTP/CLI 输入和计量说明见 [API.md](API.md#live-独立重执行)，专项记录见 [S5-live.md](acceptance/S5-live.md)。
+
+CLI 的两个 Live 输入文件分别有 1 MiB 读取上限；来源文件逐项读取，累计超过 64 MiB 立即停止，纯产物工作区不套用容器的 32 MiB 清单上限。`storage/roles.py` 将超长路径的引用角色映射为有界摘要键，短角色保持原值；完整路径仍在状态/产物表，现有 100 字符引用列及历史迁移不变。该辅助函数属于宿主存储层，镜像内路径校验源码保持冻结。
+
+复合 Recorded 由 `ProjectionReader` 验证直接来源的证明和自身 Job 恢复链，递归读取底层录制；`RecordedProjection` 只提供来源映射和待验证事件，`RecordedReplayer` 仍调用原 Runtime 重算底层状态，再逐层比较状态/产物摘要和逻辑事件。重复恢复点按零调用恢复处理，不重复消耗录制；不得把旧证明当成新运行成功结果。
+
+递归读取共享全链累计 64 MiB 预算，并限制 32 层；纯重算入口也有独立深度保护。`0012_replay_source_index` 增加 jobs(repository_id, origin_run_id) 索引，供恢复来源和复合读取定位冻结 Job；历史迁移快照不变，正式库保持只前进，隔离测试库允许往返。证据见 [S5-compound.md](acceptance/S5-compound.md)。
+
+原 Runtime 直接保存未知检查点的模型来源已接通：未知诊断使用独立 `UncertainRecording` 类型，确认回执通过 `SettlementReader` 核验并作为 `RecordedSettlement` 提供给原 Runtime `_settle`。两段事实分别重算，未到确认范围时不能提前采用结果；原有普通 Recording 的未知结果禁用规则保持不变。详见 [S5-settlement.md](acceptance/S5-settlement.md)。
+
+接管封存来源使用 `RecordedUnknownStop`：原调用可以位于同 Job 的旧 Run，依据意图、原请求和调用前状态重算 `run.outcome_unknown`。未观察到的诊断不补造轨迹；已有未知计量保持一次，后续确认仍由原 `_settle` 处理。未确认或仅到封存点的范围保留预留和未知状态，见 [S5-sealed-unknown.md](acceptance/S5-sealed-unknown.md)。
+
+完整 S5 已通过本机验收，当前 599 项用例全部覆盖。`MemoryWorkspace` 对工作区总字节施加 64 MiB 上限，超限必须缩小范围或明确失败，不物化宿主文件作为回退。耐久批次证据见 [S5-recorded-jobs.md](acceptance/S5-recorded-jobs.md)，阶段映射及完整回归见 [S5.md](acceptance/S5.md)。
 
 调度进程故障用例启动仓库内受信任的 Worker 测试助手，并使用独立测试 Schema/临时 CAS；用户 Shell/Python 始终在容器中执行。实际容器基础设施与持久执行服务使用单独套件验证，准备方式与边界见 [sandbox/README.md](../sandbox/README.md)；完整五工具接入及本机验收见 [S4.md](acceptance/S4.md)。早期进展保留在 [S4-progress.md](acceptance/S4-progress.md) 与 [容器边界](acceptance/S4-sandbox-boundary.md)。
 
@@ -146,4 +182,4 @@ uv run --locked pytest tests/unit tests/integration tests/sandbox tests/executio
 
 清理后新 attempt 已实现：`stopped_executions` 记录已确认停止但没有完整结果的稳定调用身份，不冒充成功；丢弃决定和旧尝试预算同检查点原子保存，新尝试从相同输入创建新容器并另计预算。固定上限两次，取消/到期/预算不足先结算再停止。清理失败的 Job 每 30 秒有界重查，未确认时不创建新尝试，普通模型/外部写仍须可信核对。新尝试在 stage 与意图事务内复核停止依据、源链、输入和策略。
 
-[S4 本机验收](acceptance/S4.md)已完成；`doctor --sandbox` 共用执行器的只读前提检查，固定镜像和隔离能力可用才返回就绪，不启动容器或执行命令。继续按实施方案进入 S5；S6 Electron 桌面及必选 S11/S12 的完整交付不变。
+[S4 本机验收](acceptance/S4.md)与 [S5 本机验收](acceptance/S5.md)已完成；`doctor --sandbox` 共用执行器的只读前提检查，固定镜像和隔离能力可用才返回就绪，不启动容器或执行命令。继续按实施方案进入 S6 Electron 桌面；必选 S11/S12 的完整交付不变。
