@@ -9,6 +9,8 @@ from uuid import UUID, uuid4
 import sqlalchemy as sa
 from sqlalchemy.engine import Connection
 
+from agentgit import __version__
+from agentgit.adapters.execution.policy import bundled_policy
 from agentgit.config import Settings
 from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.effects import ToolPolicy
@@ -22,10 +24,12 @@ from agentgit.core.management import (
     SubmitRun,
 )
 from agentgit.core.models import parse_contract
-from agentgit.core.research import AgentState, BudgetUsage
+from agentgit.core.research import AgentConfig, AgentState, BudgetUsage
 from agentgit.core.versions import LiveReplay, NewBranch, RecordedReplay
 from agentgit.services.approvals import ApprovalService
+from agentgit.services.execution_views import ExecutionResource, ExecutionViewService
 from agentgit.services.history import TABLES, HistoryService
+from agentgit.services.inspection import InspectionService
 from agentgit.services.jobs import JobService
 from agentgit.services.replays import ReplayService
 from agentgit.services.research import ResearchService
@@ -54,6 +58,72 @@ class ManagementService:
         self.jobs = JobService(research)
         self.versions = VersionService(self.history)
         self.replays = ReplayService(research)
+        self.inspection = InspectionService(self.history)
+        self.execution_views = ExecutionViewService(self.history)
+
+    def capabilities(self) -> dict[str, Any]:
+        config = AgentConfig()
+        execution = AgentConfig(
+            tools=(*config.tools, "code_exec", "terminal_exec"), execution_policy=bundled_policy()
+        )
+        return {
+            "schema_version": 1,
+            "version": __version__,
+            "default_config": config.model_dump(mode="json"),
+            "execution_config": execution.model_dump(mode="json"),
+            "features": [
+                "run_pagination",
+                "historical_artifacts",
+                "execution_evidence",
+                "recorded",
+                "live",
+                "structural_diff",
+            ],
+            "worker": {"status": "unknown", "reason": "no_readiness_probe"},
+            "execution_environment": {"status": "unknown", "reason": "policy_is_not_readiness"},
+        }
+
+    def runs(
+        self, repository_id: UUID, *, after_id: UUID | None = None, limit: int = 30
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = public(
+            self.inspection.runs(repository_id, after_id=after_id, limit=limit)
+        )
+        return result
+
+    def commit_artifacts(
+        self, repository_id: UUID, commit_id: str, *, after_id: UUID | None = None, limit: int = 30
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = public(
+            self.inspection.artifacts(repository_id, commit_id, after_id=after_id, limit=limit)
+        )
+        return result
+
+    def executions(
+        self, repository_id: UUID, run_id: UUID, *, after_id: UUID | None = None, limit: int = 30
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = public(
+            self.execution_views.list(repository_id, run_id, after_id=after_id, limit=limit)
+        )
+        return result
+
+    def execution(self, repository_id: UUID, run_id: UUID, call_id: UUID) -> dict[str, Any]:
+        result: dict[str, Any] = public(self.execution_views.detail(repository_id, run_id, call_id))
+        return result
+
+    def execution_content(
+        self,
+        repository_id: UUID,
+        run_id: UUID,
+        call_id: UUID,
+        resource: ExecutionResource,
+        *,
+        offset: int = 0,
+        limit: int = 65536,
+    ) -> tuple[dict[str, Any], bytes]:
+        return self.execution_views.content(
+            repository_id, run_id, call_id, resource, offset=offset, limit=limit
+        )
 
     def replay(
         self, repository_id: UUID, payload: RecordedReplay | LiveReplay, key: str

@@ -31,6 +31,7 @@ from agentgit.core.management import (
 )
 from agentgit.core.models import parse_contract
 from agentgit.core.versions import NewBranch, parse_replay
+from agentgit.services.execution_views import ExecutionResource
 from agentgit.services.management import ManagementService
 from agentgit.storage.database import probe_database
 
@@ -114,6 +115,10 @@ def create_app(
     ) -> dict[str, Any]:
         return {"http": stats.snapshot(), **service.metrics(repo)}
 
+    @app.get("/capabilities")
+    def capabilities(service: Annotated[ManagementService, Depends(get_manager)]) -> dict[str, Any]:
+        return service.capabilities()
+
     @app.get("/ready")
     def ready() -> dict[str, str]:
         if manager is None:
@@ -140,6 +145,18 @@ def create_app(
         if repository_id != repo:
             raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
         return service.repository(repo)
+
+    @app.get("/repositories/{repository_id}/runs")
+    def runs(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.runs(repo, after_id=after_id, limit=limit)
 
     @app.post("/agents", status_code=201)
     def agent(
@@ -211,6 +228,16 @@ def create_app(
     ) -> dict[str, Any]:
         return service.checkout(repo, commit_id)
 
+    @app.get("/commits/{commit_id}/artifacts")
+    def commit_artifacts(
+        commit_id: str,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        return service.commit_artifacts(repo, commit_id, after_id=after_id, limit=limit)
+
     @app.get("/diff")
     def diff(
         left_commit: str,
@@ -279,6 +306,55 @@ def create_app(
         run_id: UUID, repo: Repository, service: Annotated[ManagementService, Depends(get_manager)]
     ) -> dict[str, Any]:
         return service.artifacts(repo, run_id)
+
+    @app.get("/runs/{run_id}/executions")
+    def executions(
+        run_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        return service.executions(repo, run_id, after_id=after_id, limit=limit)
+
+    @app.get("/runs/{run_id}/executions/{call_id}")
+    def execution(
+        run_id: UUID,
+        call_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.execution(repo, run_id, call_id)
+
+    @app.get("/runs/{run_id}/executions/{call_id}/content/{resource}")
+    def execution_content(
+        run_id: UUID,
+        call_id: UUID,
+        resource: ExecutionResource,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=1_048_576)] = 65536,
+    ) -> Response:
+        metadata, content = service.execution_content(
+            repo, run_id, call_id, resource, offset=offset, limit=limit
+        )
+        return Response(
+            content,
+            media_type="application/octet-stream",
+            headers={
+                "ETag": f'"{metadata["reference"]}"',
+                "X-Content-Bytes": str(metadata["total_bytes"]),
+                "X-Content-Offset": str(metadata["offset"]),
+                "X-Next-Offset": str(metadata["next_offset"])
+                if metadata["next_offset"] is not None
+                else "",
+                "Content-Disposition": f'attachment; filename="{resource}.bin"',
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "sandbox",
+                "Cache-Control": "no-store",
+            },
+        )
 
     @app.get("/artifacts/{artifact_id}/content")
     def artifact(

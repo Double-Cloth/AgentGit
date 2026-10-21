@@ -1,4 +1,4 @@
-# 本地服务与 CLI（S4/S5）
+# 本地服务与 CLI（S4–S6）
 
 当前支持本机操作者、固定离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，以 AGENTGIT_* 进程环境为准。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0012_replay_source_index`。
 
@@ -67,13 +67,19 @@ uv run --locked agentgit serve --port 8000
 
 serve 只监听 127.0.0.1。Origin 默认允许 http://127.0.0.1:8000、http://localhost:8000 及二者的 5173 端口。AGENTGIT_API_ORIGINS 为显式 JSON 数组，只接受回环 HTTP Origin，无通配符/用户信息/路径。预检只允许 GET/POST 和指定头，无 Cookie/credentials；无 Origin 的客户端仍须认证。Host 也受回环限制，不构成公网多租户授权。
 
-除 POST /repositories 和公开探测外，业务请求须 X-Repository-ID；资源必须归属该项目，不匹配统一 404。修改另须 Idempotency-Key（1–200 字符），体为 application/json、schema_version=1。拒绝重复键、浮点数、未知字段及错误类型；实际接收上限 1 MiB，不依赖 Content-Length。
+除 POST /repositories、GET /capabilities 和公开探测外，业务请求须 X-Repository-ID；资源必须归属该项目，不匹配统一 404。GET /capabilities 仍须认证，不探测 Worker/Docker。修改另须 Idempotency-Key（1–200 字符），体为 application/json、schema_version=1。拒绝重复键、浮点数、未知字段及错误类型；实际接收上限 1 MiB，不依赖 Content-Length。
 
 ## 接口契约
 
 | 方法与路径 | 输入/查询 | 结果 |
 |---|---|---|
 | GET /health、/ready | 公开 | 存活/真实数据库就绪，失败 503 |
+| GET /capabilities | 认证，无项目头 | 固定版本、能力标识、默认三工具/固定五工具配置；Worker/执行环境为 unknown，不启动执行器 |
+| GET /repositories/{id}/runs | after_id、limit=30（1–100）；项目头与路径一致 | 按 created_at/id 倒序的 Run 及当前关联 Job、目标；next_after_id；游标必须属于本项目 |
+| GET /commits/{id}/artifacts | after_id、limit=30（1–100） | 所选历史版本的产物，按相对路径排序；游标限定同项目/Commit，下载仍按产物 ID |
+| GET /runs/{id}/executions | after_id、limit=30（1–100） | Run 内 Shell/Python 逻辑调用，按逻辑步骤/调用序号/attempt 排序；不自动转到来源 Run |
+| GET /runs/{id}/executions/{call_id} | 项目、Run 与调用归属 | 命令/代码参数、物理来源、结果、清理、耗时及可读资源类别；未发布结果为 null |
+| GET /runs/{id}/executions/{call_id}/content/{resource} | offset=0、limit=65536（1–1048576） | 固定类别证据的原字节分段，不接受任意 CAS 摘要或宿主路径 |
 | POST /repositories | name、expected_version=0 | 201，repository_id、version |
 | GET /repositories/{id} | 项目头与路径一致 | 项目、当前主分支 HEAD/version |
 | POST /branches | source_run_id、from_commit、name、expected_version=0 | 201，从安全检查点建立分支，保存不可变来源；同名冲突 |
