@@ -48,4 +48,7 @@ cache-keys = [
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
 addopts = "-ra --strict-markers"
-markers = ["integration: 需要真实 PostgreSQL 的集成测试"]
+markers = [
+  "integration: 需要真实 PostgreSQL 的集成测试",
+  "sandbox: 需要预置固定镜像和真实 Docker Linux 引擎的隔离测试",
+]

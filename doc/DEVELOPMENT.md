@@ -98,7 +98,7 @@ Job 固定代码摘要、配置、输入、语料和初始计划版本；Worker 
 uv run --locked pytest tests/integration/test_jobs.py tests/integration/test_kernel_migrations.py
 ```
 
-真实进程故障用例仅启动仓库内受信任的 Worker 测试助手，并使用独立测试 Schema/临时 CAS；它们不构成用户 Shell/Python 执行功能。容器执行仍未实现，`doctor --sandbox` 继续返回 `execution_ready=false`。进展和验收缺口见 [S4-progress.md](acceptance/S4-progress.md)。
+调度进程故障用例启动仓库内受信任的 Worker 测试助手，并使用独立测试 Schema/临时 CAS；它们不构成用户 Shell/Python 执行功能。容器内部基础设施已另行实现并实际测试，准备方式与边界见 [sandbox/README.md](../sandbox/README.md)；生产工具与持久化接入仍未完成，`doctor --sandbox` 继续返回 `execution_ready=false`。进展和验收缺口见 [S4-progress.md](acceptance/S4-progress.md) 与 [容器边界](acceptance/S4-sandbox-boundary.md)。
 
 ## S4 工具策略与精确审批
 

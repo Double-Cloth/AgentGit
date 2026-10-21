@@ -8,7 +8,7 @@
 | S1 | 已验收 | [S1.md](acceptance/S1.md)：59 单元 + 2 真实 PostgreSQL 集成通过；构建、实际 HTTP 与静态检查通过 |
 | S2 | 已验收 | [S2.md](acceptance/S2.md)：112 项回归通过，含 HEAD 竞争、8 个进程崩溃场景、恢复/隔离与迁移往返 |
 | S3 | 已验收 | [S3.md](acceptance/S3.md)：156 项回归通过；离线研究、版本化计划、三工具、来源验证、预算与双 Run 隔离 |
-| S4 | 进行中 | [调度与恢复](acceptance/S4-progress.md)、[精确审批](acceptance/S4-approvals.md)、[核对继续](acceptance/S4-reconciliation.md)、[服务入口](acceptance/S4-service.md)：API/CLI、鉴权、原子幂等、分页与下载已接入；必选真容器执行待完成 |
+| S4 | 进行中 | [调度与恢复](acceptance/S4-progress.md)、[精确审批](acceptance/S4-approvals.md)、[核对继续](acceptance/S4-reconciliation.md)、[服务入口](acceptance/S4-service.md)、[真容器基础边界](acceptance/S4-sandbox-boundary.md)：固定镜像、双 UID 采集与资源隔离已实现；生产执行记录、两个工具与 Worker/预算/恢复接入待完成 |
 | S5–S10 | 未开始 | 仍按实施方案依次推进；S4 未验收前不进入 S5 |
 | S11 | 可选，未选择 | 不阻断必选 S12 |
 | S12-A/B/C/D | 必选，未开始 | 四项全部验收才达到 D3 |
