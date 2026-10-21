@@ -10,7 +10,7 @@ web
 
 ## Stack
 
-既有后端为 Python 3.12、FastAPI、Pydantic、PostgreSQL、SQLAlchemy、Alembic、Typer 和 uv。S6 的用户指定方案为 Electron + React/TypeScript、React Flow、Electron Forge，交付 Windows x64 安装包与便携 ZIP；渲染界面使用 Web 技术，桌面主进程承担受限系统集成。具体构建用 Node.js、Electron 和工具版本须在建立工程前核验官方兼容性并固定锁文件，当前尚未建立桌面工程。
+既有后端为 Python 3.12、FastAPI、Pydantic、PostgreSQL、SQLAlchemy、Alembic、Typer 和 uv。S6 的用户指定方案为 Electron + React/TypeScript、React Flow、Electron Forge，交付 Windows x64 安装包与便携 ZIP；渲染界面使用 Web 技术，桌面主进程承担受限系统集成。已建立 `desktop/` 初版并固定 Node.js 24.19.0、Electron 45.0.0、Forge 8.0.1 等版本；初步真实 Electron 边界/四页测试通过，安装交付尚未验收。
 
 ## Users
 
@@ -41,11 +41,11 @@ web
 
 ## Brand Commitments
 
-产品名称为 AgentGit。界面继承根目录 DESIGN.md 的视觉体系、允许的字体替代、组件和断点；不另外发明品牌配色或装饰体系。字体和其他资产须有授权并满足安装包离线使用要求；目前没有把未提供的品牌资产或商业字体视为已具备。
+产品名称为 AgentGit。界面继承根目录 DESIGN.md 的视觉体系、允许的字体替代、组件和断点；不另外发明品牌配色或装饰体系。字体和其他资产须有授权并满足安装包离线使用要求；已取得本地 Inter、EB Garamond、JetBrains Mono 及 OFL，记录上游提交和摘要，没有把未提供的商业字体视为已具备。
 
 ## Evidence on Hand
 
-真实 PostgreSQL、固定 Linux 容器、完整五工具来源、CLI 与 API、逐检查点 Replay 证明、A/B Live 文件与预算隔离均有本机记录。原始运行证据在忽略的 `.agentgit/evidence/`；可提交的验收说明位于 `doc/acceptance/`。尚无桌面安装包、真实 Electron 端到端或独立 Windows 用户安装证据，不以后端通过替代它们。
+真实 PostgreSQL、固定 Linux 容器、完整五工具来源、CLI 与 API、逐检查点 Replay 证明、A/B Live 文件与预算隔离均有本机记录。原始运行证据在忽略的 `.agentgit/evidence/`；可提交的验收说明位于 `doc/acceptance/`。初步真实 Electron 测试使用受控 HTTP fixture，证明窗口/桥接与渲染行为；尚无桌面到真实五工具的完整联调、安装包或独立 Windows 用户安装证据，不能互相替代。
 
 ## Product Principles
 

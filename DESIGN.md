@@ -147,6 +147,13 @@ components:
     backgroundColor: "{colors.primary-active}"
     textColor: "{colors.on-primary}"
     rounded: "{rounded.md}"
+  button-primary-accessible:
+    backgroundColor: "{colors.primary-active}"
+    textColor: "{colors.on-primary}"
+    typography: "{typography.button}"
+    rounded: "{rounded.md}"
+    padding: 12px 20px
+    height: 40px
   button-primary-disabled:
     backgroundColor: "{colors.primary-disabled}"
     textColor: "{colors.muted}"
@@ -176,6 +183,10 @@ components:
   text-link:
     backgroundColor: transparent
     textColor: "{colors.primary}"
+    typography: "{typography.body-md}"
+  text-link-accessible:
+    backgroundColor: transparent
+    textColor: "{colors.primary-active}"
     typography: "{typography.body-md}"
   top-nav:
     backgroundColor: "{colors.canvas}"
@@ -587,3 +598,11 @@ When photography is used (rare — mostly testimonials), avatars crop to perfect
 - Form validation states beyond `{component.text-input-focused}` are not extracted — error / success states would need a sign-up or feedback flow to confirm.
 - The actual Claude product surface (claude.ai chat interface) shares some tokens with the marketing site but adds many product-specific components (chat bubbles, message tools, file upload chips, conversation history sidebar) that are out of scope for this marketing-surface document.
 - The "agent" / "computer use" demo cards on certain pages display animated Claude controlling a browser — the static screenshot doesn't fully capture the animation chrome.
+
+## AgentGit 桌面无障碍适配（S6，2026-10-22）
+
+本节是现有体系在 AgentGit 操作界面的补充，不替换原营销界面的提取记录。S6 实施方案要求实际检测对比度，并在不达标时先记录、同步规范。按 WCAG sRGB 相对亮度计算，`on-primary` 白色与 `primary` 的对比度为 **3.277:1**；`primary` 文字与 `canvas` 为 **3.110:1**，均不足以承担 14–16px 的普通文字。
+
+桌面主操作采用新增 `button-primary-accessible`：直接复用 `primary-active`，其白字对比度为 **5.057:1**；普通链接采用 `text-link-accessible`，该颜色与 `canvas` 的对比度为 **4.800:1**，并保留文字下划线。原 `primary` 仍可用于非文字强调、装饰和既有组件；不新增品牌色。
+
+键盘焦点使用现有 `ink` 的 2px 外轮廓、2px 间隔，不只依赖低透明度珊瑚色光环。状态颜色只作辅助，状态文字使用可读的正文颜色并明确写出含义。禁用控件继续使用原 disabled 变体，不能仅靠颜色表达不可操作原因。其他布局、字体、圆角、间距和断点沿用既有规范。
