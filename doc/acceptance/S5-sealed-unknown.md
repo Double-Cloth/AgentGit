@@ -1,6 +1,6 @@
 # S5 接管封存未知来源批次
 
-本批延续 [模型核对](S5-settlement.md)，接通旧 Run 未观察调用即崩溃、新 Run 保存 `run.outcome_unknown` 的 Recorded 来源。完整 S5 汇总回归仍在进行，fake 外部写的原 Runtime 专项另行汇总。
+本批延续 [模型核对](S5-settlement.md)，接通旧 Run 未观察调用即崩溃、新 Run 保存 `run.outcome_unknown` 的 Recorded 来源。完整 S5 汇总回归与 fake 外部写的原 Runtime 结果见 [S5.md](S5.md)。
 
 ## 实现与边界
 

@@ -1,6 +1,6 @@
 # S5 耐久 Recorded Job 实施记录
 
-状态：本机 Recorded 子批已验证，不能替代 S5-T01–T09 总体验收。后续 Live 与复合来源结果见 [S5-live.md](S5-live.md)、[S5-compound.md](S5-compound.md)；完整 S0–S12 与 Electron 交付范围不变。
+状态：本机 Recorded 子批已验证；S5-T01–T09 总体验收及最终完整回归现已汇总于 [S5.md](S5.md)。后续 Live 与复合来源结果见 [S5-live.md](S5-live.md)、[S5-compound.md](S5-compound.md)；完整 S0–S12 与 Electron 交付范围不变。
 
 ## 实现与边界
 

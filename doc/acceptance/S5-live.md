@@ -1,6 +1,6 @@
 # S5 Live 独立重执行批次
 
-本记录只覆盖 Live 子批次，不代表完整 S5 验收。后续复合 Recorded 结果见 [S5-compound.md](S5-compound.md)，其他可信结果核对来源仍待完成；S6、必选 S11 和 S12-A/B/C/D 的交付范围保持不变。
+本记录只覆盖 Live 子批次；完整 S5 验收现已汇总于 [S5.md](S5.md)。后续复合 Recorded 结果见 [S5-compound.md](S5-compound.md)，可信核对及接管封存见对应专项；S6、必选 S11 和 S12-A/B/C/D 的交付范围保持不变。
 
 ## 实现
 

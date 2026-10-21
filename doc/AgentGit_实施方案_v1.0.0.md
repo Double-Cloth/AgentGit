@@ -459,8 +459,10 @@ S4 提供 init/config/task/run/status/pause/resume/cancel/artifacts/approvals；
 | S5-T05 | A/B 从同一点创建，分别写同名产物和修改计划 | 只改变各自状态/文件/HEAD；原分支 hash 保持 |
 | S5-T06 | 录制含 fake 外部写；Live 继承原审批 | Recorded 不访问 fake server；Live 必须重新取得授权 |
 | S5-T07 | 预置字段增删改、数组重排、二进制产物、无共同祖先 | Diff 与期望一致；无祖先明确展示，不能误给 LCA |
-| S5-T08 | 完整录制终端/Python 调用后关闭容器引擎，执行 Recorded；再删除一项执行响应或产物对象 | 齐全时输出/manifest hash 一致，容器管理和 Shell/Python 启动计数均 0；缺数据明确失败，无 Live 回退 |
+| S5-T08 | 完整录制终端/Python 调用后关闭容器引擎连接，或在测试进程中禁止构造/访问执行客户端，执行 Recorded；再删除一项执行响应或产物对象 | 齐全时输出/manifest hash 一致，容器管理和 Shell/Python 启动计数均 0；缺数据明确失败，无 Live 回退 |
 | S5-T09 | 从执行前 checkpoint 建立 A/B Live 分支，修改命令/代码并生成同名文件 | 全新容器使用各自输入和预算，差异可追查；原分支不变，旧进程/临时文件/审批不被继承 |
+
+T08 允许执行客户端禁用注入，是为了在测试数据库与 Docker 共宿主时保留数据库；它必须在任意执行管理或 Shell/Python 启动入口被触及时立即失败，不能以成功 Mock 响应代替，也不能宣称实际关闭了宿主引擎。来源仍须真正执行终端与 Python；零调用和缺数据失败的期望不变。
 
 **退出：**零网络录制回放、分支隔离和错配阻断全部通过；“状态可恢复”和“模型重新答对”分别呈现。
 

@@ -1,6 +1,6 @@
 # S5 实施记录：版本入口与录制基础
 
-状态：进行中，尚未满足 S5 退出条件。完整 S5-T01–T09 仍以实施方案为准，本记录不缩减验收范围；S6 及 D1 尚未开始。
+状态：保留各增量批次的历史实施记录；完整 S5 已通过本机退出条件，S5-T01–T09 与最终 599 项回归见 [S5.md](S5.md)。S6 及 D1 尚待交付，本记录不缩减后续范围。
 
 ## 已实现
 
@@ -61,4 +61,4 @@
 
 1. 原 Runtime 直接未知与可信核对见 [S5-settlement.md](S5-settlement.md)，Worker 接管旧 Run 调用的未知封存已完成，见 [S5-sealed-unknown.md](S5-sealed-unknown.md)；两类路径均保留预留与原计量，结算先于控制，并支持复合 Recorded。
 2. Live 的独立预算/授权/工作区见 [S5-live.md](S5-live.md)；复合 Recorded 的证明追溯、纯 Runtime 重算及自身恢复见 [S5-compound.md](S5-compound.md)。早期批次结果继续保留在各专属记录。
-3. 汇总 S5-T01–T09 的端到端验收及完整回归，见 [S5.md](S5.md)；fake 外部写的完整原 Runtime 初步 4 项通过，Live 重新授权 1 项通过，待最终汇总。真实执行工具 Recorded 零启动及 A/B Live 代码/同名产物隔离已有专项。
+3. S5-T01–T09 端到端验收及完整 599 项回归已汇总于 [S5.md](S5.md)；fake 外部写的完整原 Runtime 4 项与 Live 重新授权 1 项均纳入最终通过范围。后续进入 S6 Electron 四页及安装/便携交付。

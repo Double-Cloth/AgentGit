@@ -132,7 +132,7 @@ CLI 的两个 Live 输入文件分别有 1 MiB 读取上限；来源文件逐项
 
 接管封存来源使用 `RecordedUnknownStop`：原调用可以位于同 Job 的旧 Run，依据意图、原请求和调用前状态重算 `run.outcome_unknown`。未观察到的诊断不补造轨迹；已有未知计量保持一次，后续确认仍由原 `_settle` 处理。未确认或仅到封存点的范围保留预留和未知状态，见 [S5-sealed-unknown.md](acceptance/S5-sealed-unknown.md)。
 
-完整 S5 正在汇总回归。`MemoryWorkspace` 对工作区总字节施加 64 MiB 上限，超限必须缩小范围或明确失败，不物化宿主文件作为回退。耐久批次证据见 [S5-recorded-jobs.md](acceptance/S5-recorded-jobs.md)，阶段映射见 [S5.md](acceptance/S5.md)。
+完整 S5 已通过本机验收，当前 599 项用例全部覆盖。`MemoryWorkspace` 对工作区总字节施加 64 MiB 上限，超限必须缩小范围或明确失败，不物化宿主文件作为回退。耐久批次证据见 [S5-recorded-jobs.md](acceptance/S5-recorded-jobs.md)，阶段映射及完整回归见 [S5.md](acceptance/S5.md)。
 
 调度进程故障用例启动仓库内受信任的 Worker 测试助手，并使用独立测试 Schema/临时 CAS；用户 Shell/Python 始终在容器中执行。实际容器基础设施与持久执行服务使用单独套件验证，准备方式与边界见 [sandbox/README.md](../sandbox/README.md)；完整五工具接入及本机验收见 [S4.md](acceptance/S4.md)。早期进展保留在 [S4-progress.md](acceptance/S4-progress.md) 与 [容器边界](acceptance/S4-sandbox-boundary.md)。
 
@@ -182,4 +182,4 @@ uv run --locked pytest tests/unit tests/integration tests/sandbox tests/executio
 
 清理后新 attempt 已实现：`stopped_executions` 记录已确认停止但没有完整结果的稳定调用身份，不冒充成功；丢弃决定和旧尝试预算同检查点原子保存，新尝试从相同输入创建新容器并另计预算。固定上限两次，取消/到期/预算不足先结算再停止。清理失败的 Job 每 30 秒有界重查，未确认时不创建新尝试，普通模型/外部写仍须可信核对。新尝试在 stage 与意图事务内复核停止依据、源链、输入和策略。
 
-[S4 本机验收](acceptance/S4.md)已完成；`doctor --sandbox` 共用执行器的只读前提检查，固定镜像和隔离能力可用才返回就绪，不启动容器或执行命令。继续按实施方案进入 S5；S6 Electron 桌面及必选 S11/S12 的完整交付不变。
+[S4 本机验收](acceptance/S4.md)与 [S5 本机验收](acceptance/S5.md)已完成；`doctor --sandbox` 共用执行器的只读前提检查，固定镜像和隔离能力可用才返回就绪，不启动容器或执行命令。继续按实施方案进入 S6 Electron 桌面；必选 S11/S12 的完整交付不变。
