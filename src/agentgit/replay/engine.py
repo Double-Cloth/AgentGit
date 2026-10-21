@@ -20,10 +20,11 @@ from agentgit.core.execution import (
     ExecutionResult,
 )
 from agentgit.core.models import CommitManifest, EffectClass, RunStatus, parse_contract
-from agentgit.core.research import AgentConfig, AgentState, BudgetUsage, CallTrace
+from agentgit.core.research import AgentConfig, AgentState, BudgetUsage, CallTrace, ModelRequest
 from agentgit.core.snapshots import EventManifest, EventPayload, StateSnapshot
 from agentgit.replay.recorded import RecordedAdapter
 from agentgit.replay.recovery import rebuild_discard
+from agentgit.replay.unknown import rebuild_unknown
 from agentgit.replay.workspace import MemoryWorkspace
 from agentgit.runtime.engine import ResearchRuntime
 from agentgit.runtime.ports import CallOutcome, CallSettlement
@@ -418,10 +419,61 @@ class RecordedReplayer:
             budget_baseline=budget_baseline,
         )
         settled: set[str] = set()
+        sealed: set[str] = set()
         if len(bundle.checkpoints) > 1:
             with suppress(_ReachedUntil):
                 while journal.position + 1 < len(bundle.checkpoints):
                     event_type, details = journal.next_event()
+                    if event_type == "run.outcome_unknown":
+                        target = bundle.checkpoints[journal.position + 1][0]
+                        stops = [
+                            item for item in bundle.unknown_stops if item.source_commit == target
+                        ]
+                        if len(stops) != 1 or target in sealed:
+                            raise AgentGitError(ErrorCode.RECORDING_MISSING, "缺少唯一未知封存录制")
+                        stop = stops[0]
+                        decision = stop.before.pending_tool
+                        if stop.intent.occurrence.provider.startswith("llm:"):
+                            request = encode(
+                                ModelRequest(
+                                    prompt=config.prompt,
+                                    phase="plan"
+                                    if stop.before.status == RunStatus.PLANNING
+                                    else "act",
+                                    state=stop.before,
+                                    evaluation_time=corpus.evaluation_time,
+                                    available_tools=config.tools,
+                                    execution_context=tools.context(),
+                                ).model_dump(mode="json")
+                            )
+                            provider, binding, effect = (
+                                "llm:mock-research/v1",
+                                signature,
+                                EffectClass.READ_ONLY,
+                            )
+                        elif decision is not None:
+                            request = encode(decision.arguments)
+                            provider, binding, effect = (
+                                f"tool:{decision.tool}/v1",
+                                tools.signature(decision.tool),
+                                tools.effect(decision.tool),
+                            )
+                        else:
+                            raise AgentGitError(
+                                ErrorCode.REPLAY_MISMATCH, "未知封存没有原待执行决策"
+                            )
+                        runtime.state = rebuild_unknown(
+                            stop,
+                            runtime.state,
+                            expected_request=request,
+                            provider=provider,
+                            signature=binding,
+                            effect=effect,
+                            max_response_bytes=config.limits.max_response_bytes,
+                        )
+                        sealed.add(target)
+                        journal.save(runtime.state, event_type, {"pending_calls": [stop.call_id]})
+                        continue
                     if event_type == "sandbox.execution_discarded":
                         target = bundle.checkpoints[journal.position + 1][0]
                         candidates = [
@@ -482,6 +534,8 @@ class RecordedReplayer:
                     ):
                         raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "Runtime 未抵达指定终点")
         adapter.assert_consumed()
+        if len(sealed) != len(bundle.unknown_stops):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "范围内仍有未消费的未知封存录制")
         if len(settled) != len(bundle.settlements):
             raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "范围内仍有未消费的可信核对录制")
         if journal.position + 1 != len(bundle.checkpoints):
@@ -491,7 +545,7 @@ class RecordedReplayer:
             bundle.checkpoints[0][0],
             tuple(journal.rebuilt),
             parse_contract(encode(final.data), AgentState),
-            adapter.position,
+            adapter.position + len(sealed),
         )
 
     def _project(

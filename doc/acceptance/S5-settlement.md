@@ -26,4 +26,4 @@
 
 Ruff、155 个文件格式检查、mypy 的 80 个源码文件及 sdist/wheel 构建通过；固定镜像源码/系统包检查与 doctor 通过。本批不改变依赖或镜像，测试保留现有 Starlette/httpx 弃用警告。证据文件在本机 `.agentgit/evidence/`，不提交。
 
-仍待完成：Worker 接管后保存 `run.outcome_unknown`、原调用事件位于旧 Run 的完整来源路径；自定义 fake 外部写的原 Runtime 端到端回放。容器未知执行继续采用已验证的清理/丢弃路径，本批不宣称支持任意未知容器输出的可信恢复。真实模型供应商的查询能力尚未接入；上述来源使用受控 Mock 模型和后端可信 Resolver fixture。
+本批结束时尚待接通的 Worker 接管 `run.outcome_unknown` 来源，现由后续 [接管封存批次](S5-sealed-unknown.md) 完成；fake 外部写的原 Runtime 专项见 [S5 汇总](S5.md)。容器未知执行继续采用已验证的清理/丢弃路径，本批不宣称支持任意未知容器输出的可信恢复。真实模型供应商的查询能力尚未接入；上述来源使用受控 Mock 模型和后端可信 Resolver fixture。

@@ -59,6 +59,6 @@
 
 ## 当前边界与后续
 
-1. 原 Runtime 直接保存未知模型状态、随后可信核对的来源已完成，见 [S5-settlement.md](S5-settlement.md)；保留未知诊断与预留，结算先于控制，支持再次复合 Recorded。继续补全 Worker 接管封存 `run.outcome_unknown`、原调用位于旧 Run 的路径。
+1. 原 Runtime 直接未知与可信核对见 [S5-settlement.md](S5-settlement.md)，Worker 接管旧 Run 调用的未知封存已完成，见 [S5-sealed-unknown.md](S5-sealed-unknown.md)；两类路径均保留预留与原计量，结算先于控制，并支持复合 Recorded。
 2. Live 的独立预算/授权/工作区见 [S5-live.md](S5-live.md)；复合 Recorded 的证明追溯、纯 Runtime 重算及自身恢复见 [S5-compound.md](S5-compound.md)。早期批次结果继续保留在各专属记录。
-3. 汇总 S5-T01–T09 的端到端验收，补全 fake 外部写的纯 Runtime 录制重算等剩余证据；真实执行工具 Recorded 零启动及 A/B Live 代码/同名产物隔离已有专项。
+3. 汇总 S5-T01–T09 的端到端验收及完整回归，见 [S5.md](S5.md)；fake 外部写的完整原 Runtime 初步 4 项通过，Live 重新授权 1 项通过，待最终汇总。真实执行工具 Recorded 零启动及 A/B Live 代码/同名产物隔离已有专项。

@@ -31,6 +31,7 @@ from agentgit.core.versions import RecordedRange
 from agentgit.replay.recorded import Recording, UncertainRecording
 from agentgit.replay.recovery import CleanupProof, DiscardEvent, RecordedDiscard
 from agentgit.replay.settlements import RecordedSettlement
+from agentgit.replay.unknown import RecordedUnknownStop
 from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.versions import HistorySelection, VersionService
 
@@ -54,6 +55,7 @@ class RecordedBundle:
     discards: tuple[RecordedDiscard, ...] = ()
     projection: RecordedProjection | None = None
     settlements: tuple[RecordedSettlement, ...] = ()
+    unknown_stops: tuple[RecordedUnknownStop, ...] = ()
 
 
 class RecordingReader:
@@ -554,7 +556,29 @@ class RecordingReader:
         completed: dict[tuple[str, int, int], tuple[int, dict[str, Any], str]] = {}
         discards: list[RecordedDiscard] = []
         settlements: list[RecordedSettlement] = []
+        unknown_stops: list[RecordedUnknownStop] = []
         for event in indexed_events:
+            if event.type == "run.outcome_unknown":
+                from agentgit.services.recorded_unknowns import UnknownStopReader
+
+                if event.seq not in boundary_commits:
+                    raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "未知封存必须对应独立状态检查点")
+                data = parse_contract(
+                    account(self.history.objects.get(event.payload_ref, ObjectType.EVENT)),
+                    EventPayload,
+                ).data
+                unknown_stops.append(
+                    UnknownStopReader(self).load(
+                        repository,
+                        selection.source_run_id,
+                        checkpoint_for_event[event.seq],
+                        boundary_commits[event.seq],
+                        data,
+                        environment,
+                        account,
+                    )
+                )
+                continue
             if event.type == "sandbox.execution_discarded":
                 if event.seq not in boundary_commits:
                     raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "执行丢弃必须对应独立状态检查点")
@@ -747,4 +771,5 @@ class RecordingReader:
             tuple(recordings),
             tuple(discards),
             settlements=tuple(settlements),
+            unknown_stops=tuple(unknown_stops),
         )
