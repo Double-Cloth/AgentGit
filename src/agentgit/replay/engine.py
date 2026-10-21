@@ -74,8 +74,18 @@ class _Gateway:
     def __init__(self, adapter: RecordedAdapter, workspace: MemoryWorkspace):
         self.adapter, self.workspace = adapter, workspace
 
-    def recorded(self, **kwargs: Any) -> None:
-        return None
+    def recorded(self, **kwargs: Any) -> CallOutcome | None:
+        if (
+            self.adapter.position == len(self.adapter.recordings)
+            or not self.adapter.recordings[self.adapter.position].reused
+        ):
+            return None
+
+        def forbidden() -> bytes:
+            raise AssertionError("Recorded 不能调用真实 Adapter")
+
+        # 来源恢复先结算已保存结果，再处理取消/到期；沿用 Runtime 的相同入口。
+        return self.call(**kwargs, invoke=forbidden)
 
     def call(
         self,

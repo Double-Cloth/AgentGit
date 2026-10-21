@@ -17,6 +17,7 @@ class Recording:
     request: bytes
     response: bytes
     source_call_id: str
+    reused: bool = False
 
     def outcome(self) -> CallOutcome:
         occurrence = self.intent.occurrence

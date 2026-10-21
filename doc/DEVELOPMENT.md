@@ -110,7 +110,9 @@ Checkout 只读 CAS/数据库，不物化工作区或启动工具。Diff 使用 
 
 Recorded 同时校验当前代码、Python、依赖锁、模型/工具签名、Prompt、固定语料/评价时间/种子及完整输入，不接受改变配置。逻辑调用计数沿用历史，实际模型/工具调用为零；暂停/恢复、取消、步骤/工具预算和当前版本的墙钟停止事件已覆盖。墙钟触发点从相同代码的录制事件恢复，实际回放耗时不写回逻辑预算。
 
-完整 Replay 仍在实施：独立耐久运行计量、Recorded/Live Job、崩溃核对/停止丢弃等恢复专用转换、Live 新预算与授权尚待接通。因此当前没有 `POST /replays` 或 `agentgit replay` 成功入口，不把内部重算专项通过视为 S5 已验收。`MemoryWorkspace` 还对工作区总字节施加 64 MiB 上限，超限必须缩小范围或明确失败，不物化宿主文件作为回退。
+来源中 `call.reused` 表示崩溃前已有完整结果，重算沿用 Runtime 缓存消费入口，保持先结算、后取消/到期的顺序；普通录制不会误走恢复路径。已验证结果保存后、观察前崩溃的正常继续/取消/到期三个真实执行来源。
+
+完整 Replay 仍在实施：独立耐久运行计量、Recorded/Live Job、未知结果核对/停止丢弃等恢复专用转换、Live 新预算与授权尚待接通。因此当前没有 `POST /replays` 或 `agentgit replay` 成功入口，不把内部重算专项通过视为 S5 已验收。`MemoryWorkspace` 还对工作区总字节施加 64 MiB 上限，超限必须缩小范围或明确失败，不物化宿主文件作为回退。
 
 调度进程故障用例启动仓库内受信任的 Worker 测试助手，并使用独立测试 Schema/临时 CAS；用户 Shell/Python 始终在容器中执行。实际容器基础设施与持久执行服务使用单独套件验证，准备方式与边界见 [sandbox/README.md](../sandbox/README.md)；完整五工具接入及本机验收见 [S4.md](acceptance/S4.md)。早期进展保留在 [S4-progress.md](acceptance/S4-progress.md) 与 [容器边界](acceptance/S4-sandbox-boundary.md)。
 

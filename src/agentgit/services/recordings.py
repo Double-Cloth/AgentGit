@@ -439,6 +439,7 @@ class RecordingReader:
                     "response",
                 ),
                 call_id,
+                event.type == "call.reused",
             )
             record.outcome()
             account(record.request)
