@@ -121,7 +121,7 @@ HTTP 创建体示例（示例占位符须替换）：
 {"schema_version":1,"source_run_id":"<Run UUID>","from_commit":"<Commit digest>","name":"experiment-a","expected_version":0}
 ```
 
-当前 S5 仍在实施；Recorded 读取器和无客户端 Adapter 已具备严格匹配，但尚未开放完整 Replay 提交入口。读取快照或录制不代表已经逐检查点重算通过，状态见 [S5-progress.md](acceptance/S5-progress.md)。
+当前 S5 仍在实施；Recorded 读取器、无客户端 Adapter 和内部 Runtime 重算已具备严格匹配，但尚未开放耐久 Replay 提交入口。读取快照或录制本身不代表重算通过；完整 Recorded/Live Job 状态见 [S5-progress.md](acceptance/S5-progress.md)。
 
 错误含 error.code、message、evidence_refs（无证据时为空）、correlation_id，另有 X-Correlation-ID，不反射输入/URL/堆栈/令牌。validation=422、权限=403、不可访问=404、冲突=409、输出上限=413、配置/设施不可用=503、未预期错误=500。响应不缓存；JSON 日志写 stderr，仅含关联编号、方法、路由模板、状态、整数耗时，不含正文/认证头/查询/幂等键。
 

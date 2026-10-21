@@ -106,7 +106,11 @@ Checkout 只读 CAS/数据库，不物化工作区或启动工具。Diff 使用 
 
 `RecordingReader.load()` 必须提供来源 Run、起止 Commit 和预期 `EnvironmentManifest`。读取器逐项核验事件、调用 occurrence、参数/签名/响应、对象所有权，以及执行工具的输入、策略、日志和输出 manifest；缺对象返回 `recording_missing`，环境不兼容或错配直接失败。`RecordedAdapter` 仅持有录制字节，精确顺序消费且不调用传入的真实执行回调，禁止 Live 回退。
 
-这些能力尚不等于完成 Recorded 重放：逐检查点状态/产物重算、独立运行计量、Recorded/Live 耐久 Job、Live 新预算与授权仍在 S5 后续实现。因此当前没有 `POST /replays` 或 `agentgit replay` 成功入口，也不将读取历史快照计为重放验收。
+`RecordedReplayer` 现在用原 `ResearchRuntime` 和 `MemoryWorkspace` 逐检查点重算状态与产物，比较来源 Commit 的 state_ref；只把起点快照用于恢复，后续快照作为比较证据。普通调用、执行输入上下文、产物写入和成功执行输出均在内存中重建。模型/工具响应严格由 `RecordedAdapter` 提供，不实例化执行服务或宿主工作区。
+
+Recorded 同时校验当前代码、Python、依赖锁、模型/工具签名、Prompt、固定语料/评价时间/种子及完整输入，不接受改变配置。逻辑调用计数沿用历史，实际模型/工具调用为零；暂停/恢复、取消、步骤/工具预算和当前版本的墙钟停止事件已覆盖。墙钟触发点从相同代码的录制事件恢复，实际回放耗时不写回逻辑预算。
+
+完整 Replay 仍在实施：独立耐久运行计量、Recorded/Live Job、崩溃核对/停止丢弃等恢复专用转换、Live 新预算与授权尚待接通。因此当前没有 `POST /replays` 或 `agentgit replay` 成功入口，不把内部重算专项通过视为 S5 已验收。`MemoryWorkspace` 还对工作区总字节施加 64 MiB 上限，超限必须缩小范围或明确失败，不物化宿主文件作为回退。
 
 调度进程故障用例启动仓库内受信任的 Worker 测试助手，并使用独立测试 Schema/临时 CAS；用户 Shell/Python 始终在容器中执行。实际容器基础设施与持久执行服务使用单独套件验证，准备方式与边界见 [sandbox/README.md](../sandbox/README.md)；完整五工具接入及本机验收见 [S4.md](acceptance/S4.md)。早期进展保留在 [S4-progress.md](acceptance/S4-progress.md) 与 [容器边界](acceptance/S4-sandbox-boundary.md)。
 
