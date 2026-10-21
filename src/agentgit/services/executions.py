@@ -24,12 +24,14 @@ from agentgit.core.execution import (
     ExecutionManifest,
     ExecutionPolicy,
     ExecutionResult,
+    StoppedExecution,
     TerminalArguments,
     execution_signature,
 )
 from agentgit.core.jobs import Lease
 from agentgit.core.models import parse_contract
 from agentgit.core.snapshots import EventPayload
+from agentgit.services.execution_recovery import retry_at_checkpoint, validate_retry
 from agentgit.services.history import TABLES, EventInput, HistoryService
 from agentgit.services.jobs import JobService
 from agentgit.services.managed_calls import ManagedCallContext, ManagedCallResult
@@ -46,6 +48,8 @@ class _Plan:
     references: frozenset[str]
     policy_object: StoredObject
     media_types: dict[str, str]
+    previous: StoppedExecution | None
+    origin_runs: tuple[UUID, ...]
 
 
 @dataclass(frozen=True)
@@ -311,6 +315,10 @@ class ExecutionService:
                 frozenset(references),
                 policy,
                 {item.path: item.media_type for item in manifest.files},
+                retry_at_checkpoint(self.history, context, self.policy)
+                if context.occurrence.attempt > 1
+                else None,
+                recovery_origins(self.queue, self.lease) if context.occurrence.attempt > 1 else (),
             )
         }
 
@@ -373,6 +381,17 @@ class ExecutionService:
         plan = self._plans[context.call_id]
         job = self._guard(connection, context.repository_id, context.run_id)
         self._assert_scope(connection, context, plan.references)
+        if plan.previous is not None:
+            if plan.previous.input_manifest_ref != plan.arguments.input_manifest_ref:
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "新尝试的输入不得改变")
+            validate_retry(
+                connection,
+                self.history,
+                self.lease,
+                (context.run_id, *plan.origin_runs),
+                plan.previous,
+                self.policy,
+            )
         now = connection.execute(sa.select(sa.func.clock_timestamp())).scalar_one()
         remaining = int((job["deadline_at"] - now).total_seconds() * 1000)
         effective = min(plan.arguments.timeout_ms, self.policy.max_timeout_ms, remaining)

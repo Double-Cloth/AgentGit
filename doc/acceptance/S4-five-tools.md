@@ -5,6 +5,8 @@
 - 前置：固定镜像、授权输入、耐久调用、Job 租约与清理已实现。
 - Schema：仍为 `0009_sandbox_executions`，未修改历史迁移；无新增依赖。
 
+后续已完成停止后新 attempt 与完整本机阶段验收，最新证据见 [S4.md](S4.md)。下文保留本批五工具提交时的范围和记录。
+
 ## 实现范围
 
 `AgentConfig` 可显式授权 `code_exec`、`terminal_exec`，生产 Tool Registry 使用与执行服务相同的冻结签名和 sandbox 效果策略；模型只收到可用工具、本 Run 的文件清单和策略引用。默认配置仍为三个基础工具，读取配置/签名不连接 Docker。

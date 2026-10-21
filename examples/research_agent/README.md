@@ -21,4 +21,4 @@ uv run --locked python examples/research_agent/run.py --max-steps 3
 
 预算中的 `tokens` 是明确标记为 `mock_utf8_bytes` 的合成计量，按模型请求/响应 UTF-8 字节数计数，并非真实供应商 Token 或账单。模型调用前预留输入字节和最大响应量；截断响应仍记录原始返回长度。Mock 费用为零，真实模型成本将在 S6 单独记录。
 
-本例继续保留 S3 同步三工具入口。S4 已接入持久 Job/Worker、暂停恢复、精确审批和两个真实容器工具；五工具启动命令、统计/整理产物及预算说明见 [API/CLI 容器流程](../../doc/API.md#五工具容器流程)。S4 仍待补齐清理后新 attempt 的预算续跑与最终验收，本例不能代替 D1 验收。
+本例继续保留 S3 同步三工具入口。S4 已完成持久 Job/Worker、暂停恢复、精确审批和两个真实容器工具；五工具启动命令、统计/整理产物及预算说明见 [API/CLI 容器流程](../../doc/API.md#五工具容器流程)。停止后新 attempt 与预算续跑、本机阶段验收已完成，见 [S4.md](../../doc/acceptance/S4.md)。D1 还须完成 S5 与 S6 Electron 桌面交付。

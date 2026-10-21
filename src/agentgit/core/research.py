@@ -6,7 +6,7 @@ from pydantic import Field, model_validator
 
 from agentgit.core.canonical import encode
 from agentgit.core.errors import AgentGitError, ErrorCode
-from agentgit.core.execution import ExecutionContext, ExecutionPolicy
+from agentgit.core.execution import ExecutionContext, ExecutionPolicy, StoppedExecution
 from agentgit.core.models import Contract, Digest, NonNegative, RunStatus, parse_contract
 
 Name = Annotated[str, Field(min_length=1, max_length=100)]
@@ -195,6 +195,7 @@ class AgentState(Contract):
     messages: tuple[CallTrace, ...] = ()
     usage: BudgetUsage = BudgetUsage()
     attempts: dict[str, int] = Field(default_factory=dict)
+    stopped_executions: Annotated[tuple[StoppedExecution, ...], Field(max_length=1000)] = ()
     last_action: str | None = None
     repeated_actions: NonNegative = 0
     error_code: str | None = None

@@ -1,6 +1,6 @@
 # 固定执行镜像与底层隔离验证
 
-本目录属于 S4 的镜像准备和内部基础设施验证。持久执行记录与受管后端已接入调用网关，见 [执行记录](../doc/acceptance/S4-execution-ledger.md)；生产 Tool Registry/计划/预算观察、工作区推进和五工具 Job 现已接入，启动方式见 [API/CLI](../doc/API.md#五工具容器流程)。清理后新 attempt 的预算续跑及最终 S4 验收仍未完成，不开放通用执行 HTTP/CLI。`doctor --sandbox` 继续报告 `execution_ready=false`。
+本目录属于 S4 的固定镜像准备和隔离验证。[S4 本机验收](../doc/acceptance/S4.md)已完成，生产 Registry/计划/预算、持久执行、完整工作区推进及停止后新 attempt 已接入，启动方式见 [API/CLI](../doc/API.md#五工具容器流程)。不开放通用执行 HTTP/CLI。`doctor --sandbox` 只读检查固定镜像和隔离前提，可用才返回就绪，不创建容器或下载镜像。
 
 ## 已冻结内容
 
@@ -45,8 +45,8 @@ PID 1 与采集桥接进程为 UID 10001，命令为 UID 10002，共享 GID 1000
 
 Engine API 的非 TTY 多路流分别采集 stdout/stderr，各保留 1 MiB 原字节并持续有界排空；退出码来自 exec inspect。容器日志驱动固定 `none`。OOM/pids/CPU 证据取自可信采集身份读取的 cgroup 文件，不凭退出码或用户打印的 JSON 断言成功或资源原因。
 
-## 剩余 S4 接入
+## 受管执行与恢复
 
-`sandbox_executions`、请求/结果 Schema、授权输入 manifest/CAS、Job 租约下的 intent 先落库、取消/丢失租约清理和完整结果复用已由 `services/executions.py` 与调用网关接入。`SandboxContainer` 只供受管内部执行服务及本套件使用。生产 Registry/配置/计划与完整工作区推进现已接入；恢复后的新 attempt 和预算仍待完成，全部 S4-T09–T20 通过后才能验收 S4。
+`sandbox_executions`、请求/结果 Schema、授权输入 manifest/CAS、Job 租约下的 intent 先落库、取消/丢失租约清理和完整结果复用已由 `services/executions.py` 与调用网关接入。`SandboxContainer` 只供受管内部执行服务及本套件使用。缺完整结果时仅在确认停止、输入/策略一致并原子结算旧预算后允许新 attempt；固定最多两次，不从半成品继续。清理未知保持待核对并有界重查。完整 T01–T20 分层证据见 S4 验收记录。
 
 协议依据：[Docker Engine API 1.44](https://docs.docker.com/reference/api/engine/version/v1.44/)、[Moby 25 的冻结 API 定义](https://github.com/moby/moby/blob/v25.0.0/api/swagger.yaml)、[Docker Engine API 概览](https://docs.docker.com/reference/api/engine/)。固定使用已有全部隔离字段的 1.44，避免要求较新的 1.51；仍需实际 cgroup v2/资源能力检查。Engine 的本地管道由固定参数的 `docker system dial-stdio` 连接，stdin 半关闭与非 TTY stdout/stderr 多路帧已由真实容器验证；不新增 Docker SDK 依赖。

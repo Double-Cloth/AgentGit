@@ -272,6 +272,7 @@ class JobService:
         if not worker or len(worker) > 200:
             raise AgentGitError(ErrorCode.VALIDATION, "Worker 身份非法")
         jobs = TABLES["jobs"]
+        executions = TABLES["sandbox_executions"]
         with self.history.engine.begin() as connection:
             now = connection.execute(sa.select(sa.func.clock_timestamp())).scalar_one()
             candidate = (
@@ -281,6 +282,16 @@ class JobService:
                         sa.or_(
                             sa.and_(jobs.c.status == "queued", jobs.c.available_at <= now),
                             sa.and_(jobs.c.status == "running", jobs.c.lease_until <= now),
+                            sa.and_(
+                                jobs.c.status == "outcome_unknown",
+                                jobs.c.available_at <= now,
+                                sa.exists().where(
+                                    executions.c.job_id == jobs.c.id,
+                                    executions.c.repository_id == jobs.c.repository_id,
+                                    executions.c.result_ref.is_(None),
+                                    executions.c.cleanup_confirmed.is_(False),
+                                ),
+                            ),
                         )
                     )
                     .order_by(jobs.c.created_at, jobs.c.id)
@@ -316,7 +327,7 @@ class JobService:
                 worker,
                 token,
                 self.lease_ms,
-                candidate["status"] == "running",
+                candidate["status"] in ("running", "outcome_unknown"),
             )
 
     def guard(self, connection: Connection, lease: Lease, run_id: UUID | None = None) -> RowMapping:
@@ -372,6 +383,9 @@ class JobService:
                     lease_until=None,
                     last_error=run["failure_code"],
                     checkpoint_commit_id=run["checkpoint_commit_id"],
+                    available_at=sa.func.clock_timestamp() + sa.text("interval '30 seconds'")
+                    if status == "outcome_unknown"
+                    else sa.func.clock_timestamp(),
                 )
             )
 

@@ -28,6 +28,7 @@ from agentgit.runtime.ports import CallSettlement, ModelAdapter
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.calls import RecordedCallGateway
 from agentgit.services.environment import source_revision
+from agentgit.services.execution_recovery import discard_stopped, occurrence_of, validate_retry
 from agentgit.services.executions import ExecutionService
 from agentgit.services.history import TABLES, EventInput, HistoryService
 from agentgit.services.jobs import JobService
@@ -103,7 +104,7 @@ class Worker:
                     connection, lease
                 )
                 session.after_checkpoint = lambda: self.fault("after_checkpoint")
-                unknown = self._unresolved(lease, origins)
+                unknown = self._unresolved(lease, origins, session)
                 if unknown:
                     session.environment = session._environment(self.model_factory())
                     if (
@@ -111,6 +112,9 @@ class Worker:
                         and session.environment != session.expected_environment
                     ):
                         raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "恢复环境不兼容")
+                    if discard_stopped(session, self.queue, lease, origins, unknown, self.fault):
+                        unknown = []
+                if unknown:
                     state = self._unknown_state(session.state, unknown)
                     session.save(
                         state,
@@ -278,10 +282,15 @@ class Worker:
                 )
         return session, origins, remaining
 
-    def _unresolved(self, lease: Lease, origins: tuple[UUID, ...]) -> list[dict[str, Any]]:
+    def _unresolved(
+        self, lease: Lease, origins: tuple[UUID, ...], session: ResearchSession
+    ) -> list[dict[str, Any]]:
         calls = TABLES["external_calls"]
-        with self.queue.history.engine.connect() as connection:
-            return [
+        with session.history.engine.begin() as connection:
+            session.history._run(connection, lease.repository_id, lease.run_id, lock=True)
+            session.history.assert_writer(connection, lease.repository_id, lease.run_id)
+            self.queue.guard(connection, lease, lease.run_id)
+            rows = [
                 dict(row)
                 for row in connection.execute(
                     sa.select(calls).where(
@@ -292,6 +301,24 @@ class Worker:
                     )
                 ).mappings()
             ]
+            stopped = {item.occurrence: item for item in session.state.stopped_executions}
+            pending = []
+            for row in rows:
+                previous = stopped.get(occurrence_of(row))
+                if previous is None:
+                    pending.append(row)
+                else:
+                    if session.config.execution_policy is None:
+                        raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "停止执行记录缺少固定策略")
+                    validate_retry(
+                        connection,
+                        session.history,
+                        lease,
+                        (lease.run_id, *origins),
+                        previous,
+                        session.config.execution_policy,
+                    )
+            return pending
 
     def _unknown_state(self, state: AgentState, calls: list[dict[str, Any]]) -> AgentState:
         if state.status == RunStatus.OUTCOME_UNKNOWN:

@@ -1,6 +1,6 @@
 # S4 本地服务与 CLI
 
-当前支持本机操作者、固定离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具。S4 尚未整体验收。配置不会自动读取 .env，以 AGENTGIT_* 进程环境为准。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0009_sandbox_executions`。
+当前支持本机操作者、固定离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，以 AGENTGIT_* 进程环境为准。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0009_sandbox_executions`。
 
 ## CLI 离线流程
 
@@ -37,7 +37,7 @@ uv run --locked agentgit artifacts $repo.repository_id $job.run_id
 
 离线计划先生成报告和来源，再由实际 Python 脚本读取 `sources.json` 计算统计，实际 Shell 整理文件。成功有 7 个产物，统计在 `results/statistics.json`，整理后的报告在 `results/report.md`；13 次工具调用、15 次 Mock 模型调用。命令/脚本也作为产物保存，外部测试核验统计答案，验收器不进入容器。也支持仅授权一个执行工具。
 
-只有完整成功、清理确认且通过校验的 manifest 才推进工作区。失败保留旧文件，完整结果保存后崩溃则复用录制并先结算调用预算，再处理取消或到期；缺完整结果的执行仍保持待核对，清理后新 attempt 的预算续跑尚待实现。当前 `doctor --sandbox` 继续报告 `execution_ready=false`。
+只有完整成功、清理确认且通过校验的 manifest 才推进工作区。失败保留旧文件，完整结果保存后崩溃则复用录制并先结算调用预算，再处理取消或到期。缺完整结果的容器调用须先确认停止，再原子丢弃临时文件、结算旧尝试；原请求/输入/策略不变且仍有预算时才创建新容器。每个逻辑执行调用最多两次尝试，截止时间不重置。清理未知时保持待核对，每 30 秒有界重查，外部写入不能走此重试路径。
 
 ## 控制运行
 
@@ -98,4 +98,4 @@ API/CLI 共用事务和幂等记录。同 actor/route/key 成功重试返回原�
 
 错误含 error.code、message、evidence_refs（无证据时为空）、correlation_id，另有 X-Correlation-ID，不反射输入/URL/堆栈/令牌。validation=422、权限=403、不可访问=404、冲突=409、输出上限=413、配置/设施不可用=503、未预期错误=500。响应不缓存；JSON 日志写 stderr，仅含关联编号、方法、路由模板、状态、整数耗时，不含正文/认证头/查询/幂等键。
 
-模型 usage_kind 为 mock_utf8_bytes，真实供应商用量未接入。批准不提升权限，执行仍检查当前策略与租约。可信核对使用后端 Resolver，不提供任意上传成功回执的 HTTP 接口。容器工具尚未验收，doctor --sandbox 保持 execution_ready=false。
+模型 usage_kind 为 mock_utf8_bytes，真实供应商用量未接入。批准不提升权限，执行仍检查当前策略与租约。可信核对使用后端 Resolver，不提供任意上传成功回执的 HTTP 接口。`doctor --sandbox` 只读核验执行器同一套 Linux/资源/seccomp/固定镜像前提；满足时返回 `execution_ready=true`，失败非零，不创建容器或下载镜像。

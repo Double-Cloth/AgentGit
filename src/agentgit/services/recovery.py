@@ -4,13 +4,64 @@ from dataclasses import replace
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
+from sqlalchemy.engine import Connection, RowMapping
 
-from agentgit.core.canonical import ObjectType
+from agentgit.core.canonical import ObjectType, encode
 from agentgit.core.errors import AgentGitError, ErrorCode
+from agentgit.core.execution import SANDBOX_PROVIDERS
 from agentgit.core.jobs import TERMINAL_RUNS, Lease
+from agentgit.core.models import parse_contract
+from agentgit.core.research import AgentState
 from agentgit.core.snapshots import EventPayload
+from agentgit.services.execution_recovery import occurrence_of
 from agentgit.services.history import TABLES, EventInput
 from agentgit.services.jobs import JobService
+
+
+def _clean_sandbox_pending(
+    connection: Connection,
+    queue: JobService,
+    lease: Lease,
+    run: RowMapping,
+    origins: list[UUID],
+) -> bool:
+    config = queue.research.config(lease.repository_id, run["agent_config_id"])
+    if config.execution_policy is None or run["checkpoint_commit_id"] is None:
+        return False
+    state = parse_contract(
+        encode(queue.history.restore(lease.repository_id, run["checkpoint_commit_id"]).data),
+        AgentState,
+    )
+    stopped = {item.occurrence for item in state.stopped_executions}
+    calls, executions = TABLES["external_calls"], TABLES["sandbox_executions"]
+    pending = [
+        dict(row)
+        for row in connection.execute(
+            sa.select(calls).where(
+                calls.c.repository_id == lease.repository_id,
+                calls.c.run_id.in_(origins),
+                calls.c.result_ref.is_(None),
+                calls.c.status.in_(("started", "outcome_unknown")),
+            )
+        ).mappings()
+        if occurrence_of(dict(row)) not in stopped
+    ]
+    if len(pending) != 1 or pending[0]["provider"] not in SANDBOX_PROVIDERS:
+        return False
+    return (
+        connection.execute(
+            sa.select(executions.c.call_id).where(
+                executions.c.call_id == pending[0]["id"],
+                executions.c.repository_id == lease.repository_id,
+                executions.c.job_id == lease.job_id,
+                executions.c.cleanup_confirmed.is_(True),
+                executions.c.result_ref.is_(None),
+                executions.c.policy_ref == config.execution_policy.digest(),
+                executions.c.fencing_token < lease.fencing_token,
+            )
+        ).first()
+        is not None
+    )
 
 
 def recovery_origins(queue: JobService, lease: Lease) -> tuple[UUID, ...]:
@@ -49,6 +100,14 @@ def prepare_recovery(queue: JobService, lease: Lease) -> Lease | None:
             .with_for_update()
         )
         job = queue.guard(connection, lease, lease.run_id)
+        origins = [lease.run_id]
+        root = job["origin_run_id"]
+        current = old["origin_run_id"]
+        while root is not None and origins[-1] != root:
+            if current is None or current in origins or len(origins) >= 100:
+                raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "恢复来源链非法")
+            origins.append(current)
+            current = history._run(connection, lease.repository_id, current)["origin_run_id"]
         resolutions = TABLES["call_resolutions"]
         confirmed = (
             connection.execute(
@@ -67,7 +126,11 @@ def prepare_recovery(queue: JobService, lease: Lease) -> Lease | None:
                 "paused",
                 "waiting_approval",
             )
-            or (old["status"] == "outcome_unknown" and not confirmed)
+            or (
+                old["status"] == "outcome_unknown"
+                and not confirmed
+                and not _clean_sandbox_pending(connection, queue, lease, old, origins)
+            )
         ):
             connection.execute(
                 jobs.update()
@@ -78,17 +141,10 @@ def prepare_recovery(queue: JobService, lease: Lease) -> Lease | None:
                     lease_until=None,
                     checkpoint_commit_id=old["checkpoint_commit_id"],
                     last_error=old["failure_code"],
+                    available_at=sa.func.clock_timestamp() + sa.text("interval '30 seconds'"),
                 )
             )
             return None
-        origins = [lease.run_id]
-        root = job["origin_run_id"]
-        current = old["origin_run_id"]
-        while root is not None and origins[-1] != root:
-            if current is None or current in origins or len(origins) >= 100:
-                raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "恢复来源链非法")
-            origins.append(current)
-            current = history._run(connection, lease.repository_id, current)["origin_run_id"]
         connection.execute(
             runs.update().where(runs.c.id == lease.run_id).values(status="interrupted")
         )

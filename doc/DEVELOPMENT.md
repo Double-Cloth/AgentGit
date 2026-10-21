@@ -33,7 +33,7 @@ uv run --locked uvicorn agentgit.api.main:create_app --factory --host 127.0.0.1 
 
 `GET /health` 是公开存活探测；`GET /ready` 实际连接 PostgreSQL，失败返回 503 和 database_unavailable。S4 业务 API、身份和项目边界已接入，操作见 [API.md](API.md)，业务请求须配置本地身份令牌。
 
-`doctor --sandbox` 不创建容器、下载镜像或执行命令；在 S4 完成前 `execution_ready=false`，退出码为 1。引擎可达不代表执行工具已实现。资源能力必须由 S4 的实际隔离测试证明，禁止使用宿主进程作为执行回退。
+`doctor --sandbox` 不创建容器、下载镜像或执行命令；只读检查当前固定策略、Linux/cgroup v2、资源/seccomp 能力与预置镜像，满足才返回 `execution_ready=true`，失败退出码为 1。S4 的实际隔离测试已完成，证据见 [S4.md](acceptance/S4.md)；禁止使用宿主进程作为执行回退。
 
 ## 检查命令
 
@@ -98,7 +98,7 @@ Job 固定代码摘要、配置、输入、语料和初始计划版本；Worker 
 uv run --locked pytest tests/integration/test_jobs.py tests/integration/test_kernel_migrations.py
 ```
 
-调度进程故障用例启动仓库内受信任的 Worker 测试助手，并使用独立测试 Schema/临时 CAS；它们不构成用户 Shell/Python 执行功能。实际容器基础设施与持久执行服务使用单独套件验证，准备方式与边界见 [sandbox/README.md](../sandbox/README.md)；五工具接入见下文。S4 尚未验收，`doctor --sandbox` 继续返回 `execution_ready=false`。早期进展见 [S4-progress.md](acceptance/S4-progress.md) 与 [容器边界](acceptance/S4-sandbox-boundary.md)。
+调度进程故障用例启动仓库内受信任的 Worker 测试助手，并使用独立测试 Schema/临时 CAS；用户 Shell/Python 始终在容器中执行。实际容器基础设施与持久执行服务使用单独套件验证，准备方式与边界见 [sandbox/README.md](../sandbox/README.md)；完整五工具接入及本机验收见 [S4.md](acceptance/S4.md)。早期进展保留在 [S4-progress.md](acceptance/S4-progress.md) 与 [容器边界](acceptance/S4-sandbox-boundary.md)。
 
 ## S4 工具策略与精确审批
 
@@ -144,4 +144,6 @@ uv run --locked pytest tests/unit tests/integration tests/sandbox tests/executio
 
 完整结果在观察前崩溃，恢复先只消费已保存的调用，不创建缺失意图、不启动 Adapter；结算原预算、恢复完整文件后才处理取消或持久期限。新调用仍执行正常预算和权限检查。五工具 CLI/HTTP 入口与产物说明见 [API.md](API.md#五工具容器流程)。
 
-清理后新 attempt 的策略和预算续跑尚待完成。因此 `doctor --sandbox` 保持 `execution_ready=false`，S4 未验收；不得据此开启 S5。详细证据见 [执行记录](acceptance/S4-execution-ledger.md) 与 [生产五工具](acceptance/S4-five-tools.md)。最新规划的 S6 Electron 桌面及必选 S11 按 [实施方案](AgentGit_实施方案_v1.0.0.md) 继续执行。
+清理后新 attempt 已实现：`stopped_executions` 记录已确认停止但没有完整结果的稳定调用身份，不冒充成功；丢弃决定和旧尝试预算同检查点原子保存，新尝试从相同输入创建新容器并另计预算。固定上限两次，取消/到期/预算不足先结算再停止。清理失败的 Job 每 30 秒有界重查，未确认时不创建新尝试，普通模型/外部写仍须可信核对。新尝试在 stage 与意图事务内复核停止依据、源链、输入和策略。
+
+[S4 本机验收](acceptance/S4.md)已完成；`doctor --sandbox` 共用执行器的只读前提检查，固定镜像和隔离能力可用才返回就绪，不启动容器或执行命令。继续按实施方案进入 S5；S6 Electron 桌面及必选 S11/S12 的完整交付不变。

@@ -354,6 +354,12 @@ class ResearchRuntime:
         if usage.tool_calls >= self.config.limits.max_tool_calls:
             raise AgentGitError(ErrorCode.BUDGET_EXHAUSTED, "工具调用预算已耗尽")
         attempt = self.state.attempts.get(decision.node_key, 0) + 1
+        if (
+            decision.tool in {"code_exec", "terminal_exec"}
+            and self.tools.policy is not None
+            and attempt > self.tools.policy.max_attempts
+        ):
+            raise AgentGitError(ErrorCode.BUDGET_EXHAUSTED, "容器工具已达到固定尝试次数上限")
         self.state = evolve(
             self.state,
             usage=evolve(usage, tool_calls=usage.tool_calls + 1),

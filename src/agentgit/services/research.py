@@ -433,7 +433,14 @@ class ResearchSession:
             settlement=self.settlement,
         ).run()
 
-    def save(self, state: AgentState, event_type: str, details: dict[str, object]) -> None:
+    def save(
+        self,
+        state: AgentState,
+        event_type: str,
+        details: dict[str, object],
+        *,
+        guard: Callable[[Connection], None] | None = None,
+    ) -> None:
         if self.environment is None:
             raise AgentGitError(ErrorCode.CONFIGURATION, "提交前缺少环境清单")
         contents = self.workspace.contents()
@@ -467,6 +474,8 @@ class ResearchSession:
             ).scalar_one()
             if active != self.run_id:
                 raise AgentGitError(ErrorCode.VERSION_CONFLICT, "任务活动 Run 已改变")
+            if guard is not None:
+                guard(connection)
             connection.execute(
                 TABLES["runs"]
                 .update()

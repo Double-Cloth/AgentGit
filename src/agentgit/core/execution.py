@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from pydantic import Field, field_validator, model_validator
 
 from agentgit.core.canonical import ObjectType, encode, object_digest
-from agentgit.core.models import Contract, Digest
+from agentgit.core.models import CallOccurrence, Contract, Digest
 from agentgit.core.paths import validate_artifact_paths
 from agentgit.core.snapshots import ArtifactEntry
 
@@ -43,6 +43,7 @@ class ExecutionPolicy(Contract):
     max_files: Literal[1000] = 1000
     max_log_bytes: Literal[1048576] = 1048576
     result_envelope_bytes: Literal[8192] = 8192
+    max_attempts: Literal[2] = 2
 
     def digest(self) -> str:
         return object_digest(ObjectType.BLOB, encode(self.model_dump(mode="json")))
@@ -69,6 +70,14 @@ class ExecutionContext(Contract):
     input_manifest_ref: Digest
     execution_policy_ref: Digest
     files: tuple[ExecutionFile, ...]
+
+
+class StoppedExecution(Contract):
+    """物理执行已停止但没有完整结果；不等价于成功或已知退出码。"""
+
+    occurrence: CallOccurrence
+    input_manifest_ref: Digest
+    execution_policy_ref: Digest
 
 
 class ExecutionArguments(Contract):

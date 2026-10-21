@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from typer.testing import CliRunner
 
+from agentgit.adapters.execution.engine import EngineError
+from agentgit.adapters.execution.policy import bundled_policy
 from agentgit.api.main import create_app
 from agentgit.cli.main import app
 from agentgit.config import Settings
@@ -58,29 +60,74 @@ def test_redirected_json_works_with_windows_legacy_encoding():
     assert b"secret" not in result.stdout
 
 
+def probe_engine(*, failure=None):
+    class Probe:
+        def __init__(self):
+            self.requests = []
+
+        def request(self, method, path):
+            self.requests.append((method, path))
+            assert method == "GET", "doctor 不能创建容器或执行命令"
+            if failure == "engine":
+                raise EngineError()
+            if path == "/info":
+                info = {
+                    "OSType": "linux",
+                    "CgroupVersion": "2",
+                    "ServerVersion": "fixture",
+                    **dict.fromkeys(
+                        ("MemoryLimit", "SwapLimit", "PidsLimit", "CpuCfsQuota", "CpuCfsPeriod"),
+                        True,
+                    ),
+                    "SecurityOptions": ["name=seccomp,profile=builtin"],
+                }
+                if failure in ("windows", "cgroup", "memory", "seccomp"):
+                    field, value = {
+                        "windows": ("OSType", "windows"),
+                        "cgroup": ("CgroupVersion", "1"),
+                        "memory": ("MemoryLimit", False),
+                        "seccomp": ("SecurityOptions", []),
+                    }[failure]
+                    info[field] = value
+                return info
+            assert path.startswith("/images/sha256:") and path.endswith("/json")
+            if failure == "image":
+                raise EngineError(status=404)
+            return {"Id": bundled_policy().image_id, "Os": "linux"}
+
+    return Probe()
+
+
 @pytest.mark.parametrize(
-    "effect,result",
-    [
-        (FileNotFoundError(), None),
-        (subprocess.TimeoutExpired("docker", 10), None),
-        (None, subprocess.CompletedProcess([], 1, "", "secret-engine-details")),
-        (None, subprocess.CompletedProcess([], 0, '{"OSType":"windows"}', "")),
-        (None, subprocess.CompletedProcess([], 0, "invalid-json", "")),
-        (None, subprocess.CompletedProcess([], 0, '{"OSType":"linux"}', "")),
-    ],
+    "failure", ["missing", "timeout", "engine", "windows", "cgroup", "memory", "seccomp", "image"]
 )
-def test_sandbox_is_only_prerequisite_probe(effect, result):
-    with patch(
-        "agentgit.diagnostics.subprocess.run", side_effect=effect, return_value=result
-    ) as run:
+def test_sandbox_probe_rejects_unavailable_prerequisites_without_side_effects(failure):
+    engine = probe_engine(failure=failure)
+    effect = {
+        "missing": FileNotFoundError("secret-engine-details"),
+        "timeout": subprocess.TimeoutExpired("docker", 10),
+    }.get(failure)
+    with patch("agentgit.diagnostics.DockerEngine.local", side_effect=effect, return_value=engine):
         report = sandbox_prerequisites()
     assert report["execution_ready"] is False
     assert report["code"] == "sandbox_unavailable"
     assert "secret-engine-details" not in json.dumps(report)
-    assert run.call_args.args[0] == ["docker", "info", "--format", "{{json .}}"]
 
 
-def test_doctor_sandbox_returns_nonzero_until_execution_verified():
+def test_sandbox_probe_accepts_only_pinned_image_and_complete_isolation_prerequisites():
+    engine = probe_engine()
+    with patch("agentgit.diagnostics.DockerEngine.local", return_value=engine):
+        report = sandbox_prerequisites()
+    assert report["execution_ready"] is True and report["code"] is None
+    assert report["image_id"] == bundled_policy().image_id
+    assert engine.requests == [
+        ("GET", "/info"),
+        ("GET", f"/images/{bundled_policy().image_id}/json"),
+        ("GET", "/info"),
+    ]
+
+
+def test_doctor_sandbox_returns_nonzero_when_prerequisites_fail():
     with patch("agentgit.cli.main.sandbox_prerequisites", return_value={"execution_ready": False}):
         result = CliRunner().invoke(app, ["doctor", "--sandbox"])
     assert result.exit_code == 1
