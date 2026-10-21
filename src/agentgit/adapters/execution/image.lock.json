@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "platform": "linux/amd64",
+  "image_id": "sha256:37837ca77fde6fa5ab6e183ea9484888a107eb79359d2788069c295478fa8967",
+  "base_digest": "python:3.12.14-slim-bookworm@sha256:1aaa65a85fda306ffb8b910824d4e93bdce61e212c7e87168123ea3073b41a1a",
+  "debian_snapshot": "20260918T000000Z",
+  "python": "3.12.14",
+  "packages_sha256": "7e6fc440f1d27570607a7000cd0e46e0d50d88cee8484f2df13f3283064f833d",
+  "source_sha256": {
+    "sandbox/Dockerfile": "8d51cfcb6efd7543c89406bd2482a7599657cbd089edfba903ed2342ac5f2765",
+    "src/agentgit/core/paths.py": "75dfe4bfc35fdf5c6815344d158946c02bb010dea0f4efa1c91c4c7337416b4f",
+    "src/agentgit/core/errors.py": "01ac2d07b28cd3b16817158fad9522ed8bc6b80ee98dc3cd59f8c9c3908aeae0",
+    "src/agentgit/core/canonical.py": "c1ad1ffe75c8f22bdce63126c5ac8eb872b956613c27beb5416fda99c0f288c3",
+    "src/agentgit/adapters/execution/protocol.py": "bba3b242ca9ea95fdf7544fd494d81ebd0e46d8ab997115a2cd09475c0d2a5b1",
+    "src/agentgit/adapters/execution/supervisor.py": "063f61b94932fd6988383b286641b92d89d016fd95209526ab0153025a3f9aef"
+  }
+}

@@ -1,0 +1,13 @@
+*
+!sandbox/
+!sandbox/Dockerfile
+!src/
+!src/agentgit/
+!src/agentgit/core/
+!src/agentgit/core/canonical.py
+!src/agentgit/core/errors.py
+!src/agentgit/core/paths.py
+!src/agentgit/adapters/
+!src/agentgit/adapters/execution/
+!src/agentgit/adapters/execution/protocol.py
+!src/agentgit/adapters/execution/supervisor.py
