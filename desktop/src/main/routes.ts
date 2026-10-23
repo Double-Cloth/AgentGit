@@ -105,6 +105,7 @@ export class BusinessController {
       compatibility: 'unknown', worker: 'unknown', sandbox: 'unknown', backendVersion: null, message: '尚未检查连接' };
   }
   cancelReads(): void { this.client.cancelReads(); }
+  cancelAllReads(): void { this.client.cancelReads(true); }
   private connected(repository = true): string | undefined {
     if (this.state.compatibility !== 'compatible' || this.state.identity !== 'accepted') {
       throw new DesktopError('connection_required', '请先连接兼容的本地 API 并确认身份');
@@ -120,8 +121,8 @@ export class BusinessController {
     const repository = this.state.repositoryId;
     const next = this.empty(repository);
     const [health, ready] = await Promise.allSettled([
-      client.json({ method: 'GET', path: '/health', publicProbe: true }),
-      client.json({ method: 'GET', path: '/ready', publicProbe: true }),
+      client.json({ method: 'GET', path: '/health', publicProbe: true, connectionProbe: true }),
+      client.json({ method: 'GET', path: '/ready', publicProbe: true, connectionProbe: true }),
     ]);
     if (health.status === 'fulfilled' && health.value.status === 'ok') {
       next.api = 'reachable';
@@ -133,7 +134,7 @@ export class BusinessController {
         next.identity = 'missing'; next.message = '请预置 AGENTGIT_API_TOKEN 后重启桌面';
       } else {
         try {
-          const descriptor = await client.json({ method: 'GET', path: '/capabilities' });
+          const descriptor = await client.json({ method: 'GET', path: '/capabilities', connectionProbe: true });
           if (descriptor.schema_version !== 1 || descriptor.version !== next.backendVersion || !Array.isArray(descriptor.features)
               || !REQUIRED_FEATURES.every(value => (descriptor.features as Json[]).includes(value))) {
             next.compatibility = 'incompatible'; next.message = '后端缺少当前桌面需要的只读能力';
@@ -161,7 +162,7 @@ export class BusinessController {
     if (operation === 'configureConnection') {
       const input = fields(raw, ['baseUrl']);
       const baseUrl = normalizeBaseUrl(input.baseUrl);
-      this.cancelReads(); this.client = new ApiClient(baseUrl, this.token); this.descriptor = null;
+      this.cancelAllReads(); this.client = new ApiClient(baseUrl, this.token); this.descriptor = null;
       const version = ++this.contextVersion;
       this.state = this.empty(null);
       await this.persist({ baseUrl, repositoryId: null });
@@ -277,7 +278,7 @@ export class BusinessController {
       case 'listCommits': input = fields(raw, [], ['branchName', 'afterCommit', 'limit']); return get(query(`/repositories/${this.state.repositoryId ?? ''}/commits`,
         { branch_name: input.branchName === undefined ? 'main' : text(input.branchName, 100), after_commit: input.afterCommit === undefined ? undefined : digest(input.afterCommit), limit: number(input.limit, 100, 1000, 1) }));
       case 'getDiff': input = fields(raw, ['base', 'head'], ['after', 'limit']); return get(query('/diff',
-        { base: digest(input.base), head: digest(input.head), after: number(input.after, 0, Number.MAX_SAFE_INTEGER), limit: number(input.limit, 100, 1000, 1) }));
+        { left_commit: digest(input.base), right_commit: digest(input.head), after: number(input.after, 0, Number.MAX_SAFE_INTEGER), limit: number(input.limit, 100, 1000, 1) }));
       case 'createRepository': input = fields(raw, ['name', 'key']); return post('/repositories', { name: text(input.name), expected_version: 0 });
       case 'createAgent': input = fields(raw, ['config', 'expectedVersion', 'key']); return post('/agents',
         { config: jsonObject(input.config), expected_version: number(input.expectedVersion, 0, Number.MAX_SAFE_INTEGER) });

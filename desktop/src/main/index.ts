@@ -22,7 +22,7 @@ if (!haveLock) app.quit();
 else {
   app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); } });
   app.on('window-all-closed', () => app.quit());
-  app.on('before-quit', () => controller?.cancelReads());
+  app.on('before-quit', () => controller?.cancelAllReads());
   void app.whenReady().then(start).catch(() => {
     dialog.showErrorBox('AgentGit 无法启动', '桌面初始化失败。请检查包内资源与用户数据目录权限；后端服务不会被停止。');
     app.quit();
@@ -95,7 +95,7 @@ async function start(): Promise<void> {
   current.webContents.on('will-frame-navigate', event => { if (!event.isMainFrame || !trustedDocument(event.url)) event.preventDefault(); });
   current.webContents.on('will-attach-webview', event => event.preventDefault());
   current.webContents.on('render-process-gone', () => {
-    controller?.cancelReads();
+    controller?.cancelAllReads();
     if (current.isDestroyed()) return;
     void dialog.showMessageBox(current, { type: 'error', title: '界面已中断', message: '重新打开界面后会查询现有任务。已提交的后端任务继续运行。',
       buttons: ['重新打开', '关闭窗口'], defaultId: 0, cancelId: 1 }).then(({ response }) => {
@@ -104,7 +104,7 @@ async function start(): Promise<void> {
   });
   current.on('close', () => {
     if (!current.isMaximized() && !current.isMinimized()) void store.update({ bounds: current.getContentBounds() }).catch(() => {});
-    controller?.cancelReads();
+    controller?.cancelAllReads();
   });
   current.on('closed', () => { window = null; });
   current.once('ready-to-show', () => current.show());

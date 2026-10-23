@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import type { Json, JsonObject, Reply, DesktopApi } from '../shared/bridge';
+import type { Json, JsonObject, Reply } from '../shared/bridge';
 
-declare global { interface Window { agentgit: DesktopApi } }
 export function object(value: Json | undefined): JsonObject { return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; }
 export function rows(value: Json | undefined): JsonObject[] { return Array.isArray(value) ? value.map(object) : []; }
 export function str(value: Json | undefined): string { return typeof value === 'string' ? value : ''; }

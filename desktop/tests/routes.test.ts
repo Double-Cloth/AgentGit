@@ -78,6 +78,8 @@ test('业务白名单、参数和项目归属在请求前验证，POST 保持原
     assert.equal(read.url, `/repositories/${REPO}/runs?limit=1`);
     assert.equal(read.headers['x-repository-id'], REPO);
     assert.equal(read.headers.origin, undefined);
+    await f.controller.handle('getDiff', { base: 'a'.repeat(64), head: 'b'.repeat(64) });
+    assert.equal(f.requests.at(-1)!.url, `/diff?left_commit=${'a'.repeat(64)}&right_commit=${'b'.repeat(64)}&after=0&limit=100`);
     await f.controller.handle('controlRun', { runId: REPO, action: 'pause', expectedVersion: 2, key: 'same-action' });
     const posts = f.requests.filter(r => r.method === 'POST');
     assert.equal(posts.length, 1); assert.equal(posts[0]!.headers['idempotency-key'], 'same-action');
@@ -158,4 +160,21 @@ test('JSON 业务载荷拒绝非 JSON、无限深度、浮点与无效 Unicode',
   let deep: Record<string, unknown> = {}; for (let i = 0; i < 70; i++) deep = { next: deep };
   assert.throws(() => jsonObject(deep), rejected('output_limit'));
   assert.deepEqual(jsonObject({ text: '中文😀', count: 5, flag: false, empty: null }), { text: '中文😀', count: 5, flag: false, empty: null });
+});
+
+test('切页取消业务读取不能把并行连接探测误报为断连', async () => {
+  let delayed = false, release: (() => void) | undefined, entered: (() => void) | undefined;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const f = await fixture({ respond: (request, response) => {
+    if (delayed && request.url === '/health') {
+      entered!(); release = () => response.end(JSON.stringify({ status: 'ok', version: '0.1.0' })); return true;
+    } return false;
+  } });
+  try {
+    await connect(f.controller); delayed = true;
+    const probe = f.controller.handle('getConnection', undefined);
+    await started; f.controller.cancelReads(); release!();
+    const state = await probe as ConnectionState;
+    assert.equal(state.api, 'reachable'); assert.equal(state.identity, 'accepted'); assert.equal(state.repositoryId, REPO);
+  } finally { await f.close(); }
 });

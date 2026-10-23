@@ -1,6 +1,6 @@
 # AgentGit 桌面开发
 
-当前为 S6 初版。四页与受限 IPC 已实现，真实 Electron + HTTP fixture 冒烟通过；尚未完成真实五工具联调、模型 Adapter、安装包/便携包及独立 Windows 用户验收。阶段退出条件仍以根项目实施方案为准。
+当前为 S6 实施版。四页与受限 IPC 已实现，真实 Electron 的 fixture 边界测试及真实后端五工具/Fork/Recorded/Live/Diff 联调通过；模型 Adapter、完整窗口/DPI/生命周期、原生对话框操作、安装包/便携包及独立 Windows 用户验收尚未完成。阶段退出条件仍以根项目实施方案为准。
 
 ## 固定构建环境
 
@@ -24,6 +24,7 @@ npm run setup
 npm run typecheck
 npm test
 npm run test:electron
+npm run test:electron:real
 npm start
 ```
 
@@ -60,6 +61,8 @@ npm start
 
 本地 Inter、EB Garamond、JetBrains Mono 随资源构建；中文使用 Windows 字体回退。OFL 与固定上游提交/文件摘要在 `src/renderer/public/licenses/`，构建后复制进 `.build/renderer/licenses/`。没有 CDN 或运行期字体下载。
 
-`npm test` 检查主进程客户端、参数/项目/来源验证、二进制导出与偏好；`test:electron` 启动真实 Electron，使用受控 HTTP fixture 检查四页、渲染隔离、注入文本、拒绝导航/额外窗口 IPC、双击提交和窗口宽度。fixture 不冒充真实后端执行，详见 [增量证据](../doc/acceptance/S6-desktop-progress.md)。
+`npm test` 检查主进程客户端、参数/项目/来源验证、二进制导出与偏好；`test:electron` 启动真实 Electron，使用受控 HTTP fixture 检查四页、渲染隔离、注入文本、拒绝导航/额外窗口 IPC、双击提交和窗口宽度。fixture 不冒充真实后端执行，详见 [初版证据](../doc/acceptance/S6-desktop-progress.md)。
+
+`test:electron:real` 另外要求已准备 PostgreSQL 测试库、Docker Linux 与固定镜像。它使用独立测试 Schema 和独立 Worker，真实执行五工具、分支/Replay/Diff，并核验来源不变、容器清理和原字节导出。缺设施即失败，不 skip；产品 Python 源码在测试期间应冻结。详见 [真实联调](../doc/acceptance/S6-desktop-real.md)。保存测试替换原生对话框返回值，不算原生对话框交互已验收。
 
 当前 Vite 构建提示 React Flow 的 `use client` directive；应用完全是 Electron 客户端，不使用 RSC/SSR，真实渲染已验证，保留该提示供后续升级核对。官方参考：[Electron 安全](https://www.electronjs.org/docs/latest/tutorial/security)、[Forge Windows maker](https://www.electronforge.io/config/makers/squirrel.windows)、[Playwright Electron](https://playwright.dev/docs/api/class-electron)。

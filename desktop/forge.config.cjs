@@ -5,7 +5,7 @@ module.exports = {
     appBundleId: 'local.agentgit.desktop',
     ignore: [
       /^\/(?:src|tests|scripts|\.test-build|out|node_modules\/\.cache)(?:\/|$)/,
-      /^\/(?:tsconfig.*\.json|vite\.config\.mts|playwright\.config\.ts|\.node-version)$/,
+      /^\/(?:tsconfig.*\.json|vite\.config\.mts|playwright(?:\.real)?\.config\.ts|\.node-version)$/,
     ],
   },
   makers: [

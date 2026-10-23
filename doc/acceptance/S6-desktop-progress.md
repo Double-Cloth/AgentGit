@@ -2,6 +2,8 @@
 
 状态：初版实现与定向测试通过，**S6 未验收**。不替代 D1、真实后端五工具、真实模型 Adapter、DPI、安装/便携包及独立用户证据。
 
+本文保留初版检查基线。后续真实五工具/Replay/Diff 联调、查询字段与切页取消修复，以及当前 15 项桌面单元结果见 [真实联调](S6-desktop-real.md)；不能用本页历史的 14 项数量覆盖最新结果。
+
 ## 本批实现
 
 建立 `desktop/`，固定构建环境/依赖锁；main、sandbox preload、React renderer、shared 契约分离。主进程只允许固定业务路由，验证参数、项目、当前窗口/顶层 frame/受信任文档。自定义协议只读包内页面和受限资产，realpath 防越界，设置 CSP/nosniff；权限、新窗口、外部导航和渲染网络默认拒绝。窗口启用 contextIsolation、sandbox、webSecurity，关闭 Node/webview。

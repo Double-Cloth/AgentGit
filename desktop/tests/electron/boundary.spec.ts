@@ -22,6 +22,12 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
         response.end(JSON.stringify(path === '/agents' ? { config_id: REPO, version: 1 } : path === '/tasks' ? { task_id: REPO } : { run_id: RUN, job_id: REPO })); }); return;
     }
     const run = { id: RUN, repository_id: REPO, branch_name: 'main', mode: 'standard', status: 'completed', state_version: 2, checkpoint_commit_id: COMMIT, goal: { text: 'Electron 边界测试运行' }, created_at: '2026-10-22T00:00:00Z' };
+    if (path === '/diff') {
+      const query = new URL(request.url!, 'http://localhost').searchParams;
+      if (!query.has('left_commit') || !query.has('right_commit')) {
+        response.writeHead(422); response.end(JSON.stringify({ error: { code: 'validation', message: '缺少 Commit 参数' } })); return;
+      }
+    }
     const result = path === '/health' ? { status: 'ok', version: '0.1.0' } : path === '/ready' ? { status: 'ready' }
       : path === '/capabilities' ? { schema_version: 1, version: '0.1.0', features: ['run_pagination', 'historical_artifacts', 'execution_evidence', 'recorded', 'live', 'structural_diff'], default_config: config, execution_config: config }
       : path === `/repositories/${REPO}` ? { id: REPO, name: '桌面测试' }
@@ -47,7 +53,11 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
     await expect(page.getByText('API 与数据库可用；Worker')).toBeVisible();
     expect(await page.evaluate(() => ({ require: typeof (globalThis as { require?: unknown }).require,
       process: typeof (globalThis as { process?: unknown }).process, bridgeKeys: Object.keys(window.agentgit) }))).toMatchObject({ require: 'undefined', process: 'undefined' });
-    const preferences = await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.getLastWebPreferences());
+    const preferences = await desktop.evaluate(({ BrowserWindow }) => {
+      // 固定 Electron 运行时的测试观测方法未列入公开类型；产品代码不依赖它。
+      const contents = BrowserWindow.getAllWindows()[0]!.webContents as unknown as { getLastWebPreferences: () => Electron.WebPreferences };
+      return contents.getLastWebPreferences();
+    });
     expect(preferences).toMatchObject({ nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false });
     expect(await desktop.evaluate(() => process.env.AGENTGIT_API_TOKEN)).toBeUndefined();
     await page.getByLabel('已有项目 ID').fill(REPO); await page.getByRole('button', { name: '选择项目', exact: true }).click();
