@@ -1,4 +1,4 @@
-# 本地服务与 CLI（S4–S7）
+# 本地服务与 CLI（S4–S8 只读基础）
 
 当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0015_hybrid_observations`；桌面不会自动迁移后端。
 
@@ -89,6 +89,8 @@ serve 只监听 127.0.0.1。Origin 默认允许 http://127.0.0.1:8000、http://l
 | GET /repositories/{id}/commits | branch_name 默认 main、after_commit 可省略、limit=1..1000 | 当前分支从新到旧的 Commit manifest、has_more、next_after_commit |
 | GET /commits/{id} | 项目头 | 完整 manifest、环境和 snapshot，只读且核验内容 |
 | GET /diff | left_commit、right_commit、after≥0、limit=1..1000 | common_ancestor（可为 null）、字段/产物/调用变化、total_changes、next_after、has_more |
+| GET /runs/{id}/behavioral-trace | Run UUID、项目头 | 当前 Run 的有界事件 DAG、精确事件引用、依赖依据与证据缺口，只读 |
+| GET /behavioral-diff | left_run_id、right_run_id 为 UUID，项目头 | 两侧已核验 DAG、共同祖先、对齐/变化/单侧事件、歧义及首个可见分歧前沿 |
 | POST /agents | config 可省略、expected_version | 201，不可变 config_id、递增 version |
 | POST /tasks | config_id、config_version、goal、expected_version=0 | 201，task_id |
 | POST /tasks/{id}/runs | config_version、expected_branch_version、expected_head；branch_name 默认 main；budget 可省略 | 202，耐久 job_id/run_id |
@@ -108,6 +110,21 @@ goal 示例：`{"schema_version":1,"text":"比较三个 fixture 框架"}`。conf
 ```
 
 API/CLI 共用事务和幂等记录。同 actor/route/key 成功重试返回原响应，即使状态已推进；业务修改、响应引用、幂等记录同时提交，失败全回滚。实时状态使用 GET/status。旧版本或分支占用为 409，已有结果/审批不重复执行。
+
+## S8 只读行为证据
+
+```powershell
+uv run --locked agentgit behavioral-trace $repo.repository_id $runId
+uv run --locked agentgit behavioral-diff $repo.repository_id $leftRunId $rightRunId
+```
+
+两个入口均只读，不提交 Job、不写 CAS、不执行模型/工具/容器。API 沿用认证和 `X-Repository-ID`，CLI 沿用本机管理服务。输入是 Run UUID；与既有 `diff` 的 Commit 摘要参数分开。没有新增数据库迁移或桌面桥接。
+
+图中 `event` 含 `run_id/seq/event_id`（`event_id` 是数据库正整数），边的 `basis` 区分 `caused_by/call_occurrence/plan_dependency/decision_context`。计划/决策边只从已验证快照、规范请求和唯一观测提取，不按相邻事件或时间猜测。当前只读取所选 Run 自己的事件；指向来源 Run 的依赖经项目边界验证后保留 `outside_trace`，不自动展开历史。运行中返回捕获的 `as_of_seq/head_commit/run_status`，`scope_complete=false`。
+
+对齐先要求共同版本祖先，再使用 logical step、调用身份、签名、规范请求和已对齐的依赖上下文。重复身份无法唯一识别时保留 `ambiguities`；无共同祖先返回 `no_shared_ancestor`。结果中的 `first_left/first_right` 是已观察 DAG 上的最小差异前沿，可包含并列事件；它们不是根因。缺失已归属的事件正文或观测标为缺口/未核验，未提交、截断、未知结果也不计作完整证据；对象损坏、无归属或跨项目引用直接拒绝。
+
+每侧最多 10,000 个事件、30,000 条去重边/缺口，当前 Run 内容缓存读取累计最多 64 MiB，单图和合并报告各最多 8 MiB；版本祖先核验另受既有 10,000 层限制及单对象读取上限约束。重复对齐候选最多比较 200,000 次，超过限制返回 `output_limit`，不输出一个伪装完整的前缀。暂不提供分页；该接口未接入候选排序、20 例评估、干预效果或 Debug Report 创建，详见 [S8 方案](S8-diagnosis-plan.md)。
 
 ## S5 分支、历史与差异
 

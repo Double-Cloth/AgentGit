@@ -327,6 +327,21 @@ def create_app(
     ) -> dict[str, Any]:
         return service.diff(repo, left_commit, right_commit, after=after, limit=limit)
 
+    @app.get("/runs/{run_id}/behavioral-trace")
+    def behavioral_trace(
+        run_id: UUID, repo: Repository, service: Annotated[ManagementService, Depends(get_manager)]
+    ) -> dict[str, Any]:
+        return service.behavioral_trace(repo, run_id)
+
+    @app.get("/behavioral-diff")
+    def behavioral_diff(
+        left_run_id: UUID,
+        right_run_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.behavioral_diff(repo, left_run_id, right_run_id)
+
     @app.post("/tasks", status_code=201)
     def task(
         body: dict[str, Any],

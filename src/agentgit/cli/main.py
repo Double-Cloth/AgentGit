@@ -378,6 +378,22 @@ def structural_diff(
         emit(service.diff(repository_id, left_commit, right_commit, after=after, limit=limit))
 
 
+@app.command("behavioral-trace")
+def behavioral_trace(repository_id: UUID, run_id: UUID, testing: bool = False) -> None:
+    """只读核验当前 Run 的事件、观测、计划依赖与证据缺口。"""
+    with management(testing) as service:
+        emit(service.behavioral_trace(repository_id, run_id))
+
+
+@app.command("behavioral-diff")
+def behavioral_diff(
+    repository_id: UUID, left_run_id: UUID, right_run_id: UUID, testing: bool = False
+) -> None:
+    """按逻辑身份与已核验依赖对齐两个 Run，不执行干预或判断根因。"""
+    with management(testing) as service:
+        emit(service.behavioral_diff(repository_id, left_run_id, right_run_id))
+
+
 @app.command("run")
 def run(
     repository_id: UUID,

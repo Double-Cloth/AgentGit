@@ -31,6 +31,7 @@ from agentgit.core.research import AgentConfig, AgentState, BudgetUsage
 from agentgit.core.versions import LiveReplay, NewBranch, RecordedRange, RecordedReplay
 from agentgit.runtime.model_budget import call_budget
 from agentgit.services.approvals import ApprovalService
+from agentgit.services.diagnosis import BehaviorService
 from agentgit.services.execution_views import ExecutionResource, ExecutionViewService
 from agentgit.services.experiments import ExperimentService
 from agentgit.services.history import TABLES, HistoryService
@@ -64,6 +65,7 @@ class ManagementService:
         self.versions = VersionService(self.history)
         self.replays = ReplayService(research)
         self.inspection = InspectionService(self.history)
+        self.behavior = BehaviorService(self.history)
         self.execution_views = ExecutionViewService(self.history)
         self.experiments = ExperimentService(research)
 
@@ -314,6 +316,12 @@ class ManagementService:
 
     def checkout(self, repository_id: UUID, commit_id: str) -> dict[str, Any]:
         return self.versions.checkout(repository_id, commit_id)
+
+    def behavioral_trace(self, repository_id: UUID, run_id: UUID) -> dict[str, Any]:
+        return self.behavior.trace(repository_id, run_id).model_dump(mode="json")
+
+    def behavioral_diff(self, repository_id: UUID, left: UUID, right: UUID) -> dict[str, Any]:
+        return self.behavior.compare(repository_id, left, right)
 
     def diff(
         self, repository_id: UUID, left: str, right: str, *, after: int = 0, limit: int = 100

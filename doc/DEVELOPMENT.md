@@ -2,9 +2,11 @@
 
 实现进度与阶段证据见 [PROGRESS.md](PROGRESS.md)。README 保留项目介绍；方案和设计的 S0 描述是规划时的历史基线。
 
-S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命令、身份预置和字体授权见 [desktop/README.md](../desktop/README.md)。当前候选 0.1.3 的本机证据见[核对矩阵](acceptance/S6-keyboard-and-gates.md)，独立用户/原生专项仍未验收。用户已授权延后这些专项、先继续 S7；范围见实施方案第 1.2 节。
+S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命令、身份预置和字体授权见 [desktop/README.md](../desktop/README.md)。当前候选 [0.1.4 的本机证据](acceptance/S7-package-014.md)已归档，独立用户/原生专项仍未验收。用户已授权延后这些专项、先继续其他开发与本机验收；范围见实施方案第 1.2 节。
 
 ## 环境
+
+S8 的只读行为图、依赖对齐和 API/CLI 见 [S8 方案](S8-diagnosis-plan.md)与 [API.md](API.md)。读取只使用既有 schema，`behavioral-trace/behavioral-diff` 不启动 Worker 或执行历史动作；候选排序、20 例评估及桌面视图尚待实现。该源码增量尚未进入 0.1.4 桌面分发包。
 
 S7 新增 `0013_branch_experiments`、`0014_frozen_interventions` 及 `0015_hybrid_observations`，保存不可变实验/trial、干预归属和 Hybrid 观测账本，运行状态仍由既有 Job/Run 管理。新入口和示例见 [API.md](API.md)；本次自动化验证仅迁移独立测试 schema，没有自动迁移用户的业务库或重建桌面包。历史迁移保持冻结。
 
