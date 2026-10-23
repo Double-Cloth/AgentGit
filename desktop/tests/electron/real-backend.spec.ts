@@ -64,7 +64,7 @@ test('真实设施：桌面五工具 → 历史/Fork → 零执行 Recorded → 
     AGENTGIT_API_TOKEN: TOKEN, AGENTGIT_API_URL: backend.url, AGENTGIT_DESKTOP_PROFILE_DIR: profile };
   if (executable) {
     // 打包程序从独立目录启动；子进程 PATH 不包含构建用 Node/uv/npm。
-    for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key];
+    for (const key of Object.keys(env)) if (['path', 'node_path', 'node_options'].includes(key.toLowerCase())) delete env[key];
     env.PATH = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32');
   }
   const desktop = await electron.launch({ ...(executable ? { executablePath: resolve(executable), args: [], cwd: profile }
@@ -74,11 +74,16 @@ test('真实设施：桌面五工具 → 历史/Fork → 零执行 Recorded → 
   try {
     const page = await desktop.firstWindow();
     currentPage = page;
+    const runtime = await desktop.evaluate(() => ({ versions: process.versions, platform: process.platform, arch: process.arch }));
+    const windowInfo = await page.evaluate(() => ({ devicePixelRatio, width: innerWidth, height: innerHeight }));
     if (executable) {
       expect(await desktop.evaluate(({ app }) => app.isPackaged)).toBe(true);
       expect(await desktop.evaluate(() => process.env.PATH)).toBe(env.PATH);
     }
     await expect(page.getByText('API 与数据库可用；Worker')).toBeVisible();
+    await page.getByText('版本与开源授权', { exact: true }).click();
+    await expect(page.getByText('AgentGit 第三方软件授权说明', { exact: false })).toBeVisible();
+    await page.getByText('版本与开源授权', { exact: true }).click();
     await page.getByLabel('新项目名称').fill('S6 真实桌面五工具与隔离分支');
     await page.getByRole('button', { name: '创建并选择', exact: true }).click();
     await expect(page.getByRole('heading', { name: '运行', exact: true })).toBeVisible();
@@ -171,7 +176,7 @@ test('真实设施：桌面五工具 → 历史/Fork → 零执行 Recorded → 
     expect(executions).toHaveLength(4); expect(new Set(executions.map(item => item.container_name)).size).toBe(4);
     expect(executions.every(item => item.cleanup_confirmed)).toBe(true);
     await writeFile('../.agentgit/evidence/S6-real-desktop-audit.json', JSON.stringify({ repository: repo, sourceRun,
-      sourceHead: end, recorded: verified.replay, lives, final, package: executable ?? null,
+      sourceHead: end, recorded: verified.replay, lives, final, package: executable ?? null, runtime, windowInfo,
       export: { bytes: 'A', dialog: '测试替换原生对话框返回值，真实主进程写入' } }, null, 2));
   } catch (error) {
     if (currentPage && !currentPage.isClosed()) {

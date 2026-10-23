@@ -45,7 +45,7 @@ web
 
 ## Evidence on Hand
 
-真实 PostgreSQL、固定 Linux 容器、完整五工具来源、CLI 与 API、逐检查点 Replay 证明、A/B Live 文件与预算隔离均有本机记录。原始运行证据在忽略的 `.agentgit/evidence/`；可提交的验收说明位于 `doc/acceptance/`。真实 Electron 的 fixture 边界测试与独立测试库/Worker/容器五工具→Fork→Recorded/Live→Diff 联调已通过；导出写入测试替换了原生对话框返回值。尚无安装包或独立 Windows 用户安装证据，各项不能互相替代。
+真实 PostgreSQL、固定 Linux 容器、完整五工具来源、CLI 与 API、逐检查点 Replay 证明、A/B Live 文件与预算隔离均有本机记录。原始运行证据在忽略的 `.agentgit/evidence/`；可提交的验收说明位于 `doc/acceptance/`。真实 Electron 与从 ZIP 解压的程序已通过独立测试库/Worker/容器五工具→Fork→Recorded/Live→Diff 联调，应用进程没有构建用 Node/npm 的 PATH。Windows x64 开发候选安装程序和 ZIP 已构建、均未签名；导出测试替换了原生对话框返回值，尚无独立 Windows 用户安装/升级/卸载证据，各项不能互相替代。
 
 ## Product Principles
 

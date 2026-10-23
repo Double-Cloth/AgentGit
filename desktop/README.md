@@ -1,6 +1,6 @@
 # AgentGit 桌面开发
 
-当前为 S6 实施版。四页与受限 IPC 已实现，真实 Electron 的 fixture 边界测试及真实后端五工具/Fork/Recorded/Live/Diff 联调通过；模型 Adapter、完整窗口/DPI/生命周期、原生对话框操作、安装包/便携包及独立 Windows 用户验收尚未完成。阶段退出条件仍以根项目实施方案为准。
+当前为 S6 实施版。四页与受限 IPC 已实现，真实 Electron 与 ZIP 便携程序的五工具/Fork/Recorded/Live/Diff 联调通过，Windows x64 开发候选安装/ZIP 已构建。模型 Adapter、完整 DPI/键盘/生命周期、原生对话框及独立用户安装/升级/卸载尚未完成，阶段退出条件仍以根项目实施方案为准。
 
 ## 固定构建环境
 
@@ -32,14 +32,14 @@ npm start
 
 `start` / `dev` 编译后启动真实 Electron，加载 `agentgit://app/index.html` 包内资源，不启动 Vite 开发服务器。renderer 由 Vite 直接构建，main/preload 由 tsc 构建，Forge 负责打包；未使用实验性 Forge Vite plugin。
 
-构建交付命令（尚未验收输出）：
+构建候选命令：
 
 ```powershell
 npm run package
 npm run make
 ```
 
-输出预期在 `out/`，包含 Windows x64 Squirrel 安装程序与 ZIP。完成后仍须记录摘要、依赖、签名及独立用户安装/升级/卸载证据，不能把上述命令存在当作验收通过。
+输出在 `out/`，包含 Windows x64 Squirrel 安装程序与 ZIP。本机候选摘要、未签名状态、授权/字节核验与便携运行证据见 [候选包记录](../doc/acceptance/S6-desktop-packages.md)。独立用户安装/升级/卸载尚待完成，不把 make 成功等同于完成 S6。
 
 ## 连接已有后端
 
@@ -68,5 +68,7 @@ renderer 构建前会从已锁定且已安装的声明依赖生成 26 项授权�
 `npm test` 检查主进程客户端、参数/项目/来源验证、二进制导出与偏好；`test:electron` 启动真实 Electron，使用受控 HTTP fixture 检查四页、渲染隔离、注入文本、拒绝导航/额外窗口 IPC、双击提交和窗口宽度。fixture 不冒充真实后端执行，详见 [初版证据](../doc/acceptance/S6-desktop-progress.md)。
 
 `test:electron:real` 另外要求已准备 PostgreSQL 测试库、Docker Linux 与固定镜像。它使用独立测试 Schema 和独立 Worker，真实执行五工具、分支/Replay/Diff，并核验来源不变、容器清理和原字节导出。缺设施即失败，不 skip；产品 Python 源码在测试期间应冻结。详见 [真实联调](../doc/acceptance/S6-desktop-real.md)。保存测试替换原生对话框返回值，不算原生对话框交互已验收。
+
+复验打包/解压程序时先正常构建，然后设置 `AGENTGIT_DESKTOP_EXECUTABLE` 为该目录的 AgentGit.exe 绝对路径，运行 `npm exec playwright test -- --config playwright.real.config.ts`。测试会将应用工作目录放到新临时目录，清除应用子进程的构建 PATH / NODE_PATH / NODE_OPTIONS，并确认 app.isPackaged；不据此声称已切换 Windows 账户。
 
 当前 Vite 构建提示 React Flow 的 `use client` directive；应用完全是 Electron 客户端，不使用 RSC/SSR，真实渲染已验证，保留该提示供后续升级核对。官方参考：[Electron 安全](https://www.electronjs.org/docs/latest/tutorial/security)、[Forge Windows maker](https://www.electronforge.io/config/makers/squirrel.windows)、[Playwright Electron](https://playwright.dev/docs/api/class-electron)。
