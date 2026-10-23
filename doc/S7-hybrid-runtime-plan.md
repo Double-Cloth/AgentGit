@@ -1,6 +1,6 @@
-# S7 Hybrid 运行接线待办
+# S7 Hybrid 运行接线方案与实施状态
 
-这是接在已实现的类型化干预和纯匹配选择器之后的实现顺序，不代表对应能力已完成。继续复用现有 Runtime、持久 Job/Worker、调用网关、Recorded 和审批/预算/容器边界，不新增框架。
+这是接在类型化干预和纯匹配选择器之后的实现方案。2026-10-24 已接通下述后端路径，阶段证据见 [Hybrid 运行验收](acceptance/S7-hybrid-runtime.md)。继续复用现有 Runtime、持久 Job/Worker、调用网关、Recorded 和审批/预算/容器边界，不新增框架；统计和桌面部分尚待完成，S7 未整体验收。
 
 ## 冻结输入与模式
 
@@ -14,7 +14,7 @@
 1. 网关对选定调用先验证当前工具权限，再调用纯 `HybridSelector.resolve`。已知历史/替换/模拟响应不访问外部服务；其字节预先进入 CAS。
 2. 选定观测的全新调用意图、开始/完成事件、结果与来源账本在同一短事务发布。使用本次新 checkpoint 的 CallIntent，不冒用源 intent；来源指针留在观测账本。
 3. 只有真正的模型/工具调用继续走“保存 intent → 退出事务调用 Adapter → 保存结果”原路径。不要将模拟、历史响应或 synthetic 结果计为真实外部调用。
-4. 观测账本区分 recorded、synthetic、fixture，绑定 selected_call_id、policy_ref、响应和干预来源，标记 test_only。使用不可变表及项目复合外键；不要修改恢复专用 origin_call_id 的既有语义。
+4. 观测账本区分 recorded、synthetic、fixture、miss，绑定 selected_call_id、policy_ref、响应和干预来源，标记 test_only。miss 仅记录确定性匹配/模拟失败；缺失、损坏、越权和未知输入直接拒绝，不伪造成功观测。使用不可变表及项目复合外键；不要修改恢复专用 origin_call_id 的既有语义。
 5. 结果提交后中断沿用现有恢复消费，不再次解析/发送真实动作。取消、暂停、截止时间和 fencing 继续生效；所有未知结果如实保留。
 
 ## 结束、Recorded 与计量
@@ -27,4 +27,4 @@
 
 ## 验证顺序
 
-先用真实 PostgreSQL 验证命中、改参 stop、改参 fixture、synthetic 替换、未到达依赖；再验证调用结果落盘后的中断恢复、取消/预算和来源不变，以及每条结果的 Recorded 零调用复验。最后运行 A/B 各五次、独立进程与桌面流程，按实施方案逐项核对 S7-T01–T06。真实供应商冒烟仍需显式开启并单列，当前不调用付费模型。
+先用真实 PostgreSQL 验证命中、改参 stop、改参 fixture、synthetic 替换、未到达依赖；再验证调用结果落盘后的中断恢复、取消/预算和来源不变，以及 Recorded 零调用复验。后端专项及 Live/Hybrid 各十个独立 CLI Worker 验证已通过；扩大回归证据见验收记录。之后完成统计和桌面流程，按实施方案逐项核对 S7-T01–T06。真实供应商冒烟仍需显式开启并单列，当前不调用付费模型。

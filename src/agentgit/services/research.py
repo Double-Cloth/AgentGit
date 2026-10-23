@@ -270,6 +270,8 @@ class ResearchSession:
         self.execution_service: ExecutionService | None = None
         self.budget_baseline: BudgetUsage | None = None
         self.initialization: dict[str, object] | None = None
+        self.hybrid_policy_ref: str | None = None
+        self.before_evaluate: Callable[[AgentState], None] | None = None
 
     def bind_execution(self, service: "ExecutionService") -> None:
         if service.policy != self.config.execution_policy:
@@ -356,6 +358,8 @@ class ResearchSession:
         }
         if self.budget_baseline is not None:
             controlled_input["budget_baseline"] = self.budget_baseline.model_dump(mode="json")
+        if self.hybrid_policy_ref is not None:
+            controlled_input["hybrid_policy_ref"] = self.hybrid_policy_ref
         payload = encode(controlled_input)
         input_ref = self.history.register_input(self.repository_id, payload)
         return EnvironmentManifest(
@@ -441,6 +445,7 @@ class ResearchSession:
             wall_budget_ms=wall_budget_ms,
             settlement=self.settlement,
             budget_baseline=self.budget_baseline,
+            before_evaluate=self.before_evaluate,
         ).run()
 
     def save(

@@ -35,6 +35,7 @@ class HybridCall(Contract):
             not in ("tool:corpus_search/v1", "tool:source_read/v1")
             or self.intent.model_budget is not None
             or not self.saved.complete
+            or (self.saved.error is not None and self.saved.error["code"] == "outcome_unknown")
             or (self.replacement_response_ref is None) != (self.intervention_id is None)
         ):
             raise ValueError("Hybrid 仅选择完整的受控只读工具调用，响应替换须绑定干预")

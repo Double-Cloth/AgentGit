@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
+from agentgit.core.hybrid import HybridPolicy
 from agentgit.core.models import Contract, Digest, Identifier
 from agentgit.core.research import BudgetLimits, Evaluation, Plan, Source
 
@@ -97,6 +98,7 @@ class NewExperiment(Contract):
     groups: Annotated[tuple[ExperimentGroup, ...], Field(min_length=2, max_length=2)]
     repeats: Annotated[int, Field(ge=1, le=10)] = 5
     budget: BudgetLimits
+    hybrid: HybridPolicy | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def two_ordered_groups(self) -> "NewExperiment":
@@ -107,7 +109,7 @@ class NewExperiment(Contract):
 
 class ExperimentManifest(Contract):
     kind: Literal["branch_experiment/v1"] = "branch_experiment/v1"
-    mode: Literal["live"] = "live"
+    mode: Literal["live", "hybrid"] = "live"
     request: NewExperiment
     source_environment_ref: Digest
     source_state_ref: Digest

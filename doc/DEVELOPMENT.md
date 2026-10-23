@@ -6,7 +6,9 @@ S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命
 
 ## 环境
 
-S7 新增 `0013_branch_experiments` 及 `0014_frozen_interventions`，保存不可变实验/trial 和干预归属，运行状态仍由既有 Job/Run 管理。新入口和示例见 [API.md](API.md)；本次自动化验证仅迁移独立测试 schema，没有自动迁移用户的业务库或重建桌面包。历史迁移保持冻结。
+S7 新增 `0013_branch_experiments`、`0014_frozen_interventions` 及 `0015_hybrid_observations`，保存不可变实验/trial、干预归属和 Hybrid 观测账本，运行状态仍由既有 Job/Run 管理。新入口和示例见 [API.md](API.md)；本次自动化验证仅迁移独立测试 schema，没有自动迁移用户的业务库或重建桌面包。历史迁移保持冻结。
+
+通用 `RecordingReader` 的冻结输入可以是不透明字节，不能要求所有历史输入都按研究 Agent 的 JSON 解析。Hybrid 来源仍必须严格验证受控 JSON、policy、Job 归属及全部输入引用；CAS 缺失或损坏不能进入通用兼容路径。改动此处时同时运行 `test_recording_reader.py` 与 Hybrid/Recorded 交叉用例。
 
 - Python 3.12；`.python-version` 与 `requires-python` 限定 3.12 系列。
 - uv 0.12.19；后端版本由 `uv.lock` 冻结，使用 `--locked` 阻止隐式改锁。
@@ -73,7 +75,7 @@ CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障�
 
 ## S3 离线研究演示
 
-S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 head 已推进至 `0014_frozen_interventions`。先升级开发库，再运行：
+S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 head 已推进至 `0015_hybrid_observations`。先升级开发库，再运行：
 
 ```powershell
 uv run --locked alembic upgrade head

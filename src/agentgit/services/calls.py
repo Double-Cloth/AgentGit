@@ -1,7 +1,7 @@
 """调用意图/结果分别耐久保存；实际 Adapter 调用期间不持有数据库事务。"""
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
@@ -24,6 +24,9 @@ from agentgit.services.history import TABLES, EventInput, HistoryService
 from agentgit.services.managed_calls import ManagedCallContext, ManagedCalls
 from agentgit.storage.objects import StoredObject
 
+if TYPE_CHECKING:
+    from agentgit.services.hybrid import HybridService
+
 
 class RecordedCallGateway:
     def __init__(
@@ -38,11 +41,13 @@ class RecordedCallGateway:
         after_result: Callable[[], None] | None = None,
         authorization: ApprovalService | None = None,
         managed: ManagedCalls | None = None,
+        hybrid: "HybridService | None" = None,
     ):
         self.history, self.repository_id, self.run_id = history, repository_id, run_id
         self.checkpoint = checkpoint
         self.authorization = authorization
         self.managed = managed
+        self.hybrid = hybrid
         self.origin_runs, self.materialize, self.after_result = (
             origin_runs,
             materialize,
@@ -149,6 +154,24 @@ class RecordedCallGateway:
             recovered = self._reuse_origin(occurrence, effect, max_bytes, model_budget)
             if recovered is not None:
                 return recovered
+        observation = (
+            self.hybrid.resolve(occurrence, effect, request, max_bytes) if self.hybrid else None
+        )
+        known_response = known_result = known_provenance = None
+        known_saved: dict[str, Any] | None = None
+        if observation is not None:
+            # 这里只读取冻结 CAS/固定语料，无真实 Adapter 调用；结果可以原子发布。
+            known_response = history.objects.put(ObjectType.BLOB, observation.payload)
+            known_saved = SavedCallOutcome(
+                response_ref=known_response.id,
+                response_bytes=len(observation.payload),
+                complete=True,
+                error=observation.error.as_dict() if observation.error else None,
+            ).model_dump(mode="json")
+            known_result = history.objects.put_json(ObjectType.CALL, known_saved)
+            known_provenance = history.objects.put_json(
+                ObjectType.BLOB, observation.provenance.model_dump(mode="json")
+            )
         head, version = self.checkpoint()
         intent = history.objects.put_json(
             ObjectType.CALL,
@@ -173,7 +196,7 @@ class RecordedCallGateway:
             intent.id,
             max_bytes,
         )
-        if provider in SANDBOX_PROVIDERS and self.managed is not None:
+        if provider in SANDBOX_PROVIDERS and self.managed is not None and observation is None:
             self.managed.stage(context)
         started_event = EventInput(
             "llm.requested" if provider.startswith("llm:") else "tool.started",
@@ -262,6 +285,11 @@ class RecordedCallGateway:
             )
             started_seq = 0
             if admission_error is None:
+                if known_response is not None and known_result is not None:
+                    for role, obj in (("response", known_response), ("result", known_result)):
+                        history._ref(
+                            connection, self.repository_id, obj, "external_call", str(call_id), role
+                        )
                 for role, obj in (("request", request_obj), ("intent", intent)):
                     history._ref(
                         connection, self.repository_id, obj, "external_call", str(call_id), role
@@ -279,10 +307,13 @@ class RecordedCallGateway:
                         request_digest=request_obj.id,
                         effect=effect.value,
                         intent_ref=intent.id,
-                        status="started",
+                        result_ref=known_result.id if known_result is not None else None,
+                        status=("failed" if observation.error else "succeeded")
+                        if observation is not None
+                        else "started",
                     )
                 )
-                if provider in SANDBOX_PROVIDERS:
+                if provider in SANDBOX_PROVIDERS and observation is None:
                     assert self.managed is not None
                     self.managed.prepare(connection, context)
                 seq = int(run["last_event_seq"]) + 1
@@ -296,8 +327,45 @@ class RecordedCallGateway:
                     .values(last_event_seq=seq)
                 )
                 started_seq = seq
+                if observation is not None:
+                    assert known_response is not None and known_result is not None
+                    assert known_provenance is not None and self.hybrid is not None
+                    self.hybrid.record(connection, context, observation, known_provenance)
+                    completed = EventInput(
+                        "call.failed" if observation.error else "tool.completed",
+                        step,
+                        {
+                            "occurrence": occurrence.model_dump(mode="json"),
+                            "result_ref": known_result.id,
+                            "error": observation.error.as_dict() if observation.error else None,
+                            "observation_ref": known_provenance.id,
+                        },
+                        seq,
+                    )
+                    completed_obj = history.objects.put_json(
+                        ObjectType.EVENT,
+                        EventPayload(data=completed.payload).model_dump(mode="json"),
+                    )
+                    history._event(
+                        connection,
+                        self.repository_id,
+                        self.run_id,
+                        seq + 1,
+                        completed,
+                        completed_obj,
+                    )
+                    connection.execute(
+                        TABLES["runs"]
+                        .update()
+                        .where(TABLES["runs"].c.id == self.run_id)
+                        .values(last_event_seq=seq + 1)
+                    )
         if admission_error is not None:
             raise admission_error
+        if known_saved is not None:
+            if self.after_result is not None:
+                self.after_result()
+            return self._outcome(occurrence, known_saved)
         # Adapter 可以执行磁盘操作；此处已退出事务。
         error: AgentGitError | None = None
         response = b""

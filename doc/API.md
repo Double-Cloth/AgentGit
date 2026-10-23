@@ -1,6 +1,6 @@
 # 本地服务与 CLI（S4–S7）
 
-当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0014_frozen_interventions`；桌面不会自动迁移后端。
+当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0015_hybrid_observations`；桌面不会自动迁移后端。
 
 ## CLI 离线流程
 
@@ -186,9 +186,9 @@ uv run --locked agentgit worker --once
 
 新 Run 首次保存 `live.initialized`，将干预后的状态、文件和新环境固定为检查点；其后可作为 Recorded 来源，预算基线一并验证，部分范围的 `budget.remaining` 也只扣除该基线之后的用量。跨越来源旧环境与 Live 新环境的 Recorded 范围会因环境不兼容拒绝。专项证据见 [S5-live.md](acceptance/S5-live.md)。
 
-## S7 冻结验收与 A/B Live 实验
+## S7 冻结验收与 A/B Live/Hybrid 实验
 
-当前增量提供冻结验收器、类型化 Prompt/计划干预、原子排队和真实 trial 状态。工具响应干预可以冻结定义，Hybrid 匹配器已有单元验证；两者的完整 Worker/观测账本/计量接线、聚合统计和桌面实验列表尚未完成，S7 未整体验收。
+当前增量提供冻结验收器、三类类型化干预、原子排队和真实 trial 状态。Hybrid 已接入 Worker、不可变观测账本、实际/逻辑计量及 Recorded 复验；聚合统计和桌面实验列表尚未完成，S7 未整体验收。
 
 | HTTP | 行为 |
 |---|---|
@@ -252,7 +252,27 @@ $patch = uv run --locked agentgit intervention $repo.repository_id --file patch.
 $experimentRequest.groups[1] = @{ schema_version = 1; key = 'B'; label = '类型化引用核验'; interventions = @($patch.intervention_id) }
 ```
 
-用新幂等键重新提交保存后的实验 JSON；不要把改变后的请求复用原键。`PLAN_PATCH` 的 payload 为 `kind/plan`，仍须包含完整合法计划。`TOOL_RESPONSE_PATCH` 的 payload 为 `kind/replacement_call_id/test_only=true`，效果策略必须为 `test_only`；响应只能来自同项目完整、同参同签名的受控只读录制，不接受直接上传 response/URL，也不能跨冻结 split 借用实验观测。当前只冻结这类定义，缺 Hybrid 运行上下文时实验排队会明确拒绝。
+用新幂等键重新提交保存后的实验 JSON；不要把改变后的请求复用原键。`PLAN_PATCH` 的 payload 为 `kind/plan`，仍须包含完整合法计划。`TOOL_RESPONSE_PATCH` 的 payload 为 `kind/replacement_call_id/test_only=true`，效果策略必须为 `test_only`；响应只能来自同项目完整、同参同签名的受控只读录制，不接受直接上传 response/URL，也不能跨冻结 split 借用实验观测。工具响应补丁必须同时配置 Hybrid，且目标调用必须位于选定集合。
+
+### Hybrid 运行与观测
+
+在实验请求中增加 `hybrid` 即以真正的 `hybrid` 模式建立 trial；省略时继续使用 Live。`until_commit` 与共同起点限定同一来源 Run 的录制范围，`calls` 为范围内 1–100 个不同的 `source_call_id`。可对目标工具事件读取 `intervention-context` 取得调用 ID；选择起点之后完整、已知的 `corpus_search/source_read` 只读调用，模型、写工具、截断/未知响应及其他项目调用均拒绝。冻结输入累计上限 64 MiB。
+
+```powershell
+$experimentRequest.hybrid = @{
+    schema_version = 1
+    until_commit = $untilCommit
+    calls = @($toolContext.source_call_id)
+    miss_policy = 'stop'
+}
+$experimentRequest.budget = $toolContext.config.limits
+```
+
+用新幂等键保存并提交该 JSON；API/CLI 仍使用原实验入口。当前不接受直接向 `/replays` 提交任意 Hybrid 策略。模型决策始终由当前 Adapter 重新产生。只有 occurrence、签名、请求字节、效果和响应上限全部相符才消费选定旧响应；改参按冻结 `miss_policy=stop/fixture` 停止或从固定语料生成新响应。模拟器不接受工具、签名或效果变更，缺失/损坏/越权输入不会转为模拟成功。未到达选定依赖不能通过最终验收。
+
+`trial.replay.observations` 列出 `kind=recorded/synthetic/fixture/miss`、本次调用与来源调用 ID、响应引用、匹配结果、干预 ID 和 `test_only=true`。`hybrid.selected_call_ids/unreached_call_ids/miss_policy` 展示选择与未到达条件。所有选定观测在同一事务保存调用结果、事件和不可变来源账本；结果落盘后中断，恢复消费既有结果，不重发，也不重新调用模拟器。
+
+`replay.actual.model_calls/tool_calls` 只计本次真实 Adapter 调用，历史/替换/模拟响应与恢复消费不混入；`fixture_calls/recorded_observations/synthetic_observations/hybrid_misses` 单列。逻辑用量仍反映 Runtime 消费及预算差额，因此可能与实际调用次数不同。后续 Recorded 从 trial 自身的 `live.initialized` 检查点开始，完全消费本次录制；来源环境保留 `source_hybrid_policy_ref/source_has_synthetic_patch/test_only`，不得将 synthetic 成功当成真实外部世界已修复。
 
 创建与读取干预使用现有认证、项目/幂等约束及 1 MiB 请求/CLI 文件上限。Schema 不允许任意 JSON Patch 路径、validator 规则、模型、执行策略、权限或 split 变更；证据事件也须属于该项目。各定义不可修改；改变内容需新动作和新 ID。
 

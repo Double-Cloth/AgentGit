@@ -24,6 +24,7 @@ from agentgit.core.models import (
 )
 from agentgit.core.research import AgentConfig, AgentState, ResearchGoal, evolve
 from agentgit.core.snapshots import EventPayload, StateSnapshot
+from agentgit.core.versions import HybridReplaySpec
 from agentgit.runtime.model_budget import call_budget, reserve_model
 from agentgit.runtime.ports import CallSettlement, ModelAdapter
 from agentgit.services.approvals import ApprovalService
@@ -32,6 +33,7 @@ from agentgit.services.environment import source_revision
 from agentgit.services.execution_recovery import discard_stopped, occurrence_of, validate_retry
 from agentgit.services.executions import ExecutionService
 from agentgit.services.history import TABLES, EventInput, HistoryService
+from agentgit.services.hybrid import HybridService
 from agentgit.services.jobs import JobService
 from agentgit.services.recorded_jobs import RecordedJobRunner
 from agentgit.services.recovery import prepare_recovery, recovery_origins
@@ -104,6 +106,21 @@ class Worker:
             self.fault("after_claim")
             with LeaseHeartbeat(self.queue, lease) as heartbeat:
                 session, origins, remaining = self._attach(lease)
+                hybrid = None
+                replay = payload.replay
+                if isinstance(replay, HybridReplaySpec):
+                    hybrid = HybridService(
+                        session.history, lease, replay.policy_ref, session.service.corpus
+                    )
+                    if (
+                        hybrid.policy.source_run_id != replay.source_run_id
+                        or hybrid.policy.from_commit != replay.from_commit
+                    ):
+                        raise AgentGitError(
+                            ErrorCode.OBJECT_CORRUPT, "Hybrid policy 与冻结重执行来源不符"
+                        )
+                    session.hybrid_policy_ref = replay.policy_ref
+                    session.before_evaluate = hybrid.require_reached
                 session.gateway_factory = lambda: RecordedCallGateway(
                     session.history,
                     lease.repository_id,
@@ -114,6 +131,7 @@ class Worker:
                         session, provider, request, response
                     ),
                     after_result=lambda: self.fault("after_result"),
+                    hybrid=hybrid,
                 )
                 session.control_applied = lambda connection: self.queue.mark_control_applied(
                     connection, lease
@@ -243,7 +261,9 @@ class Worker:
         environment = None
         snapshot = None
         live = (
-            payload.replay if payload.replay is not None and payload.replay.mode == "live" else None
+            payload.replay
+            if payload.replay is not None and payload.replay.mode in ("live", "hybrid")
+            else None
         )
         if live is not None:
             with history.engine.connect() as connection:
@@ -260,7 +280,7 @@ class Worker:
                 if request is None or any(
                     request[key] != value
                     for key, value in (
-                        ("mode", "live"),
+                        ("mode", live.mode),
                         ("source_run_id", UUID(live.source_run_id)),
                         ("from_commit_id", live.from_commit),
                         ("environment_ref", live.environment_ref),

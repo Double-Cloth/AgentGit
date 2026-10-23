@@ -7,20 +7,24 @@ import sys
 
 import httpx
 import pytest
+import sqlalchemy as sa
 from test_management_api import TOKEN
 from test_management_processes import server
 
 from agentgit.config import Settings, database_url
 from agentgit.core.canonical import encode
 from agentgit.core.experiments import ExperimentGroup, NewExperiment
+from agentgit.core.hybrid import HybridPolicy
 from agentgit.core.research import BudgetLimits, ResearchGoal
 from agentgit.services.management import ManagementService
 from agentgit.services.research import ResearchService
+from agentgit.storage.schema import build_metadata
 
 pytestmark = pytest.mark.integration
 
 
-def test_real_api_restart_and_separate_cli_workers_complete_ab_five(history, tmp_path):
+@pytest.mark.parametrize("mode", ["live", "hybrid"])
+def test_real_api_restart_and_separate_cli_workers_complete_ab_five(history, tmp_path, mode):
     research = ResearchService(history, tmp_path)
     assert history.objects.root == research.data_root / "objects"
     repo = history.create_repository("独立进程实验")
@@ -30,7 +34,17 @@ def test_real_api_restart_and_separate_cli_workers_complete_ab_five(history, tmp
     source.execute()
     manager = ManagementService(research)
     commits = manager.commits(repo)["items"]
-    checkpoint = list(reversed(commits))[15]["commit_id"]
+    checkpoint = list(reversed(commits))[3 if mode == "hybrid" else 15]["commit_id"]
+    hybrid = None
+    if mode == "hybrid":
+        calls = build_metadata().tables["external_calls"]
+        with history.engine.connect() as connection:
+            selected = connection.execute(
+                sa.select(calls.c.id).where(
+                    calls.c.run_id == source.run_id, calls.c.logical_step_id == "read-0"
+                )
+            ).scalar_one()
+        hybrid = HybridPolicy(until_commit=source.head, calls=(str(selected),))
     original = history.branch(repo)
     headers = {"Authorization": "Bearer " + TOKEN, "X-Repository-ID": str(repo)}
     with (
@@ -52,6 +66,7 @@ def test_real_api_restart_and_separate_cli_workers_complete_ab_five(history, tmp
             from_commit=checkpoint,
             validator_ref=frozen.json()["validator_ref"],
             budget=BudgetLimits(),
+            hybrid=hybrid,
             groups=(
                 ExperimentGroup(key="A", label="基线"),
                 ExperimentGroup(
@@ -122,8 +137,20 @@ def test_real_api_restart_and_separate_cli_workers_complete_ab_five(history, tmp
             {"key": key, "total": 5, "passed": 5, "incomplete": 0} for key in ("A", "B")
         ]
         assert len({trial["run_id"] for trial in report["trials"]}) == 10
-        assert all(trial["replay"]["actual"]["model_calls"] == 3 for trial in report["trials"])
-        assert all(trial["replay"]["actual"]["tool_calls"] == 2 for trial in report["trials"])
+        expected_model, expected_tools = (9, 7) if mode == "hybrid" else (3, 2)
+        assert all(
+            trial["replay"]["actual"]["model_calls"] == expected_model for trial in report["trials"]
+        )
+        assert all(
+            trial["replay"]["actual"]["tool_calls"] == expected_tools for trial in report["trials"]
+        )
+        if mode == "hybrid":
+            assert report["test_only"]
+            for trial in report["trials"]:
+                replay = trial["replay"]
+                assert replay["mode"] == "hybrid"
+                assert replay["actual"]["recorded_observations"] == 1
+                assert replay["observations"][0]["selected_call_id"] == str(selected)
         assert all(trial["replay"]["actual"]["unknown_outcomes"] == 0 for trial in report["trials"])
         assert report["manifest"]["request"]["validator_ref"] == request.validator_ref
         (tmp_path / "experiment-process-audit.json").write_bytes(encode(report))

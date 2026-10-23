@@ -1,5 +1,7 @@
 # S7 实验调度与入口增量
 
+后续类型化干预见 [S7-interventions.md](S7-interventions.md)，Hybrid 持久运行和新一轮完整证据见 [S7-hybrid-runtime.md](S7-hybrid-runtime.md)。本页保存 Live 调度增量的历史结果，不将后续通过项重复累计到该轮。
+
 基于 `f3fcb57` 的冻结验收器，继续实现实验数据、Live Runner 接线与 API/CLI。S7 整体仍未验收；S6 独立环境/原生专项按用户授权延后，要求保持不变。
 
 ## 实现与约束

@@ -9,10 +9,12 @@ from sqlalchemy.engine import Connection
 from agentgit.adapters.corpus import Corpus
 from agentgit.core.canonical import ObjectType, decode, encode
 from agentgit.core.errors import AgentGitError, ErrorCode
+from agentgit.core.hybrid import FrozenHybridPolicy
 from agentgit.core.models import EnvironmentManifest, parse_contract
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage, evolve
 from agentgit.core.snapshots import EventPayload, StateSnapshot
 from agentgit.core.versions import (
+    HybridReplaySpec,
     LiveReplay,
     LiveReplaySpec,
     NewBranch,
@@ -23,6 +25,7 @@ from agentgit.core.versions import (
 from agentgit.replay.engine import RecordedReplayer
 from agentgit.replay.live import prepare_live
 from agentgit.services.history import TABLES
+from agentgit.services.hybrid import observations, owned_policy, register_inputs
 from agentgit.services.jobs import JobService
 from agentgit.services.recordings import RecordingReader
 from agentgit.services.research import ResearchService
@@ -72,11 +75,19 @@ class ReplayService:
         actor: str,
         key: str,
         connection: Connection | None = None,
+        hybrid_ref: str | None = None,
     ) -> dict[str, Any]:
         if isinstance(request, LiveReplay):
             return self._submit_live(
-                repository, request, actor=actor, key=key, connection=connection
+                repository,
+                request,
+                actor=actor,
+                key=key,
+                connection=connection,
+                hybrid_ref=hybrid_ref,
             )
+        if hybrid_ref is not None:
+            raise AgentGitError(ErrorCode.FORBIDDEN, "Recorded 不接受 Hybrid 干预")
         source_id = UUID(request.source_run_id)
         with self.history.engine.connect() as reading:
             source = dict(self.history._run(reading, repository, source_id))
@@ -185,6 +196,7 @@ class ReplayService:
         actor: str,
         key: str,
         connection: Connection | None = None,
+        hybrid_ref: str | None = None,
     ) -> dict[str, Any]:
         self.versions.select_range(
             repository,
@@ -226,12 +238,17 @@ class ReplayService:
         state_obj = self.history.objects.put_json(
             ObjectType.STATE, prepared.snapshot.model_dump(mode="json")
         )
-        spec = LiveReplaySpec(
-            source_run_id=request.source_run_id,
-            from_commit=request.from_commit,
-            environment_ref=view["manifest"]["environment_ref"],
-            initial_state_ref=state_obj.id,
-            budget_baseline=prepared.budget_baseline,
+        spec_data = {
+            "source_run_id": request.source_run_id,
+            "from_commit": request.from_commit,
+            "environment_ref": view["manifest"]["environment_ref"],
+            "initial_state_ref": state_obj.id,
+            "budget_baseline": prepared.budget_baseline,
+        }
+        spec = (
+            HybridReplaySpec(**spec_data, policy_ref=hybrid_ref)
+            if hybrid_ref
+            else LiveReplaySpec(**spec_data)
         )
         with transaction(self.history.engine, connection) as connection:
             self.versions.fork(
@@ -269,6 +286,8 @@ class ReplayService:
             self.history._ref(
                 connection, repository, state_obj, "replay_input", submitted.job_id, "state"
             )
+            if hybrid_ref is not None:
+                register_inputs(self.history, connection, repository, submitted.job_id, hybrid_ref)
             for artifact in prepared.snapshot.artifacts:
                 obj = self.history.objects.put(
                     ObjectType.BLOB, prepared.files[artifact.path], media_type=artifact.media_type
@@ -290,7 +309,7 @@ class ReplayService:
                     source_run_id=UUID(request.source_run_id),
                     from_commit_id=request.from_commit,
                     until_commit_id=None,
-                    mode="live",
+                    mode=spec.mode,
                     environment_ref=spec.environment_ref,
                 )
             )
@@ -300,7 +319,7 @@ class ReplayService:
             "task_id": str(task_id),
             "job_id": submitted.job_id,
             "run_id": submitted.run_id,
-            "mode": "live",
+            "mode": spec.mode,
             "branch_name": request.branch_name,
             "source_run_id": request.source_run_id,
             "from_commit": request.from_commit,
@@ -309,7 +328,7 @@ class ReplayService:
         }
 
     def _live_report(
-        self, repository: UUID, job: dict[str, Any], spec: LiveReplaySpec
+        self, repository: UUID, job: dict[str, Any], spec: LiveReplaySpec | HybridReplaySpec
     ) -> dict[str, Any]:
         with self.history.engine.connect() as connection:
             run = self.history._run(connection, repository, job["run_id"])
@@ -321,6 +340,7 @@ class ReplayService:
                 family.append(current)
                 current = self.history._run(connection, repository, current)["origin_run_id"]
             calls = TABLES["external_calls"]
+            hybrid = TABLES["hybrid_observations"]
             counts = (
                 connection.execute(
                     sa.select(
@@ -333,6 +353,9 @@ class ReplayService:
                         calls.c.repository_id == repository,
                         calls.c.run_id.in_(family),
                         calls.c.origin_call_id.is_(None),
+                        ~sa.exists().where(
+                            hybrid.c.call_id == calls.c.id, hybrid.c.repository_id == repository
+                        ),
                         calls.c.status.in_(("started", "succeeded", "failed", "outcome_unknown")),
                     )
                 )
@@ -376,8 +399,8 @@ class ReplayService:
             if job["started_at"]
             else 0
         )
-        return {
-            "mode": "live",
+        result: dict[str, Any] = {
+            "mode": spec.mode,
             "source_run_id": spec.source_run_id,
             "from_commit": spec.from_commit,
             "initialized": initialized,
@@ -398,6 +421,31 @@ class ReplayService:
                 ),
             },
         }
+        if isinstance(spec, HybridReplaySpec):
+            items = observations(self.history, repository, job["id"])
+            result["observations"] = items
+            result["test_only"] = True
+            result["policy_ref"] = spec.policy_ref
+            policy = owned_policy(self.history, repository, job["id"], spec.policy_ref)
+            reached = {item["selected_call_id"] for item in items}
+            result["hybrid"] = {
+                "miss_policy": policy.miss_policy,
+                "selected_call_ids": [call.source_call_id for call in policy.calls],
+                "unreached_call_ids": [
+                    call.source_call_id
+                    for call in policy.calls
+                    if call.source_call_id not in reached
+                ],
+            }
+            result["actual"]["fixture_calls"] = sum(item["kind"] == "fixture" for item in items)
+            result["actual"]["recorded_observations"] = sum(
+                item["kind"] == "recorded" for item in items
+            )
+            result["actual"]["synthetic_observations"] = sum(
+                item["kind"] == "synthetic" for item in items
+            )
+            result["actual"]["hybrid_misses"] = sum(item["kind"] == "miss" for item in items)
+        return result
 
     def report(self, repository: UUID, job_id: UUID) -> dict[str, Any] | None:
         queue = JobService(self.research)
@@ -405,7 +453,7 @@ class ReplayService:
         spec = queue.payload(job).replay
         if spec is None:
             return None
-        if spec.mode == "live":
+        if isinstance(spec, (LiveReplaySpec, HybridReplaySpec)):
             return self._live_report(repository, job, spec)
         with self.history.engine.connect() as connection:
             run = self.history._run(connection, repository, job["run_id"])
@@ -473,7 +521,7 @@ class ReplayService:
             snapshot = self.history.restore(repository, proofs[-1]["commit_id"])
             logical = parse_contract(encode(snapshot.data), AgentState)
         reached = bool(proofs and proofs[-1]["source_commit_id"] == spec.until_commit)
-        return {
+        result: dict[str, Any] = {
             "mode": "recorded",
             "source_run_id": spec.source_run_id,
             "from_commit": spec.from_commit,
@@ -494,3 +542,21 @@ class ReplayService:
                 "cost_micro_units": 0,
             },
         }
+        environment = parse_contract(
+            self.history.objects.get(spec.environment_ref, ObjectType.ENVIRONMENT),
+            EnvironmentManifest,
+        )
+        frozen_input = self.history.objects.get_json(environment.input_ref, ObjectType.BLOB)
+        reference = (
+            frozen_input.get("hybrid_policy_ref") if isinstance(frozen_input, dict) else None
+        )
+        if reference is not None:
+            policy = parse_contract(
+                self.history.objects.get(reference, ObjectType.BLOB), FrozenHybridPolicy
+            )
+            result["test_only"] = True
+            result["source_hybrid_policy_ref"] = reference
+            result["source_has_synthetic_patch"] = any(
+                call.intervention_id is not None for call in policy.calls
+            )
+        return result

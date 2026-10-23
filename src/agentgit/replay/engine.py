@@ -12,7 +12,7 @@ from agentgit import __version__
 from agentgit.adapters.corpus import Corpus
 from agentgit.adapters.model_protocol import configured_model_signature
 from agentgit.adapters.tools import ToolRegistry, WriteArguments
-from agentgit.core.canonical import ObjectType, encode, object_digest
+from agentgit.core.canonical import ObjectType, decode, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.execution import (
     ExecutionContext,
@@ -20,6 +20,7 @@ from agentgit.core.execution import (
     ExecutionManifest,
     ExecutionResult,
 )
+from agentgit.core.hybrid import FrozenHybridPolicy
 from agentgit.core.models import (
     CommitManifest,
     EffectClass,
@@ -29,6 +30,7 @@ from agentgit.core.models import (
 )
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage, CallTrace, ModelRequest
 from agentgit.core.snapshots import EventManifest, EventPayload, StateSnapshot
+from agentgit.experiments.hybrid import HybridSelector
 from agentgit.replay.recorded import RecordedAdapter
 from agentgit.replay.recovery import rebuild_discard
 from agentgit.replay.unknown import rebuild_unknown
@@ -220,6 +222,18 @@ class RecordedReplayer:
 
         self.read = guarded_read
 
+    def _hybrid_selector(
+        self, bundle: "RecordedBundle", corpus: Corpus
+    ) -> tuple[str | None, HybridSelector | None]:
+        value = decode(self.read(bundle.environment.input_ref, ObjectType.BLOB))
+        reference = value.get("hybrid_policy_ref") if isinstance(value, dict) else None
+        if reference is None:
+            return None, None
+        if not isinstance(reference, str):
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "Hybrid 环境 policy 引用非法")
+        policy = parse_contract(self.read(reference, ObjectType.BLOB), FrozenHybridPolicy)
+        return reference, HybridSelector(policy, corpus, self.read)
+
     def validate_environment(
         self,
         bundle: "RecordedBundle",
@@ -277,6 +291,9 @@ class RecordedReplayer:
         }
         if budget_baseline is not None:
             controlled_input["budget_baseline"] = budget_baseline.model_dump(mode="json")
+        reference, _ = self._hybrid_selector(bundle, corpus)
+        if reference is not None:
+            controlled_input["hybrid_policy_ref"] = reference
         frozen_input = encode(controlled_input)
         if self.read(environment.input_ref, ObjectType.BLOB) != frozen_input:
             raise AgentGitError(
@@ -414,6 +431,7 @@ class RecordedReplayer:
             )
 
         tools.input_context, tools.execution_files = context, execution_files
+        _, hybrid = self._hybrid_selector(bundle, corpus)
         runtime = ResearchRuntime(
             state,
             config,
@@ -424,6 +442,9 @@ class RecordedReplayer:
             clock_ms=logical_clock,
             control=journal.control,
             budget_baseline=budget_baseline,
+            before_evaluate=(lambda state: hybrid.require_reached(state.messages))
+            if hybrid
+            else None,
         )
         settled: set[str] = set()
         sealed: set[str] = set()

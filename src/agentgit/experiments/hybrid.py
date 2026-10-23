@@ -23,7 +23,7 @@ from agentgit.replay.recorded import Recording
 
 
 class ObservationProvenance(Contract):
-    kind: Literal["recorded", "synthetic", "fixture"]
+    kind: Literal["recorded", "synthetic", "fixture", "miss"]
     selected_call_id: Identifier
     matched: bool
     response_ref: Digest

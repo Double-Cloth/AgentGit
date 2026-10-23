@@ -135,6 +135,16 @@ class LiveReplaySpec(Contract):
     budget_baseline: BudgetUsage
 
 
+class HybridReplaySpec(Contract):
+    mode: Literal["hybrid"] = "hybrid"
+    source_run_id: Identifier
+    from_commit: Digest
+    environment_ref: Digest
+    initial_state_ref: Digest
+    budget_baseline: BudgetUsage
+    policy_ref: Digest
+
+
 def parse_replay(payload: bytes) -> RecordedReplay | LiveReplay:
     value = decode(payload)
     if isinstance(value, dict) and value.get("mode") == "live":

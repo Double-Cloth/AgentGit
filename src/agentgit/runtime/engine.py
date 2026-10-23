@@ -59,6 +59,7 @@ class ResearchRuntime:
         wall_budget_ms: int | None = None,
         settlement: CallSettlement | None = None,
         budget_baseline: BudgetUsage | None = None,
+        before_evaluate: Callable[[AgentState], None] | None = None,
     ):
         self.state, self.config, self.model, self.tools = state, config, model, tools
         self.gateway, self.journal = gateway, journal
@@ -66,6 +67,7 @@ class ResearchRuntime:
         self.started_at = self.clock_ms()
         self.control, self.wall_budget_ms = control, wall_budget_ms
         self.settlement = settlement
+        self.before_evaluate = before_evaluate
         if config.openai is not None and model.signature != configured_model_signature(config):
             raise AgentGitError(ErrorCode.CONFIGURATION, "真实模型 Adapter 签名与冻结配置不符")
         self.budget_baseline = budget_baseline or BudgetUsage()
@@ -430,6 +432,8 @@ class ResearchRuntime:
                 return
             if self.state.plan is None or len(self.state.completed) != len(self.state.plan.nodes):
                 raise AgentGitError(ErrorCode.PLAN_INVALID, "尚未完成计划不能结束任务")
+            if self.before_evaluate is not None:
+                self.before_evaluate(self.state)
             evaluation = validate_report(
                 self.state, self.tools.workspace.contents(), self.tools.corpus
             )

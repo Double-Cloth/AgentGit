@@ -13,7 +13,7 @@ from agentgit.core.versions import RecordedRange
 from agentgit.replay.recorded import RecordedAdapter
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.calls import RecordedCallGateway
-from agentgit.services.history import EventInput
+from agentgit.services.history import TABLES, EventInput
 from agentgit.services.recordings import RecordingReader
 
 pytestmark = pytest.mark.integration
@@ -133,6 +133,22 @@ def test_reader_zero_range_validates_state_without_claiming_execution(history, r
         expected_environment=environment,
     )
     assert len(bundle.checkpoints) == 1 and bundle.recordings == ()
+
+
+def test_hybrid_reader_does_not_treat_opaque_input_as_missing_policy(history, recorded_source):
+    repo, run, commits, environment = recorded_source
+    # 仅在独立测试 schema 标记来源模式，验证 Hybrid 不能借用通用输入兼容路径。
+    with history.engine.begin() as connection:
+        connection.execute(
+            TABLES["runs"].update().where(TABLES["runs"].c.id == run).values(mode="hybrid")
+        )
+    with pytest.raises(AgentGitError) as error:
+        RecordingReader(history).load(
+            repo,
+            RecordedRange(source_run_id=str(run), from_commit=commits[0], until_commit=commits[-1]),
+            expected_environment=environment,
+        )
+    assert error.value.code == ErrorCode.VALIDATION
 
 
 @pytest.mark.parametrize("kind", [ObjectType.BLOB, ObjectType.COMMIT])

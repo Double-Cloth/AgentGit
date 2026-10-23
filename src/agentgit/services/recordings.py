@@ -7,7 +7,7 @@ from uuid import UUID
 
 import sqlalchemy as sa
 
-from agentgit.core.canonical import ObjectType, encode
+from agentgit.core.canonical import ObjectType, decode, encode
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.execution import (
     SANDBOX_PROVIDERS,
@@ -478,6 +478,35 @@ class RecordingReader:
         account: Callable[[bytes], bytes],
     ) -> RecordedBundle:
         checkpoints: list[tuple[str, StateSnapshot]] = []
+        with self.history.engine.connect() as connection:
+            source = self.history._run(connection, repository, selection.source_run_id)
+        raw_input = self.history.objects.get(environment.input_ref, ObjectType.BLOB)
+        try:
+            frozen_input = decode(raw_input)
+        except AgentGitError as error:
+            # 通用录制允许不透明输入；Hybrid 来源必须保持受控 JSON 校验。
+            if source["mode"] == "hybrid" or error.code != ErrorCode.VALIDATION:
+                raise
+            frozen_input = None
+        reference = (
+            frozen_input.get("hybrid_policy_ref") if isinstance(frozen_input, dict) else None
+        )
+        if reference is not None:
+            from agentgit.services.hybrid import policy_for_run
+
+            if source["mode"] != "hybrid":
+                raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "非 Hybrid 来源冒用了 policy 环境")
+            expected_reference, policy = policy_for_run(
+                self.history, repository, selection.source_run_id
+            )
+            if reference != expected_reference or policy.corpus_digest != frozen_input.get(
+                "corpus_digest"
+            ):
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "Hybrid 环境与来源 Job 冻结输入不同")
+        elif source["mode"] == "hybrid" and not (
+            len(selection.commits) == 1 and selection.commits[0] == source["base_commit_id"]
+        ):
+            raise AgentGitError(ErrorCode.RECORDING_MISSING, "Hybrid 来源缺少 policy 环境")
         expected_events: list[LogicalEvent] = []
         checkpoint_for_event: dict[int, str] = {}
         boundary_commits: dict[int, str] = {}
@@ -760,7 +789,18 @@ class RecordingReader:
             account(record.response)
             physical = self._physical(repository, row, family)
             if occurrence.provider in SANDBOX_PROVIDERS and not uncertain:
-                self._execution(repository, physical, record)
+                with self.history.engine.connect() as connection:
+                    rejected = (
+                        connection.execute(
+                            sa.select(TABLES["hybrid_observations"].c.kind).where(
+                                TABLES["hybrid_observations"].c.repository_id == repository,
+                                TABLES["hybrid_observations"].c.call_id == physical["id"],
+                            )
+                        ).scalar_one_or_none()
+                        == "miss"
+                    )
+                if not rejected:
+                    self._execution(repository, physical, record)
             recordings.append(record)
         if len({item.at_commit for item in settlements}) != len(settlements):
             raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "未知检查点包含重复可信核对事件")

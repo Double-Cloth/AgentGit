@@ -1,5 +1,7 @@
 # S7 类型化干预与 Hybrid 匹配增量
 
+后续运行接线已记录在 [S7-hybrid-runtime.md](S7-hybrid-runtime.md)。本页保留此前独立增量的实现边界与 457 项历史证据，不代表当前 Hybrid 仍未接入，也不与后续套件重复计数。
+
 本增量继续实现实施方案 S7 第 3–4 步；S7 整体仍未验收。上一轮 A/B Live 与独立进程证据见 [S7-experiments.md](S7-experiments.md)，S6 环境/原生专项按用户授权延后。
 
 ## 已实现的范围

@@ -15,6 +15,7 @@ from agentgit.core.research import AgentConfig, AgentState, evolve
 from agentgit.core.snapshots import StateSnapshot
 from agentgit.core.versions import LiveOverrides, LiveReplay, RecordedRange
 from agentgit.experiments.validation import frozen_inputs
+from agentgit.services.hybrid import freeze_policy
 from agentgit.services.interventions import InterventionService
 from agentgit.services.jobs import JobService
 from agentgit.services.replays import ReplayService
@@ -77,6 +78,7 @@ class ExperimentService:
             raise AgentGitError(ErrorCode.FORBIDDEN, "trial 预算不能扩大来源配置授权")
         config_obj = self.history.objects.put_json(ObjectType.BLOB, config.model_dump(mode="json"))
         manifest = ExperimentManifest(
+            mode="hybrid" if request.hybrid else "live",
             request=request,
             source_environment_ref=view["manifest"]["environment_ref"],
             source_state_ref=view["manifest"]["state_ref"],
@@ -109,6 +111,7 @@ class ExperimentService:
                 evolve(config, prompt=group.prompt) if group.prompt is not None else None
             )
             plan = group.plan
+            replacements: dict[str, tuple[str, str]] = {}
             if group.interventions:
                 applied = self.interventions.apply(
                     repository_id,
@@ -119,11 +122,32 @@ class ExperimentService:
                     config=config,
                     snapshot=parse_contract(encode(view["snapshot"]), StateSnapshot),
                 )
-                if applied.replacements:
+                if applied.replacements and request.hybrid is None:
                     raise AgentGitError(
                         ErrorCode.FORBIDDEN, "工具观测干预需要完整 Hybrid 执行上下文"
                     )
                 changed_config, plan = applied.config, applied.plan
+                replacements = applied.replacements
+            hybrid_obj = None
+            if request.hybrid is not None:
+                hybrid_obj = freeze_policy(
+                    self.history,
+                    repository_id,
+                    request.source_run_id,
+                    request.from_commit,
+                    request.validator_ref,
+                    corpus,
+                    request.hybrid,
+                    replacements,
+                )
+                self.history._ref(
+                    connection,
+                    repository_id,
+                    hybrid_obj,
+                    "experiment",
+                    str(experiment_id),
+                    f"hybrid:{group.key}",
+                )
             for index in range(request.repeats):
                 branch_name = f"exp-{experiment_id.hex}-{group.key}-{index}"
                 submitted = self.replays.submit(
@@ -138,6 +162,7 @@ class ExperimentService:
                     actor=actor,
                     key=f"experiment:{experiment_id}:{group.key}:{index}",
                     connection=connection,
+                    hybrid_ref=hybrid_obj.id if hybrid_obj is not None else None,
                 )
                 connection.execute(
                     TABLES["experiment_trials"]
@@ -208,7 +233,7 @@ class ExperimentService:
             current = self.jobs.get(repository_id, job_id)
             if any(job[name] != current[name] for name in fields):
                 continue
-            if replay is None or replay["mode"] != "live":
+            if replay is None or replay["mode"] not in ("live", "hybrid"):
                 raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "实验 trial 不再关联冻结的 Live Job")
             return job, replay
         raise AgentGitError(ErrorCode.VERSION_CONFLICT, "trial 正在推进，请刷新实验状态")
@@ -240,6 +265,7 @@ class ExperimentService:
             if (
                 replay["source_run_id"] != manifest.request.source_run_id
                 or replay["from_commit"] != manifest.request.from_commit
+                or replay["mode"] != manifest.mode
             ):
                 raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "trial 运行来源与冻结实验不符")
             assessment = None
@@ -295,7 +321,11 @@ class ExperimentService:
             ],
             "test_only": True,
             "limitations": [
-                "当前仅对冻结 Prompt/计划进行 Live 条件比较，录制调用不参与本次实验。",
+                (
+                    "只复用显式选定且精确匹配的只读观测；synthetic/模拟结果均为 test_only。"
+                    if manifest.mode == "hybrid"
+                    else "当前为 Live 条件比较，录制调用不参与本次实验。"
+                ),
                 (
                     "固定 Mock 使用相同 fixture 与 random_seed=0；"
                     "不据此推断真实模型方差或严格因果。"
