@@ -40,7 +40,7 @@ export function App() {
         : <div key={connection.repositoryId + ':' + connection.baseUrl}><Suspense fallback={<p role="status">正在打开页面…</p>}>
           {page === 'runs' ? <Runs {...props} /> : page === 'timeline' ? <Timeline {...props} /> : page === 'branch' ? <Branch {...props} /> : <Diff />}
         </Suspense></div>}
-    </main><footer className="shell footer"><span>AgentGit 0.1.0</span><span>状态可恢复、历史可验证与修复有效，分别判断。</span></footer></>;
+    </main><footer className="shell footer"><span>AgentGit {__AGENTGIT_DESKTOP_VERSION__}</span><span>状态可恢复、历史可验证与修复有效，分别判断。</span></footer></>;
 }
 
 function Connection({ state, onChange, onClose }: { state: ConnectionState | null; onChange: (state: ConnectionState) => void; onClose: () => void }) {
@@ -70,7 +70,7 @@ function LicenseNotices() {
   return <details onToggle={event => {
     if (event.currentTarget.open && text === null) void import('./assets/THIRD_PARTY_NOTICES.txt?raw')
       .then(value => setText(value.default)).catch(() => setError('授权说明读取失败，请检查安装包资源'));
-  }}><summary>版本与开源授权</summary><p className="small muted">AgentGit 0.1.0 · Windows x64</p><Notice>{error}</Notice>
+  }}><summary>版本与开源授权</summary><p className="small muted">AgentGit {__AGENTGIT_DESKTOP_VERSION__} · Windows x64</p><Notice>{error}</Notice>
     {text === null ? <p role="status">正在读取包内授权说明…</p> : <pre className="code license-text" tabIndex={0}>{text}</pre>}
   </details>;
 }
