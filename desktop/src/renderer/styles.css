@@ -105,6 +105,13 @@ dd { margin: 0; color: var(--ink); }
 .button-group { display: flex; gap: 8px; flex-wrap: wrap; }
 .run-summary .button-group { margin-left: auto; }
 .budget-details { margin-block: 16px 24px; }
+.budget-summary { border-bottom: 1px solid var(--line); padding-block: 24px; }
+.budget-summary h3, .replay-usage h3 { margin-top: 0; }
+.budget-summary p:last-child, .model-options p:last-child { margin-bottom: 0; }
+.model-options { border-block: 1px solid var(--line); padding-block: 16px; margin-bottom: 24px; }
+.model-options input { max-width: 28ch; font-variant-numeric: tabular-nums; }
+.meter-attention { border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; background: var(--soft); }
+.replay-usage { margin-top: 24px; }
 .timeline-layout { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 32px; align-items: start; }
 .timeline-left, .inspector { min-width: 0; }
 .inspector { padding: 24px; border: 1px solid var(--line); border-radius: 12px; }
@@ -185,7 +192,7 @@ dd { margin: 0; color: var(--ink); }
   .page-heading { align-items: flex-start; padding-block: 24px; }
   h1 { font-size: 28px; }
   .page-heading p { font-size: 14px; }
-  .page-heading > button { max-width: 140px; }
+  .page-heading > button { max-width: 140px; white-space: normal; }
   .table-scroll table { min-width: 800px; }
   .panel, .inspector { padding: 16px; }
   .inline-form { flex-wrap: wrap; }

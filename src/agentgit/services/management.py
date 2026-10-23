@@ -23,6 +23,7 @@ from agentgit.core.management import (
     NewTask,
     SubmitRun,
 )
+from agentgit.core.model_usage import OpenAIOptions, price_micro_usd
 from agentgit.core.models import CallIntent, parse_contract
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage
 from agentgit.core.versions import LiveReplay, NewBranch, RecordedReplay
@@ -64,6 +65,7 @@ class ManagementService:
 
     def capabilities(self) -> dict[str, Any]:
         config = AgentConfig()
+        provider = OpenAIOptions()
         execution = AgentConfig(
             tools=(*config.tools, "code_exec", "terminal_exec"), execution_policy=bundled_policy()
         )
@@ -72,6 +74,33 @@ class ManagementService:
             "version": __version__,
             "default_config": config.model_dump(mode="json"),
             "execution_config": execution.model_dump(mode="json"),
+            "models": [
+                {
+                    "id": config.model,
+                    "title": "Mock · 离线",
+                    "external": False,
+                    "access": "not_required",
+                    "config_patch": {"model": config.model},
+                },
+                {
+                    "id": "openai/" + provider.model,
+                    "title": "OpenAI · GPT-5.4 Mini（固定快照）",
+                    "external": True,
+                    "access": "unknown",
+                    "currency": "USD",
+                    "config_patch": {
+                        "model": "openai/" + provider.model,
+                        "openai": provider.model_dump(mode="json"),
+                    },
+                    "minimum_reservation": {
+                        "tokens": provider.max_input_tokens + provider.max_output_tokens,
+                        "cost_micro_usd": price_micro_usd(
+                            provider.max_input_tokens, provider.max_output_tokens
+                        ),
+                        "pricebook": provider.pricebook,
+                    },
+                },
+            ],
             "features": [
                 "run_pagination",
                 "historical_artifacts",
@@ -388,6 +417,8 @@ class ManagementService:
             result["budget"] = None
             return result
         config = self.research.config(repository_id, row["agent_config_id"])
+        result["model"] = config.model
+        result["model_external"] = config.openai is not None
         usage = BudgetUsage()
         with self.history.engine.connect() as connection:
             snapshots, jobs = TABLES["snapshots"], TABLES["jobs"]
@@ -614,9 +645,16 @@ class ManagementService:
                 .mappings()
                 .first()
             )
+            configs = TABLES["agent_configs"]
+            config_version = connection.execute(
+                sa.select(sa.func.coalesce(sa.func.max(configs.c.version), 0)).where(
+                    configs.c.repository_id == repository_id
+                )
+            ).scalar_one()
         if row is None:
             raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
         result: dict[str, Any] = public(dict(row))
+        result["config_version"] = config_version
         result["branch"] = public(self.history.branch(repository_id))
         return result
 

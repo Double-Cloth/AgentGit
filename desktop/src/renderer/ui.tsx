@@ -41,7 +41,7 @@ export function useAction() {
     try { await work(); } catch (failure) { setError(err(failure)); }
     finally { guard.current = false; setBusy(false); }
   }
-  return { busy, error, run };
+  return { busy, error, run, clearError: () => setError('') };
 }
 const STATUS: Record<string, string> = { queued: '排队中', running: '运行中', completed: '已完成', failed: '失败',
   cancelled: '已取消', paused: '已暂停', waiting_approval: '等待审批', outcome_unknown: '结果未知', interrupted: '已中断',

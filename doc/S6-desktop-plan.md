@@ -1,6 +1,6 @@
 # S6 桌面实施清单
 
-状态：只读 API、四页、真实五工具联调及开发候选包构建已完成，继续推进模型适配和剩余验收。分支 `codex/s6-desktop` 从 S5 本机验收合并 `235bbdf` 建立。证据见 [只读 API](acceptance/S6-read-views.md)、[桌面初版](acceptance/S6-desktop-progress.md)、[真实联调](acceptance/S6-desktop-real.md) 与 [候选包](acceptance/S6-desktop-packages.md)。本清单细化既有实施方案，不修改 S6-T01–T12 的退出条件；S11/S12 仍为必选主链。
+状态：只读 API、四页、真实五工具联调及开发候选包构建已完成，模型配置/预算/Worker 与桌面选择和计量已接通，继续推进新候选包与剩余验收。分支 `codex/s6-desktop` 从 S5 本机验收合并 `235bbdf` 建立。证据见 [只读 API](acceptance/S6-read-views.md)、[桌面初版](acceptance/S6-desktop-progress.md)、[真实联调](acceptance/S6-desktop-real.md) 、[候选包](acceptance/S6-desktop-packages.md)及[模型桌面接线](acceptance/S6-model-desktop.md)。本清单细化既有实施方案，不修改 S6-T01–T12 的退出条件；S11/S12 仍为必选主链。
 
 ## 已确认的界面范围
 

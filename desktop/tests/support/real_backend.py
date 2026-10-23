@@ -20,8 +20,11 @@ from pydantic import SecretStr
 
 from agentgit.adapters.execution.engine import DockerEngine, EngineError
 from agentgit.adapters.mock import MockResearchModel
+from agentgit.adapters.model_http import HTTPReply, TransportFailure
+from agentgit.adapters.openai import OpenAIResearchModel
 from agentgit.api.main import create_app
 from agentgit.config import Settings, database_url
+from agentgit.core.canonical import decode, encode
 from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.management import ManagementService, public
 from agentgit.services.research import ResearchService
@@ -65,10 +68,81 @@ def worker_main(schema, root):
             raise AssertionError("Recorded 不得创建模型")
         return MockResearchModel()
 
+    class Responses:
+        def post(self, path, body, **_):
+            # 所有供应商请求都在独立测试 Worker 内终止，绝不接触真实账户。
+            counting = path.endswith("input_tokens")
+            with (root / "provider-calls").open("a") as output:
+                output.write("count\n" if counting else "generate\n")
+            if counting:
+                return HTTPReply(
+                    200, encode({"object": "response.input_tokens", "input_tokens": 100})
+                )
+            mode = (
+                (root / "provider-case").read_text()
+                if (root / "provider-case").exists()
+                else "normal"
+            )
+            if mode == "unknown":
+                raise TransportFailure(sent=True)
+            request = json.loads(json.loads(body)["input"])
+            answer = decode(MockResearchModel().invoke(encode(request)))
+            structured = {
+                key: answer.get(key) for key in ("kind", "plan", "node_key", "tool", "summary")
+            }
+            structured["arguments_json"] = (
+                json.dumps(answer["arguments"], ensure_ascii=False)
+                if "arguments" in answer
+                else None
+            )
+            return HTTPReply(
+                200,
+                json.dumps(
+                    {
+                        "id": "resp_desktop_fixture",
+                        "object": "response",
+                        "model": "gpt-5.4-mini-2026-03-17",
+                        "service_tier": "default",
+                        "status": "completed",
+                        "error": None,
+                        "incomplete_details": None,
+                        "usage": None
+                        if mode == "missing_usage"
+                        else {
+                            "input_tokens": 100,
+                            "output_tokens": 20,
+                            "total_tokens": 120,
+                            "input_tokens_details": {"cached_tokens": 40, "cache_write_tokens": 0},
+                            "output_tokens_details": {"reasoning_tokens": 5},
+                        },
+                        "output": [
+                            {
+                                "type": "message",
+                                "role": "assistant",
+                                "status": "completed",
+                                "content": [
+                                    {"type": "output_text", "text": json.dumps(structured)}
+                                ],
+                            }
+                        ],
+                    }
+                ).encode(),
+            )
+
+    class FixtureWorker(Worker):
+        def _model(self, config):
+            offline = model()
+            if config.openai is None:
+                return offline
+            os.environ["OPENAI_API_KEY"] = "sk-public-desktop-contract-fixture-only"
+            return OpenAIResearchModel(
+                config.openai,
+                cost_limit_micro_usd=config.limits.max_cost_micro_usd,
+                _transport=Responses(),
+            )
+
     try:
-        worker = Worker(
-            ManagementService(research).jobs, name="desktop-real-worker", model_factory=model
-        )
+        worker = FixtureWorker(ManagementService(research).jobs, name="desktop-real-worker")
         (root / "worker-ready").write_text("ready")
         while not (root / "worker-stop").exists():
             if worker.run_once() is None:
@@ -237,6 +311,22 @@ def main():
                 else:
                     (root / "recorded-guard").unlink(missing_ok=True)
                 result = {"guard": request["enabled"]}
+            elif name == "provider_case":
+                assert request["mode"] in {"normal", "missing_usage", "unknown"}
+                (root / "provider-case").write_text(request["mode"])
+                result = {"mode": request["mode"]}
+            elif name == "provider_audit":
+                entries = (
+                    (root / "provider-calls").read_text().splitlines()
+                    if (root / "provider-calls").exists()
+                    else []
+                )
+                result = {
+                    "transport": "deterministic_fixture",
+                    "counts": entries.count("count"),
+                    "generations": entries.count("generate"),
+                    "model_guard_hits": int((root / "model-guard-hits").exists()),
+                }
             elif name == "audit":
                 result = audit(
                     manager,

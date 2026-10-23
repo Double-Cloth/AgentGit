@@ -36,7 +36,7 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
     }
     const result = path === '/health' ? { status: 'ok', version: '0.1.0' } : path === '/ready' ? { status: 'ready' }
       : path === '/capabilities' ? { schema_version: 1, version: '0.1.0', features: ['run_pagination', 'historical_artifacts', 'execution_evidence', 'recorded', 'live', 'structural_diff'], default_config: config, execution_config: config }
-      : path === `/repositories/${REPO}` ? { id: REPO, name: '桌面测试' }
+      : path === `/repositories/${REPO}` ? { id: REPO, name: '桌面测试', config_version: 0 }
       : path.endsWith('/branches') ? { items: [{ name: 'main', version: 1, head_commit_id: COMMIT }], has_more: false }
       : path.endsWith('/commits') ? { items: [{ commit_id: COMMIT, parents: [], created_at: '2026-10-22T00:00:00Z' }], has_more: false }
       : path === `/commits/${COMMIT}` ? { commit_id: COMMIT, manifest: {}, snapshot: { data: { status: 'completed', injected: '<img src=x onerror="window.injected=true">' } }, environment: {} }
@@ -52,9 +52,10 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('测试端点不可用');
   const profile = await mkdtemp(join(tmpdir(), 'agentgit-electron-'));
   const desktop = await electron.launch({ args: ['.'], cwd: resolve('.'), env: { ...process.env,
-    AGENTGIT_API_TOKEN: TOKEN, AGENTGIT_API_URL: `http://127.0.0.1:${address.port}`, AGENTGIT_DESKTOP_PROFILE_DIR: profile } });
+    AGENTGIT_API_TOKEN: TOKEN, OPENAI_API_KEY: 'sk-public-desktop-env-boundary-fixture', AGENTGIT_API_URL: `http://127.0.0.1:${address.port}`, AGENTGIT_DESKTOP_PROFILE_DIR: profile } });
   try {
     const page = await desktop.firstWindow();
+    expect(await desktop.evaluate(() => process.env.OPENAI_API_KEY)).toBeUndefined();
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     await expect(page).toHaveTitle('AgentGit'); expect(page.url()).toBe('agentgit://app/index.html');
     await expect(page.getByRole('heading', { name: '连接与项目' })).toBeVisible();

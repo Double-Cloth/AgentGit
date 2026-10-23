@@ -11,6 +11,8 @@ const squirrelStartup: boolean = require('electron-squirrel-startup');
 const apiToken = process.env.AGENTGIT_API_TOKEN;
 // 在创建渲染子进程前移除环境副本；凭据只保留在主进程客户端闭包。
 delete process.env.AGENTGIT_API_TOKEN;
+// 供应商凭据只供独立 Worker 使用，桌面与渲染子进程不需要继承。
+delete process.env.OPENAI_API_KEY;
 if (process.env.AGENTGIT_DESKTOP_PROFILE_DIR) app.setPath('userData', resolve(process.env.AGENTGIT_DESKTOP_PROFILE_DIR));
 app.enableSandbox();
 protocol.registerSchemesAsPrivileged([{ scheme: 'agentgit', privileges: { standard: true, secure: true, supportFetchAPI: false, corsEnabled: false } }]);

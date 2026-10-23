@@ -189,3 +189,125 @@ test('真实设施：桌面五工具 → 历史/Fork → 零执行 Recorded → 
     await desktop.close(); await backend.stop();
   }
 });
+
+test('真实模型接线：桌面显式选型与费用 → 独立 Worker → Recorded/Live → 缺 usage/未知预留', async () => {
+  const backend = await startBackend();
+  const profile = await mkdtemp(join(tmpdir(), 'agentgit-model-ui-'));
+  const evidence = await mkdtemp(join(tmpdir(), 'agentgit-model-qa-'));
+  const executable = process.env.AGENTGIT_DESKTOP_EXECUTABLE;
+  const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
+    AGENTGIT_API_TOKEN: TOKEN, OPENAI_API_KEY: 'sk-public-desktop-should-not-inherit',
+    AGENTGIT_API_URL: backend.url, AGENTGIT_DESKTOP_PROFILE_DIR: profile };
+  if (executable) {
+    for (const key of Object.keys(env)) if (['path', 'node_path', 'node_options'].includes(key.toLowerCase())) delete env[key];
+    env.PATH = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32');
+  }
+  const desktop = await electron.launch({ ...(executable ? { executablePath: resolve(executable), args: [], cwd: profile }
+    : { args: ['.'], cwd: resolve('.') }), env }).catch(async error => { await backend.stop(); throw error; });
+  await desktop.context().tracing.start({ screenshots: true, snapshots: true });
+  let page: Page | undefined;
+  try {
+    page = await desktop.firstWindow();
+    expect(await desktop.evaluate(({ app }) => app.isPackaged)).toBe(Boolean(executable));
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', entry => { if (entry.type() === 'error') errors.push(entry.text()); });
+    await expect(page).toHaveTitle('AgentGit'); expect(page.url()).toBe('agentgit://app/index.html');
+    expect(await desktop.evaluate(() => process.env.OPENAI_API_KEY)).toBeUndefined();
+    await page.getByLabel('新项目名称').fill('模型费用桌面验收');
+    await page.getByRole('button', { name: '创建并选择', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '运行', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '收起', exact: true }).click();
+
+    async function newPaid(mode: 'normal' | 'missing_usage' | 'unknown', capture = false) {
+      await backend.command('provider_case', { mode });
+      await page!.getByRole('button', { name: '运行', exact: true }).click();
+      await page!.getByRole('button', { name: '新建运行', exact: true }).click();
+      await expect(page!.getByLabel('模型', { exact: true })).toHaveValue('mock-research/v1');
+      await page!.getByLabel('模型', { exact: true }).selectOption('openai/gpt-5.4-mini-2026-03-17');
+      await page!.getByLabel('启用固定五工具').uncheck();
+      const submit = page!.getByRole('button', { name: '提交外部模型运行', exact: true });
+      await expect(submit).toBeDisabled();
+      await page!.getByLabel('费用上限（USD）', { exact: true }).fill('1.0000001');
+      await submit.click();
+      await expect(page!.getByText('请输入 USD 金额，例如 1.00；最多 6 位小数', { exact: true }).first()).toBeVisible();
+      await page!.getByLabel('费用上限（USD）', { exact: true }).fill('1.00');
+      if (capture) {
+        await page!.setViewportSize({ width: 1440, height: 960 });
+        await page!.screenshot({ path: join(evidence, 'model-form-1440.png'), fullPage: true });
+        await page!.setViewportSize({ width: 768, height: 960 });
+        expect(await page!.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await page!.screenshot({ path: join(evidence, 'model-form-768.png'), fullPage: true });
+      }
+      await submit.dblclick();
+      await expect(page!.getByRole('heading', { name: '时间线', exact: true })).toBeVisible();
+      return (await page!.locator('.page-heading code').innerText()).trim();
+    }
+    const source = await newPaid('normal', true);
+    const result = await completed(page, source);
+    expect(result.model).toBe('openai/gpt-5.4-mini-2026-03-17');
+    expect((result.budget as JsonObject).limits).toMatchObject({ max_cost_micro_usd: 1_000_000 });
+    expect((result.budget as JsonObject).usage).toMatchObject({ tokens: 1320, cost_micro_units: 1518 });
+    await expect(page.getByText('USD 0.001518', { exact: true })).toBeVisible();
+    await page.screenshot({ path: join(evidence, 'model-meter-completed.png'), fullPage: true });
+    const head = String(result.checkpoint_commit_id);
+    const history = data(await page.evaluate(() => window.agentgit.listCommits({ limit: 100 })));
+    const first = objects(history.items).at(-1)!;
+    const before = await backend.command('provider_audit');
+    expect(before.generations).toBe(11);
+    await sourceBranch(page, source);
+    await page.getByLabel('安全起点 Commit').fill(String(first.commit_id));
+    await page.getByLabel('验证终点 Commit').fill(head);
+    await page.getByLabel('新分支名称').fill('model-recorded');
+    await backend.command('guard', { enabled: true });
+    await page.getByRole('button', { name: '提交 Recorded' }).click();
+    await expect(page.getByRole('button', { name: '打开新运行时间线 →' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Recorded 实际用量' })).toBeVisible();
+    const replay = objects(data(await page.evaluate(() => window.agentgit.listRuns({ limit: 100 }))).items).find(item => item.branch_name === 'model-recorded')!;
+    await completed(page, String(replay.id));
+    const after = await backend.command('provider_audit');
+    expect(after).toMatchObject({ generations: 11, model_guard_hits: 0 });
+    await page.getByRole('button', { name: '打开新运行时间线 →' }).click();
+    await expect(page.getByRole('heading', { name: '历史逻辑预算与计量' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Recorded 实际用量' })).toBeVisible();
+    await page.screenshot({ path: join(evidence, 'model-recorded-meter.png'), fullPage: true });
+    await backend.command('guard', { enabled: false });
+
+    await sourceBranch(page, source);
+    await page.getByRole('radio', { name: /Live 重新执行剩余计划/ }).check();
+    await page.getByLabel('安全起点 Commit').fill(head);
+    await page.getByLabel('新分支名称').fill('model-live');
+    await expect(page.getByRole('button', { name: '提交 Live' })).toBeDisabled();
+    await page.getByLabel('本次 Live 费用上限（USD）').fill('0.50');
+    await page.getByRole('button', { name: '提交 Live' }).click();
+    await expect(page.getByRole('button', { name: '打开新运行时间线 →' })).toBeVisible();
+    const live = objects(data(await page.evaluate(() => window.agentgit.listRuns({ limit: 100 }))).items).find(item => item.branch_name === 'model-live')!;
+    const liveState = await completed(page, String(live.id));
+    expect((liveState.budget as JsonObject).new_usage).toMatchObject({ model_calls: 1, cost_micro_units: 138 });
+
+    const missing = await newPaid('missing_usage');
+    await expect.poll(async () => (await readRun(page!, missing)).status).toBe('failed');
+    await expect(page.getByText('USD 0.036939', { exact: true })).toBeVisible();
+    await expect(page.getByText(/保守估计调用 1/)).toBeVisible();
+    const unknown = await newPaid('unknown');
+    await expect.poll(async () => (await readRun(page!, unknown)).status).toBe('outcome_unknown');
+    await expect(page.getByText('结果未知，预留尚未释放；不会自动重发。请先核对原调用。', { exact: true })).toBeVisible();
+    await expect(page.getByText('USD 0.061440', { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 360, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: join(evidence, 'model-unknown-360.png'), fullPage: true });
+    expect(errors).toEqual([]);
+    await writeFile('../.agentgit/evidence/S6-model-desktop-qa.json', JSON.stringify({ evidence, source, missing, unknown,
+      sourceMeter: (result.budget as JsonObject).usage, live: (liveState.budget as JsonObject).new_usage,
+      provider: await backend.command('provider_audit'), widths: [1440, 768, 360], consoleErrors: errors,
+      transport: '独立真实 Worker 使用确定性 HTTP 替身；未访问供应商或产生真实计费' }, null, 2));
+  } catch (error) {
+    if (page && !page.isClosed()) { await page.screenshot({ path: join(evidence, 'failure.png'), fullPage: true });
+      await writeFile(join(evidence, 'failure.txt'), await page.locator('body').innerText()); }
+    await writeFile('../.agentgit/evidence/S6-model-desktop-failure-path.txt', evidence);
+    throw error;
+  } finally {
+    await desktop.context().tracing.stop({ path: join(evidence, 'trace.zip') });
+    await desktop.close(); await backend.stop();
+  }
+});

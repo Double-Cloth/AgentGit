@@ -252,6 +252,7 @@ export class BusinessController {
     const post = (path: string, body: JsonObject): ApiRequest => ({ method: 'POST', path, body: { schema_version: 1, ...body }, key: key(input.key) });
     const page = (path: string) => get(query(path, { after_id: input.afterId === undefined ? undefined : id(input.afterId), limit: number(input.limit, 30, 100, 1) }));
     switch (operation) {
+      case 'getRepository': fields(raw, []); return get(`/repositories/${this.state.repositoryId!}`);
       case 'listRuns': input = fields(raw, [], ['afterId', 'limit']); return page(`/repositories/${this.state.repositoryId ?? ''}/runs`);
       case 'getRun': input = fields(raw, ['runId']); return get(`/runs/${id(input.runId)}`);
       case 'getJob': case 'getReplay': input = fields(raw, ['jobId']); return get(`/${operation === 'getJob' ? 'jobs' : 'replays'}/${id(input.jobId)}`);

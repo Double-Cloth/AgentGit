@@ -109,6 +109,12 @@ def test_capabilities_require_identity_and_do_not_claim_worker_or_sandbox_ready(
         response = client.get("/capabilities")
     assert response.status_code == 200, response.text
     descriptor = response.json()
+    assert descriptor["models"][0]["external"] is False
+    real_model = descriptor["models"][1]
+    assert real_model["access"] == "unknown" and real_model["currency"] == "USD"
+    assert real_model["minimum_reservation"]["cost_micro_usd"] == 61_440
+    assert "max_cost_micro_usd" not in descriptor["default_config"]["limits"]
+    assert "api_key" not in str(descriptor)
     assert (
         descriptor["worker"]["status"] == descriptor["execution_environment"]["status"] == "unknown"
     )
@@ -128,6 +134,20 @@ def test_capabilities_require_identity_and_do_not_claim_worker_or_sandbox_ready(
         headers={"X-Repository-ID": str(repo), "Idempotency-Key": "capability-config"},
     )
     assert created.status_code == 201, created.text
+    info = client.get(f"/repositories/{repo}", headers={"X-Repository-ID": str(repo)})
+    assert info.json()["config_version"] == 1
+    second = client.post(
+        "/agents",
+        json={"schema_version": 1, "expected_version": 1, "config": descriptor["default_config"]},
+        headers={"X-Repository-ID": str(repo), "Idempotency-Key": "capability-config-second"},
+    )
+    assert second.status_code == 201, second.text
+    assert (
+        client.get(f"/repositories/{repo}", headers={"X-Repository-ID": str(repo)}).json()[
+            "config_version"
+        ]
+        == 2
+    )
 
 
 @pytest.mark.parametrize("query", [{"limit": 0}, {"limit": 101}, {"after_id": "not-a-uuid"}])

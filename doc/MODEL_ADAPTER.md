@@ -16,7 +16,7 @@ uv run --locked agentgit config REPOSITORY_ID --file doc/examples/openai-researc
 
 只在 Worker 的启动进程环境中设置 `OPENAI_API_KEY`，不写入配置、仓库、Snapshot、日志、桌面或 IPC。创建/读取配置和 Recorded 不需要读取该环境变量。现有 API 身份令牌 `AGENTGIT_API_TOKEN` 与供应商凭据各自使用既有边界，不能互相替代。声明真实模型意味着该 Run 的模型上下文会提交到所选供应商；工具仍由本地 Registry 和固定容器策略执行。
 
-桌面选择器与计量呈现尚未接通；当前 Windows 候选包仍对应此前构建版本，不能把新后端能力视为已安装桌面交付完成。五工具配置仍需绑定后端已审阅的固定执行策略，不能将 `--with-execution` 与 `--file` 同时使用。
+桌面 Runs 已接通能力描述中的模型选择：默认 Mock；选择外部模型时必须另填 USD 上限，最多 6 位小数，不收集密钥。Live 从外部模型来源或切换到外部模型时同样要求本次 USD 上限。Timeline 分别展示已结算估计、未释放/未核价预留、剩余额度及 Replay 实际用量，缺失值显示未知。现有 Windows 候选包仍对应此前构建版本，须重建并复测后才能作为新桌面能力的交付证据。五工具配置仍需绑定后端已审阅的固定执行策略，不能将 `--with-execution` 与 `--file` 同时使用。
 
 ## 预算与结果
 

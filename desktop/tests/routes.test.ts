@@ -65,6 +65,7 @@ test('业务白名单、参数和项目归属在请求前验证，POST 保持原
     const before = f.requests.length;
     for (const [operation, args] of [
       ['fetch', { url: 'http://localhost:9999' }], ['listRuns', { repositoryId: OTHER }],
+      ['getRepository', { repositoryId: OTHER }], ['getRepository', { path: '/private' }],
       ['listRuns', { path: '/private', headers: {} }], ['getRun', { runId: '../secret' }],
       ['listRuns', { limit: true }], ['listRuns', { limit: 0 }],
       ['getExecutionContent', { runId: REPO, callId: OTHER, resource: 'raw_cas' }],
@@ -78,6 +79,9 @@ test('业务白名单、参数和项目归属在请求前验证，POST 保持原
     assert.equal(read.url, `/repositories/${REPO}/runs?limit=1`);
     assert.equal(read.headers['x-repository-id'], REPO);
     assert.equal(read.headers.origin, undefined);
+    await f.controller.handle('getRepository', undefined);
+    assert.equal(f.requests.at(-1)!.url, `/repositories/${REPO}`);
+    assert.equal(f.requests.at(-1)!.headers['x-repository-id'], REPO);
     await f.controller.handle('getDiff', { base: 'a'.repeat(64), head: 'b'.repeat(64) });
     assert.equal(f.requests.at(-1)!.url, `/diff?left_commit=${'a'.repeat(64)}&right_commit=${'b'.repeat(64)}&after=0&limit=100`);
     await f.controller.handle('controlRun', { runId: REPO, action: 'pause', expectedVersion: 2, key: 'same-action' });
@@ -102,6 +106,8 @@ test('切换项目取消旧读取，随后只能使用已选择项目', async ()
     await done; assert.equal(state.repositoryId, OTHER);
     await f.controller.handle('listBranches', {});
     assert.equal(f.requests.at(-1)!.headers['x-repository-id'], OTHER);
+    await f.controller.handle('getRepository', undefined);
+    assert.equal(f.requests.at(-1)!.url, `/repositories/${OTHER}`);
   } finally { await f.close(); }
 });
 

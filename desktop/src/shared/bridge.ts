@@ -28,6 +28,7 @@ export interface Inputs {
   configureConnection: { baseUrl: string };
   selectRepository: { repositoryId: string };
   capabilities: undefined;
+  getRepository: undefined;
   createRepository: { name: string; key: string };
   listRuns: Page;
   getRun: { runId: string };
