@@ -120,6 +120,7 @@ dd { margin: 0; color: var(--ink); }
 .history-graph { height: 360px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--soft); }
 .history-graph .react-flow__node-default { border: 1px solid #8e8b82; border-radius: 8px; background: var(--canvas); color: var(--ink); width: 180px; padding: 12px; }
 .history-graph .react-flow__node-default.selected { border-color: var(--active); box-shadow: none; border-width: 2px; }
+.history-graph .react-flow__node-default.selectable:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .react-flow__edge-path { stroke: #8e8b82; }
 .react-flow__controls-button { border-radius: 0; background: var(--canvas); min-height: 32px; }
 .checkpoint-list { max-height: 200px; overflow: auto; margin-block: 16px; }

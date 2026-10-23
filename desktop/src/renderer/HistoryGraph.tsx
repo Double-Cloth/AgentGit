@@ -16,6 +16,8 @@ export default function HistoryGraph({ commits, selected, onSelect }: { commits:
     return { nodes, edges };
   }, [commits, selected]);
   return <div className="history-graph" aria-label="检查点关系图"><ReactFlow nodes={nodes} edges={edges} fitView minZoom={0.25} maxZoom={1.5}
-    nodesDraggable={false} nodesConnectable={false} onNodeClick={(_event, node) => onSelect(node.id)} proOptions={{ hideAttribution: false }}>
+    nodesDraggable={false} nodesConnectable={false} onNodesChange={changes => {
+      for (const change of changes) if (change.type === 'select' && change.selected && change.id !== selected) { onSelect(change.id); break; }
+    }} proOptions={{ hideAttribution: false }}>
     <Background color="#e6dfd8" gap={20} /><Controls showInteractive={false} /></ReactFlow></div>;
 }

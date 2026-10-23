@@ -9,6 +9,7 @@ const TOKEN = 'fixture-electron-token-00000000000000000000';
 const REPO = '00000000-0000-4000-8000-000000000001';
 const RUN = '00000000-0000-4000-8000-000000000002';
 const COMMIT = 'a'.repeat(64);
+const PARENT = 'b'.repeat(64);
 
 test('连接降级：API 未监听、数据库 503、版本不兼容、身份拒绝及恢复', async () => {
   let mode = 'healthy';
@@ -94,8 +95,8 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
       : path === '/capabilities' ? { schema_version: 1, version: '0.1.0', features: ['run_pagination', 'historical_artifacts', 'execution_evidence', 'recorded', 'live', 'structural_diff'], default_config: config, execution_config: config }
       : path === `/repositories/${REPO}` ? { id: REPO, name: '桌面测试', config_version: 0 }
       : path.endsWith('/branches') ? { items: [{ name: 'main', version: 1, head_commit_id: COMMIT }], has_more: false }
-      : path.endsWith('/commits') ? { items: [{ commit_id: COMMIT, parents: [], created_at: '2026-10-22T00:00:00Z' }], has_more: false }
-      : path === `/commits/${COMMIT}` ? { commit_id: COMMIT, manifest: {}, snapshot: { data: { status: 'completed', injected: '<img src=x onerror="window.injected=true">' } }, environment: {} }
+      : path.endsWith('/commits') ? { items: [{ commit_id: COMMIT, parents: [PARENT], created_at: '2026-10-22T00:00:00Z' }, { commit_id: PARENT, parents: [] }], has_more: false }
+      : path === `/commits/${COMMIT}` || path === `/commits/${PARENT}` ? { commit_id: path.slice('/commits/'.length), manifest: {}, snapshot: { data: { status: 'completed', checkpoint: path === `/commits/${PARENT}` ? 'parent' : 'head', injected: '<img src=x onerror="window.injected=true">' } }, environment: {} }
       : path.endsWith('/runs') ? { items: [run], next_after_id: null }
       : path.endsWith('/approvals') ? { items: approvalPending ? [{ id: REPO, version: 3, status: 'pending', expires_at: '2099-01-01T00:00:00Z', request: { tool: 'source_read' } }] : [] }
       : path.endsWith('/executions') ? { items: [{ id: REPO, run_id: RUN, provider: 'tool:code_exec/v1', logical_step_id: 'code_exec', attempt: 1 }], next_after_id: null }
@@ -108,13 +109,15 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('测试端点不可用');
   const profile = await mkdtemp(join(tmpdir(), 'agentgit-electron-'));
-  const desktop = await electron.launch({ args: ['.'], cwd: resolve('.'), env: { ...process.env,
+  const executable = process.env.AGENTGIT_DESKTOP_EXECUTABLE;
+  const desktop = await electron.launch({ ...(executable ? { executablePath: resolve(executable), args: [], cwd: profile } : { args: ['.'], cwd: resolve('.') }), env: { ...process.env,
     AGENTGIT_API_TOKEN: TOKEN, OPENAI_API_KEY: 'sk-public-desktop-env-boundary-fixture', AGENTGIT_API_URL: `http://127.0.0.1:${address.port}`, AGENTGIT_DESKTOP_PROFILE_DIR: profile } });
   try {
     const page = await desktop.firstWindow();
     expect(await desktop.evaluate(() => process.env.OPENAI_API_KEY)).toBeUndefined();
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     await expect(page).toHaveTitle('AgentGit'); expect(page.url()).toBe('agentgit://app/index.html');
+    if (executable) expect(await desktop.evaluate(({ app }) => app.isPackaged)).toBe(true);
     const desktopVersion = await desktop.evaluate(({ app }) => app.getVersion());
     await expect(page.locator('footer')).toContainText(`AgentGit ${desktopVersion}`);
     await expect(page.getByRole('heading', { name: '连接与项目' })).toBeVisible();
@@ -147,6 +150,30 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
     await page.getByRole('button', { name: '查看时间线 →' }).click();
     await expect(page.getByRole('heading', { name: '时间线', exact: true })).toBeVisible();
     await expect(page.getByLabel('检查点关系图')).toBeVisible();
+    await page.getByRole('tab', { name: '逻辑状态', exact: true }).click();
+    const parentNode = page.getByRole('group', { name: `检查点 ${PARENT}`, exact: true });
+    for (let step = 0; step < 80 && !(await parentNode.evaluate(element => element === document.activeElement)); step++) await page.keyboard.press('Tab');
+    expect(await parentNode.evaluate(element => element === document.activeElement)).toBe(true);
+    expect(await parentNode.evaluate(element => ({ width: getComputedStyle(element).outlineWidth, color: getComputedStyle(element).outlineColor,
+      style: getComputedStyle(element).outlineStyle, offset: getComputedStyle(element).outlineOffset, visible: element.matches(':focus-visible') })))
+      .toEqual({ width: '2px', color: 'rgb(20, 20, 19)', style: 'solid', offset: '2px', visible: true });
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.inspector .section-heading code')).toHaveText(PARENT.slice(0, 12));
+    await expect(page.locator('.inspector pre').first()).toContainText('"checkpoint": "parent"');
+    await page.getByLabel('检查点关系图').screenshot({ path: join(profile, 'graph-keyboard.png') });
+    const headNode = page.getByRole('group', { name: `检查点 ${COMMIT}`, exact: true });
+    for (let step = 0; step < 10 && !(await headNode.evaluate(element => element === document.activeElement)); step++) await page.keyboard.press('Tab');
+    expect(await headNode.evaluate(element => element === document.activeElement)).toBe(true);
+    await page.keyboard.press('Space');
+    await expect(page.locator('.inspector .section-heading code')).toHaveText(COMMIT.slice(0, 12));
+    await expect(page.locator('.inspector pre').first()).toContainText('"checkpoint": "head"');
+    await parentNode.click();
+    await expect(page.locator('.inspector pre').first()).toContainText('"checkpoint": "parent"');
+    await page.getByRole('group', { name: `检查点 ${COMMIT}`, exact: true }).click();
+    await expect(page.locator('.inspector .section-heading code')).toHaveText(COMMIT.slice(0, 12));
+    await page.getByRole('tab', { name: '执行证据', exact: true }).click();
+    await writeFile('../.agentgit/evidence/S6-keyboard-graph-qa.json', JSON.stringify({ screenshot: join(profile, 'graph-keyboard.png'),
+      selected: PARENT, keys: ['Tab', 'Enter', 'Space'], desktop: desktopVersion, executable: executable ?? null }, null, 2));
     await expect(page.getByText('statistics written', { exact: true })).toBeVisible();
     await page.getByLabel('原始证据').selectOption('code');
     await expect(page.getByText('claims_per_framework', { exact: true })).toBeVisible();

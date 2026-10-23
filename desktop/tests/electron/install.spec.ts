@@ -68,6 +68,8 @@ test('当前用户安装：0.1.0 → 当前候选覆盖升级 → 卸载保留�
     expect(baseline.schema).toBe('0012_replay_source_index'); expect(baseline.worker_alive).toBe(true);
     expect(full.source_tools).toHaveLength(5);
     const posts = await backend.command('traffic');
+    await writeFile('../.agentgit/evidence/S6-install-attempt-qa.json', JSON.stringify({ root, physicalRoot, profile, physicalProfile: await realpath(profile),
+      evidence, setup, setup_sha256: digest(await readFile(setup)), repository: repo, source, phase: 'before_upgrade' }, null, 2));
     await desktop.close(); desktop = undefined;
     const preferences = JSON.parse(await readFile(join(profile, 'preferences.json'), 'utf8'));
     expect(preferences.repositoryId).toBe(repo);

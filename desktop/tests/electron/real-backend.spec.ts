@@ -182,6 +182,13 @@ test('生命周期与 DPI：关闭、重开、重复启动、崩溃与断连只�
       await expect(page.getByRole('heading', { name: '时间线', exact: true })).toBeVisible();
       await keyboardOpen(page.getByRole('tab', { name: '逻辑状态', exact: true }));
       await expect(page.getByText('所选版本状态', { exact: true })).toBeVisible();
+      const oldest = page.locator('.history-graph .react-flow__node').first();
+      const oldestId = await oldest.getAttribute('data-id'); expect(oldestId).toMatch(/^[a-f0-9]{64}$/);
+      await keyboardOpen(oldest);
+      await expect(page.locator('.inspector .section-heading code')).toHaveAttribute('title', oldestId!);
+      const head = String((await readRun(page, source)).checkpoint_commit_id);
+      await keyboardOpen(page.getByRole('group', { name: `检查点 ${head}`, exact: true }));
+      await expect(page.locator('.inspector .section-heading code')).toHaveAttribute('title', head);
       await expect(page.locator('.inspector pre').first()).toContainText('长中文目标');
       await keyboardOpen(page.getByRole('tab', { name: '产物文件', exact: true }));
       await expect(page.getByText('report.md', { exact: true })).toBeVisible();
