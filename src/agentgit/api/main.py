@@ -242,6 +242,18 @@ def create_app(
     ) -> dict[str, Any]:
         return service.experiment(repo, experiment_id)
 
+    @app.get("/repositories/{repository_id}/experiments")
+    def experiments_list(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.experiments_list(repo, after_id=after_id, limit=limit)
+
     @app.post("/replays", status_code=202)
     def replay(
         body: dict[str, Any],

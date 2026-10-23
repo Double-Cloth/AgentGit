@@ -196,6 +196,7 @@ uv run --locked agentgit worker --once
 | `GET /validators/{validator_ref}` | 项目限定的只读 manifest，不能凭其他项目的 hash 读取 |
 | `POST /experiments` | 严格 `NewExperiment`：来源 Run、共同起点、validator_ref、A/B 两组、repeats 和完整预算；202 返回一个实验及所有初始 Job/Run |
 | `GET /experiments/{experiment_id}` | manifest、初始/当前 Run、Job 状态、独立验收结果、实际/逻辑用量及限制说明 |
+| `GET /repositories/{repository_id}/experiments` | 项目内按 UUID 升序发现实验元数据；`after_id` 游标、`limit=1..100`（默认 30），返回 items/has_more/next_after_id；不读取或重新验收旧 manifest |
 | `GET /intervention-context` | 按 source_run_id/from_commit/target_event_id/validator_ref 读取同项目完整目标调用、原配置和前置条件 |
 | `POST /interventions` | 固定三类 NewIntervention；验证目标、payload、前置条件和证据，201 返回不可变干预 ID，不执行 trial |
 | `GET /interventions/{intervention_id}` | 项目内读取干预定义、payload 与来源 |
@@ -230,6 +231,8 @@ uv run --locked agentgit worker
 每个 trial 的 `replay.budget_baseline/logical_usage/new_usage/actual` 保留既有含义。`actual.model_usage` 进一步从本次真实调用账本重建模型计量，包含结果已保存但尚未推进检查点的调用，并沿恢复/可信核对来源读取证据；不重计恢复复用或 Hybrid 观测。Mock 的输入/输出字节与供应商 Token 分开，供应商的已测量、保守上界、未生成和缺失计量分别计数。
 
 ### 分组统计
+
+受控实验桌面入口按 `GET /capabilities` 的 `controlled_experiments` 与 `experiment_statistics` 能力标识启用；`hybrid_observations` 与 `typed_interventions` 分别控制高级选项。缺少这些新增标识的兼容后端仍支持原有单次分支。`target_event_id` 是正整数事件主键，不能替换为调用 UUID；`source_call_id/replacement_call_id` 才是 UUID。
 
 `GET /experiments/{id}` 和 `experiment-status` 同时返回新增的 `statistics`，原有 `groups` 计数结构保持兼容。`statistics.groups` 按 A/B 展示预定、通过、失败和未完成数、成功率、整体冻结硬断言结果、再次领取 Job 的恢复结果及错误码计数。规则可能短路，不能把某错误码未出现当作该规则已通过。
 

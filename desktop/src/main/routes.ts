@@ -301,10 +301,12 @@ export class BusinessController {
       case 'getValidator': input = fields(raw, ['validatorRef']); return get(`/validators/${digest(input.validatorRef)}`, 1048576);
       case 'createExperiment': input = fields(raw, ['request', 'key']); return post('/experiments', jsonObject(input.request));
       case 'getExperiment': input = fields(raw, ['experimentId']); return get(`/experiments/${id(input.experimentId)}`, 1048576);
+      case 'listExperiments': input = fields(raw, [], ['afterId', 'limit']); return page(`/repositories/${this.state.repositoryId ?? ''}/experiments`);
       case 'getInterventionContext': {
         input = fields(raw, ['sourceRunId', 'fromCommit', 'targetEventId', 'validatorRef']);
+        if (typeof input.targetEventId !== 'number') throw new DesktopError('validation', '目标事件 ID 必须是正整数');
         return get(query('/intervention-context', { source_run_id: id(input.sourceRunId), from_commit: digest(input.fromCommit),
-          target_event_id: id(input.targetEventId), validator_ref: digest(input.validatorRef) }), 1048576);
+          target_event_id: number(input.targetEventId, 0, Number.MAX_SAFE_INTEGER, 1), validator_ref: digest(input.validatorRef) }), 1048576);
       }
       case 'createIntervention': input = fields(raw, ['request', 'key']); return post('/interventions', jsonObject(input.request));
       case 'getIntervention': input = fields(raw, ['interventionId']); return get(`/interventions/${id(input.interventionId)}`, 1048576);

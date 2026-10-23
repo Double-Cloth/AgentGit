@@ -73,6 +73,8 @@ test('业务白名单、参数和项目归属在请求前验证，POST 保持原
       ['decideApproval', { approvalId: REPO, decision: ['approve'], expectedVersion: 1, key: 'one' }],
       ['exportArtifact', { artifactId: REPO, path: 'C:\\private.txt' }],
       ['getExperiment', { experimentId: '../private' }], ['getValidator', { validatorRef: REPO }],
+      ['listExperiments', { repositoryId: OTHER }], ['listExperiments', { limit: 101 }],
+      ...[0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, OTHER, undefined].map(targetEventId => ['getInterventionContext', { sourceRunId: REPO, fromCommit: 'a'.repeat(64), targetEventId, validatorRef: 'b'.repeat(64) }]),
       ['getIntervention', { interventionId: OTHER, repositoryId: OTHER }],
       ['getInterventionContext', { sourceRunId: REPO, fromCommit: 'a'.repeat(64), targetEventId: OTHER, validatorRef: 'b'.repeat(64), url: 'http://localhost:9999' }],
       ['freezeValidator', { sourceRunId: REPO, fromCommit: 'a'.repeat(64), fixtureSplit: 'everything', key: 'freeze' }],
@@ -85,6 +87,8 @@ test('业务白名单、参数和项目归属在请求前验证，POST 保持原
     assert.equal(read.url, `/repositories/${REPO}/runs?limit=1`);
     assert.equal(read.headers['x-repository-id'], REPO);
     assert.equal(read.headers.origin, undefined);
+    await f.controller.handle('listExperiments', { afterId: OTHER, limit: 2 });
+    assert.equal(f.requests.at(-1)!.url, `/repositories/${REPO}/experiments?after_id=${OTHER}&limit=2`);
     await f.controller.handle('getRepository', undefined);
     assert.equal(f.requests.at(-1)!.url, `/repositories/${REPO}`);
     assert.equal(f.requests.at(-1)!.headers['x-repository-id'], REPO);
@@ -213,7 +217,7 @@ test('S7 只桥接固定实验端点，绑定项目和幂等键并保留精确�
     await f.controller.handle('createExperiment', { request: { repeats: 5 }, key: 'experiment-key' });
     const result = await f.controller.handle('getExperiment', { experimentId: REPO }) as { statistics: { mean: { numerator: string; denominator: string } } };
     assert.deepEqual(result.statistics.mean, { numerator: '9007199254740993', denominator: '2' });
-    await f.controller.handle('getInterventionContext', { sourceRunId: REPO, fromCommit: 'a'.repeat(64), targetEventId: OTHER, validatorRef: 'b'.repeat(64) });
+    await f.controller.handle('getInterventionContext', { sourceRunId: REPO, fromCommit: 'a'.repeat(64), targetEventId: 17, validatorRef: 'b'.repeat(64) });
     await f.controller.handle('createIntervention', { request: { operator: 'PROMPT_PATCH' }, key: 'intervention-key' });
     await f.controller.handle('getIntervention', { interventionId: OTHER });
     const requests = f.requests.slice(before);
@@ -227,7 +231,7 @@ test('S7 只桥接固定实验端点，绑定项目和幂等键并保留精确�
       { schema_version: 1, repeats: 5 }, { schema_version: 1, operator: 'PROMPT_PATCH' },
     ]);
     const query = new URL(requests[4]!.url!, 'http://localhost').searchParams;
-    assert.equal(query.get('target_event_id'), OTHER); assert.equal(query.get('validator_ref'), 'b'.repeat(64));
+    assert.equal(query.get('target_event_id'), '17'); assert.equal(query.get('validator_ref'), 'b'.repeat(64));
     assert.equal(query.get('source_run_id'), REPO); assert.equal(query.get('from_commit'), 'a'.repeat(64));
   } finally { await f.close(); }
 });

@@ -55,7 +55,8 @@ export interface Inputs {
   getValidator: { validatorRef: string };
   createExperiment: { request: JsonObject; key: string };
   getExperiment: { experimentId: string };
-  getInterventionContext: { sourceRunId: string; fromCommit: string; targetEventId: string; validatorRef: string };
+  listExperiments: Page;
+  getInterventionContext: { sourceRunId: string; fromCommit: string; targetEventId: number; validatorRef: string };
   createIntervention: { request: JsonObject; key: string };
   getIntervention: { interventionId: string };
   getDiff: { base: string; head: string; after?: number; limit?: number };

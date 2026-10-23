@@ -19,6 +19,7 @@ const api: DesktopApi = {
   submitRun: method('submitRun'), createBranch: method('createBranch'), replay: method('replay'), getReplay: method('getReplay'),
   freezeValidator: method('freezeValidator'), getValidator: method('getValidator'),
   createExperiment: method('createExperiment'), getExperiment: method('getExperiment'),
+  listExperiments: method('listExperiments'),
   getInterventionContext: method('getInterventionContext'), createIntervention: method('createIntervention'), getIntervention: method('getIntervention'),
   getDiff: method('getDiff'), controlRun: method('controlRun'), decideApproval: method('decideApproval'),
   cancelReads: () => ipcRenderer.send('agentgit:cancel-reads'),

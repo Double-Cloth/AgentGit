@@ -224,6 +224,31 @@ class ExperimentService:
             raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "实验索引与冻结 manifest 不符")
         return manifest
 
+    def listing(
+        self, repository_id: UUID, *, after_id: UUID | None = None, limit: int = 30
+    ) -> dict[str, Any]:
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise AgentGitError(ErrorCode.VALIDATION, "实验列表每页须为 1–100 项")
+        table = TABLES["experiments"]
+        query = sa.select(
+            table.c.id,
+            table.c.source_run_id,
+            table.c.from_commit_id,
+            table.c.validator_ref,
+            table.c.repeats,
+            table.c.created_at,
+        ).where(table.c.repository_id == repository_id)
+        if after_id is not None:
+            query = query.where(table.c.id > after_id)
+        with self.history.engine.connect() as connection:
+            rows = list(connection.execute(query.order_by(table.c.id).limit(limit + 1)).mappings())
+        shown = rows[:limit]
+        return {
+            "items": [{**dict(row), "trial_count": row["repeats"] * 2} for row in shown],
+            "has_more": len(rows) > limit,
+            "next_after_id": str(shown[-1]["id"]) if len(rows) > limit else None,
+        }
+
     def _projection(
         self, repository_id: UUID, job_id: UUID
     ) -> tuple[dict[str, Any], dict[str, Any]]:

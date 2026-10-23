@@ -158,6 +158,14 @@ class ManagementService:
     def experiment(self, repository_id: UUID, experiment_id: UUID) -> dict[str, Any]:
         return self.experiments.report(repository_id, experiment_id)
 
+    def experiments_list(
+        self, repository_id: UUID, *, after_id: UUID | None = None, limit: int = 30
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = public(
+            self.experiments.listing(repository_id, after_id=after_id, limit=limit)
+        )
+        return result
+
     def capabilities(self) -> dict[str, Any]:
         config = AgentConfig()
         provider = OpenAIOptions()
@@ -203,6 +211,10 @@ class ManagementService:
                 "recorded",
                 "live",
                 "structural_diff",
+                "controlled_experiments",
+                "hybrid_observations",
+                "typed_interventions",
+                "experiment_statistics",
             ],
             "worker": {"status": "unknown", "reason": "no_readiness_probe"},
             "execution_environment": {"status": "unknown", "reason": "policy_is_not_readiness"},
