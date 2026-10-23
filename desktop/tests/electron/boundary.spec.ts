@@ -13,6 +13,7 @@ const COMMIT = 'a'.repeat(64);
 test('真实 Electron：本地资源、隔离桥接、四页查询及受控提交', async () => {
   const requests: IncomingMessage[] = [], bodies: Record<string, unknown>[] = [];
   let runState = 'running';
+  let approvalPending = false;
   const config = { schema_version: 1, kind: 'offline_research_agent', model: 'mock-research/v1', tools: ['corpus_search', 'source_read', 'artifact_write'], limits: { schema_version: 1, max_steps: 32, max_model_calls: 32, max_tool_calls: 16 } };
   const server = createServer((request, response) => {
     requests.push(request); const path = new URL(request.url!, 'http://localhost').pathname;
@@ -20,6 +21,7 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
     if (request.method === 'POST') {
       const chunks: Buffer[] = []; request.on('data', chunk => chunks.push(chunk));
       request.on('end', () => { bodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>);
+        if (path.endsWith('/decision')) approvalPending = false;
         response.end(JSON.stringify(path === '/agents' ? { config_id: REPO, version: 1 } : path === '/tasks' ? { task_id: REPO } : { run_id: RUN, job_id: REPO })); }); return;
     }
     if (path.endsWith('/content/code') || path.endsWith('/content/stdout')) {
@@ -41,6 +43,7 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
       : path.endsWith('/commits') ? { items: [{ commit_id: COMMIT, parents: [], created_at: '2026-10-22T00:00:00Z' }], has_more: false }
       : path === `/commits/${COMMIT}` ? { commit_id: COMMIT, manifest: {}, snapshot: { data: { status: 'completed', injected: '<img src=x onerror="window.injected=true">' } }, environment: {} }
       : path.endsWith('/runs') ? { items: [run], next_after_id: null }
+      : path.endsWith('/approvals') ? { items: approvalPending ? [{ id: REPO, version: 3, status: 'pending', expires_at: '2099-01-01T00:00:00Z', request: { tool: 'source_read' } }] : [] }
       : path.endsWith('/executions') ? { items: [{ id: REPO, run_id: RUN, provider: 'tool:code_exec/v1', logical_step_id: 'code_exec', attempt: 1 }], next_after_id: null }
       : path.endsWith(`/executions/${REPO}`) ? { run_id: RUN, physical_run_id: RUN, physical_call_id: REPO, execution_status: 'complete', cleanup_confirmed: true, wall_ms: 12, resources: ['code', 'stdout'], result: { schema_version: 1, exit_code: 0 } }
       : path === `/runs/${RUN}` ? run
@@ -136,6 +139,12 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
     await expect(page.getByRole('heading', { name: '时间线', exact: true })).toBeVisible();
     expect(requests.filter(request => request.method === 'POST')).toHaveLength(3);
     expect(bodies[2]).toMatchObject({ schema_version: 1, expected_head: COMMIT, expected_branch_version: 1, branch_name: 'main' });
+    approvalPending = true; runState = 'waiting_approval';
+    await expect(page.getByRole('button', { name: '批准此动作', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '批准此动作', exact: true }).dblclick();
+    await expect(page.getByRole('button', { name: '批准此动作', exact: true })).toHaveCount(0);
+    expect(requests.filter(request => request.method === 'POST' && request.url?.endsWith('/decision'))).toHaveLength(1);
+    expect(bodies.at(-1)).toMatchObject({ decision: 'approve', expected_version: 3 });
     const boundary = await page.evaluate(async () => window.agentgit.listRuns({ repositoryId: 'foreign' } as never));
     expect(boundary).toMatchObject({ ok: false, error: { code: 'validation' } });
     const forbidden = await desktop.evaluate(async ({ BrowserWindow }, preload) => {
@@ -156,5 +165,8 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
     }
     expect(await readFile(join(profile, 'preferences.json'), 'utf8')).not.toContain(TOKEN);
     expect(errors).toEqual([]);
-  } finally { await desktop.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+  } finally {
+    try { await desktop.close(); }
+    finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+  }
 });

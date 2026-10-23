@@ -1,5 +1,6 @@
 import { test, expect, _electron as electron, type Page } from '@playwright/test';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { createInterface } from 'node:readline';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -55,6 +56,133 @@ async function sourceBranch(page: Page, sourceRun: string) {
   await page.getByRole('button', { name: '从所选检查点分支 →' }).click();
   await expect(page.getByRole('heading', { name: '分支实验', exact: true })).toBeVisible();
 }
+
+test('生命周期与 DPI：关闭、重开、重复启动、崩溃与断连只查询；键盘和缩放矩阵', async () => {
+  const backend = await startBackend(), profile = await mkdtemp(join(tmpdir(), 'agentgit-lifecycle-'));
+  const evidence = await mkdtemp(join(tmpdir(), 'agentgit-lifecycle-qa-'));
+  const executable = process.env.AGENTGIT_DESKTOP_EXECUTABLE;
+  const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
+    AGENTGIT_API_TOKEN: TOKEN, AGENTGIT_API_URL: backend.url, AGENTGIT_DESKTOP_PROFILE_DIR: profile };
+  if (executable) {
+    for (const key of Object.keys(env)) if (['path', 'node_path', 'node_options'].includes(key.toLowerCase())) delete env[key];
+    env.PATH = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32');
+  }
+  const launch = (scale?: number) => electron.launch({ ...(executable ? { executablePath: resolve(executable), cwd: profile } : { cwd: resolve('.') }),
+    args: [...(executable ? [] : ['.']), ...(scale ? [`--force-device-scale-factor=${scale}`] : [])], env });
+  let desktop: Awaited<ReturnType<typeof launch>> | undefined;
+  const matrix: JsonObject[] = [];
+  try {
+    desktop = await launch(); let page = await desktop.firstWindow();
+    await page.getByLabel('新项目名称').fill('生命周期验证');
+    await page.getByRole('button', { name: '创建并选择', exact: true }).click();
+    await page.getByRole('button', { name: '收起', exact: true }).click();
+    await backend.command('worker_gate', { enabled: true });
+    await page.getByRole('button', { name: '新建运行', exact: true }).click();
+    const goal = '比较 Aster、Birch、Cedar 的能力与约束。' + '长中文目标用于核验换行、追溯与可访问操作。'.repeat(60);
+    await page.getByLabel('研究目标').fill(goal); await page.getByLabel('启用固定五工具').uncheck();
+    await page.getByRole('button', { name: '提交运行', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '时间线', exact: true })).toBeVisible();
+    const source = (await page.locator('.page-heading code').innerText()).trim();
+    const repo = String(data(await page.evaluate(() => window.agentgit.getConnection())).repositoryId);
+    expect((await readRun(page, source)).status).toBe('queued');
+    const submitted = await backend.command('traffic');
+    expect(objects(data(await page.evaluate(() => window.agentgit.listRuns({}))).items)).toHaveLength(1);
+    await desktop.close(); desktop = undefined;
+    await backend.command('worker_gate', { enabled: false });
+    await expect.poll(async () => {
+      const response = await fetch(`${backend.url}/runs/${source}`, { headers: { Authorization: `Bearer ${TOKEN}`, 'X-Repository-ID': repo } });
+      expect(response.status).toBe(200); return (await response.json() as JsonObject).status;
+    }, { timeout: 90000 }).toBe('completed');
+    desktop = await launch(); page = await desktop.firstWindow();
+    await expect(page.getByText(goal, { exact: true })).toBeVisible();
+    expect(data(await page.evaluate(() => window.agentgit.getConnection())).repositoryId).toBe(repo);
+    expect(await backend.command('traffic')).toEqual(submitted);
+    const binary = await desktop.evaluate(() => process.execPath);
+    await desktop.evaluate(({ app }) => { app.once('second-instance', () => { (globalThis as { secondInstanceSeen?: boolean }).secondInstanceSeen = true; }); });
+    const duplicate = spawn(binary, executable ? [] : ['.'], { cwd: executable ? profile : resolve('.'), env, windowsHide: true, stdio: 'ignore' });
+    const [code] = await once(duplicate, 'exit'); expect(code).toBe(0);
+    await expect.poll(() => desktop!.evaluate(() => (globalThis as { secondInstanceSeen?: boolean }).secondInstanceSeen)).toBe(true);
+    expect(desktop.windows()).toHaveLength(1);
+    await desktop.evaluate(({ dialog, BrowserWindow }) => {
+      dialog.showMessageBox = async (windowOrOptions: Electron.BaseWindow | Electron.MessageBoxOptions, options?: Electron.MessageBoxOptions) => {
+        (globalThis as { crashMessage?: string }).crashMessage = options?.message ?? ('message' in windowOrOptions ? windowOrOptions.message : '');
+        return { response: 0, checkboxChecked: false };
+      };
+      BrowserWindow.getAllWindows()[0]!.webContents.forcefullyCrashRenderer();
+    });
+    await expect.poll(() => desktop!.evaluate(() => (globalThis as { crashMessage?: string }).crashMessage)).toContain('已提交的后端任务继续运行');
+    // Playwright 的旧 Page 仍可标记为 crashed；直接核对产品重新加载后的实际 DOM。
+    await expect.poll(() => desktop!.evaluate(async ({ BrowserWindow }) => {
+      try { return await BrowserWindow.getAllWindows()[0]!.webContents.executeJavaScript('document.querySelector(".table-goal")?.textContent ?? ""'); }
+      catch { return ''; }
+    })).toBe(goal);
+    expect(await backend.command('traffic')).toEqual(submitted);
+    await desktop.close(); desktop = await launch(); page = await desktop.firstWindow();
+    await expect(page.getByText(goal, { exact: true })).toBeVisible();
+    await backend.command('api_gate', { enabled: true });
+    await expect(page.getByRole('button', { name: '连接设置', exact: true })).toBeVisible({ timeout: 15000 });
+    await backend.command('api_gate', { enabled: false });
+    await expect(page.getByRole('button', { name: 'API 已连接', exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(goal, { exact: true })).toBeVisible();
+    expect(await backend.command('traffic')).toEqual(submitted);
+    await desktop.close(); desktop = undefined;
+    for (const scale of [1, 1.5, 2]) {
+      desktop = await launch(scale); page = await desktop.firstWindow();
+      await expect(page).toHaveTitle('AgentGit'); expect(page.url()).toBe('agentgit://app/index.html');
+      const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+      expect(await page.evaluate(() => devicePixelRatio)).toBe(scale);
+      const keyboardOpen = async (target: ReturnType<Page['getByRole']>) => {
+        await expect(target).toBeVisible();
+        for (let step = 0; step < 120; step++) {
+          await page.keyboard.press('Tab');
+          if (await target.evaluate(element => element === document.activeElement)) {
+            expect(await target.evaluate(element => ({ width: getComputedStyle(element).outlineWidth, color: getComputedStyle(element).outlineColor })))
+              .toEqual({ width: '2px', color: 'rgb(20, 20, 19)' });
+            await page.keyboard.press('Enter'); return;
+          }
+        }
+        throw new Error('控件无法通过 Tab 到达');
+      };
+      await keyboardOpen(page.getByRole('button', { name: '查看时间线 →', exact: true }));
+      await expect(page.getByRole('heading', { name: '时间线', exact: true })).toBeVisible();
+      await keyboardOpen(page.getByRole('tab', { name: '逻辑状态', exact: true }));
+      await expect(page.getByText('所选版本状态', { exact: true })).toBeVisible();
+      await expect(page.locator('.inspector pre').first()).toContainText('长中文目标');
+      await keyboardOpen(page.getByRole('tab', { name: '产物文件', exact: true }));
+      await expect(page.getByText('report.md', { exact: true })).toBeVisible();
+      await expect(page.locator('.history-graph .react-flow__node').first()).toBeVisible();
+      for (const width of [768, 1024, 1440, 360]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.evaluate(() => window.scrollTo(0, 0));
+        const layout = await page.evaluate(() => ({ scale: devicePixelRatio, width: innerWidth, scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
+        expect(layout.scroll).toBeLessThanOrEqual(layout.client);
+        matrix.push({ ...layout, page: '时间线', requested_width: width });
+        await page.screenshot({ path: join(evidence, `timeline-${scale}-${width}.png`) });
+      }
+      await page.setViewportSize({ width: 1024, height: 900 });
+      for (const title of ['分支实验', '差异', '运行']) {
+        await keyboardOpen(page.getByRole('button', { name: title, exact: true }));
+        await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
+        for (const width of [768, 1024, 1440, 360]) {
+          await page.setViewportSize({ width, height: 900 });
+          await page.evaluate(() => window.scrollTo(0, 0));
+          const layout = await page.evaluate(() => ({ scale: devicePixelRatio, width: innerWidth, scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
+          expect(layout.scroll).toBeLessThanOrEqual(layout.client);
+          matrix.push({ ...layout, page: title, requested_width: width });
+          if (width === 768) await page.screenshot({ path: join(evidence, `${title}-${scale}-${width}.png`) });
+        }
+        await page.setViewportSize({ width: 1024, height: 900 });
+      }
+      await expect(page.getByText(goal, { exact: true })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      expect(errors).toEqual([]); expect(await backend.command('traffic')).toEqual(submitted);
+      await desktop.close(); desktop = undefined;
+    }
+    await writeFile('../.agentgit/evidence/S6-lifecycle-dpi-qa.json', JSON.stringify({ source, repository: repo, package: executable ?? null, evidence, matrix,
+      posts: submitted.posts, rendererCrash: '真实渲染进程崩溃；测试替换恢复提示返回值，验证重新加载查询',
+      apiInterruption: 'fixture 返回 503 后恢复；不是宿主服务停止', scale: '启动参数强制 Chromium device scale factor；未修改 Windows 显示设置' }, null, 2));
+  } finally { try { if (desktop) await desktop.close(); } finally { await backend.stop(); } }
+});
 
 test('真实设施：桌面五工具 → 历史/Fork → 零执行 Recorded → A/B Live → Diff/导出', async () => {
   const backend = await startBackend();
@@ -167,7 +295,9 @@ test('真实设施：桌面五工具 → 历史/Fork → 零执行 Recorded → 
     await expect(page.getByText(`"${lives[1]!.objectId}"`, { exact: true })).toBeVisible();
     await page.screenshot({ path: '../.agentgit/evidence/S6-real-diff.png', fullPage: true });
     const exportPath = join(profile, 'export-A.bin');
-    await desktop.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }); }, exportPath);
+    const nativeSave = process.env.AGENTGIT_NATIVE_SAVE === '1';
+    if (nativeSave) await writeFile('../.agentgit/evidence/S6-native-save-request.json', JSON.stringify({ exportPath, profile, package: executable ?? null }));
+    else await desktop.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }); }, exportPath);
     const exported = data(await page.evaluate(artifactId => window.agentgit.exportArtifact({ artifactId }), lives[0]!.artifactId));
     expect(exported).toMatchObject({ saved: true, cancelled: false }); expect(await readFile(exportPath, 'utf8')).toBe('A');
     const final = await backend.command('audit', { repository: repo, source_run: sourceRun });
@@ -177,7 +307,7 @@ test('真实设施：桌面五工具 → 历史/Fork → 零执行 Recorded → 
     expect(executions.every(item => item.cleanup_confirmed)).toBe(true);
     await writeFile('../.agentgit/evidence/S6-real-desktop-audit.json', JSON.stringify({ repository: repo, sourceRun,
       sourceHead: end, recorded: verified.replay, lives, final, package: executable ?? null, runtime, windowInfo,
-      export: { bytes: 'A', dialog: '测试替换原生对话框返回值，真实主进程写入' } }, null, 2));
+      export: { bytes: 'A', dialog: nativeSave ? '实际 Windows 原生保存对话框交互，主进程原样写入' : '测试替换原生对话框返回值，真实主进程写入' } }, null, 2));
   } catch (error) {
     if (currentPage && !currentPage.isClosed()) {
       await currentPage.screenshot({ path: '../.agentgit/evidence/S6-real-failure.png', fullPage: true });
@@ -185,8 +315,8 @@ test('真实设施：桌面五工具 → 历史/Fork → 零执行 Recorded → 
     }
     throw error;
   } finally {
-    await desktop.context().tracing.stop({ path: '../.agentgit/evidence/S6-real-electron-trace.zip' });
-    await desktop.close(); await backend.stop();
+    try { await desktop.context().tracing.stop({ path: '../.agentgit/evidence/S6-real-electron-trace.zip' }); }
+    finally { try { await desktop.close(); } finally { await backend.stop(); } }
   }
 });
 
@@ -307,7 +437,7 @@ test('真实模型接线：桌面显式选型与费用 → 独立 Worker → Rec
     await writeFile('../.agentgit/evidence/S6-model-desktop-failure-path.txt', evidence);
     throw error;
   } finally {
-    await desktop.context().tracing.stop({ path: join(evidence, 'trace.zip') });
-    await desktop.close(); await backend.stop();
+    try { await desktop.context().tracing.stop({ path: join(evidence, 'trace.zip') }); }
+    finally { try { await desktop.close(); } finally { await backend.stop(); } }
   }
 });

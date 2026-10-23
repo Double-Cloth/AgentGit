@@ -74,14 +74,14 @@ serve 只监听 127.0.0.1。Origin 默认允许 http://127.0.0.1:8000、http://l
 | 方法与路径 | 输入/查询 | 结果 |
 |---|---|---|
 | GET /health、/ready | 公开 | 存活/真实数据库就绪，失败 503 |
-| GET /capabilities | 认证，无项目头 | 固定版本、能力标识、默认三工具/固定五工具配置；Worker/执行环境为 unknown，不启动执行器 |
+| GET /capabilities | 认证，无项目头 | 固定版本、能力标识、默认三工具/固定五工具配置及模型描述；外部模型访问为 unknown，公开调用预留估计而不预填费用上限；Worker/执行环境为 unknown，不启动执行器 |
 | GET /repositories/{id}/runs | after_id、limit=30（1–100）；项目头与路径一致 | 按 created_at/id 倒序的 Run 及当前关联 Job、目标；next_after_id；游标必须属于本项目 |
 | GET /commits/{id}/artifacts | after_id、limit=30（1–100） | 所选历史版本的产物，按相对路径排序；游标限定同项目/Commit，下载仍按产物 ID |
 | GET /runs/{id}/executions | after_id、limit=30（1–100） | Run 内 Shell/Python 逻辑调用，按逻辑步骤/调用序号/attempt 排序；不自动转到来源 Run |
 | GET /runs/{id}/executions/{call_id} | 项目、Run 与调用归属 | 命令/代码参数、物理来源、结果、清理、耗时及可读资源类别；未发布结果为 null |
 | GET /runs/{id}/executions/{call_id}/content/{resource} | offset=0、limit=65536（1–1048576） | 固定类别证据的原字节分段，不接受任意 CAS 摘要或宿主路径 |
 | POST /repositories | name、expected_version=0 | 201，repository_id、version |
-| GET /repositories/{id} | 项目头与路径一致 | 项目、当前主分支 HEAD/version |
+| GET /repositories/{id} | 项目头与路径一致 | 项目、当前主分支 HEAD/version、当前 config_version（无配置为 0） |
 | POST /branches | source_run_id、from_commit、name、expected_version=0 | 201，从安全检查点建立分支，保存不可变来源；同名冲突 |
 | POST /replays | source_run_id、from_commit、branch_name；recorded 要求 until_commit；live 可提供 overrides/budget；expected_version=0 可省略 | 202，原子创建独立 Task/Job/Run/分支及来源，执行由 Worker 负责 |
 | GET /replays/{job_id} | 项目头 | Job 状态、重放范围/证明进度、逻辑状态/用量、独立实际计量 |
@@ -92,7 +92,7 @@ serve 只监听 127.0.0.1。Origin 默认允许 http://127.0.0.1:8000、http://l
 | POST /agents | config 可省略、expected_version | 201，不可变 config_id、递增 version |
 | POST /tasks | config_id、config_version、goal、expected_version=0 | 201，task_id |
 | POST /tasks/{id}/runs | config_version、expected_branch_version、expected_head；branch_name 默认 main；budget 可省略 | 202，耐久 job_id/run_id |
-| GET /runs/{id}、/jobs/{id} | 项目头 | 状态、checkpoint、控制、版本、预算与剩余量 |
+| GET /runs/{id}、/jobs/{id} | 项目头 | 状态、checkpoint、控制、版本、冻结 model/model_external、预算与剩余量；模型计量见 [计量说明](MODEL_ADAPTER.md) |
 | POST /runs/{id}/pause、resume、cancel | expected_version | 202 受理结果，之后查询实际状态 |
 | GET /runs/{id}/events | after_seq≥0、limit=1..1000 | items、next_after_seq，按耐久 seq 升序 |
 | GET /runs/{id}/artifacts | 项目头 | 当前 checkpoint 的产物 |

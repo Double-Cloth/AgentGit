@@ -17,6 +17,7 @@ import uvicorn
 from alembic import command
 from alembic.config import Config
 from pydantic import SecretStr
+from starlette.responses import JSONResponse
 
 from agentgit.adapters.execution.engine import DockerEngine, EngineError
 from agentgit.adapters.mock import MockResearchModel
@@ -145,6 +146,11 @@ def worker_main(schema, root):
         worker = FixtureWorker(ManagementService(research).jobs, name="desktop-real-worker")
         (root / "worker-ready").write_text("ready")
         while not (root / "worker-stop").exists():
+            if (root / "worker-gate").exists():
+                (root / "worker-gated").write_text("gated")
+                time.sleep(0.05)
+                continue
+            (root / "worker-gated").unlink(missing_ok=True)
             if worker.run_once() is None:
                 time.sleep(0.1)
     finally:
@@ -271,6 +277,18 @@ def main():
         )
         api_settings = settings.model_copy(update={"api_token": SecretStr(token)})
         app = create_app(api_settings, management=manager)
+        traffic = []
+
+        @app.middleware("http")
+        async def fixture_availability(request, call_next):
+            traffic.append(f"{request.method} {request.url.path}")
+            if (root / "api-gate").exists():
+                return JSONResponse(
+                    {"error": {"code": "fixture_unavailable", "message": "测试 API 暂不可用"}},
+                    status_code=503,
+                )
+            return await call_next(request)
+
         opened = socket.socket()
         opened.bind(("127.0.0.1", 0))
         server = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False))
@@ -311,6 +329,21 @@ def main():
                 else:
                     (root / "recorded-guard").unlink(missing_ok=True)
                 result = {"guard": request["enabled"]}
+            elif name == "traffic":
+                result = {"posts": [item for item in traffic if item.startswith("POST ")]}
+            elif name in {"worker_gate", "api_gate"}:
+                assert isinstance(request["enabled"], bool)
+                marker = root / name.replace("_", "-")
+                if request["enabled"]:
+                    marker.write_text("gated")
+                    if name == "worker_gate":
+                        deadline = time.monotonic() + 5
+                        while not (root / "worker-gated").exists():
+                            assert worker.poll() is None and time.monotonic() < deadline
+                            time.sleep(0.05)
+                else:
+                    marker.unlink(missing_ok=True)
+                result = {"gated": request["enabled"]}
             elif name == "provider_case":
                 assert request["mode"] in {"normal", "missing_usage", "unknown"}
                 (root / "provider-case").write_text(request["mode"])

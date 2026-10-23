@@ -1,6 +1,6 @@
 # S6 桌面实施清单
 
-状态：只读 API、四页、真实五工具联调及开发候选包构建已完成，模型配置/预算/Worker 与桌面选择和计量已接通，继续推进新候选包与剩余验收。分支 `codex/s6-desktop` 从 S5 本机验收合并 `235bbdf` 建立。证据见 [只读 API](acceptance/S6-read-views.md)、[桌面初版](acceptance/S6-desktop-progress.md)、[真实联调](acceptance/S6-desktop-real.md) 、[候选包](acceptance/S6-desktop-packages.md)及[模型桌面接线](acceptance/S6-model-desktop.md)。本清单细化既有实施方案，不修改 S6-T01–T12 的退出条件；S11/S12 仍为必选主链。
+状态：只读 API、四页、真实五工具联调及开发候选包构建已完成，模型配置/预算/Worker 与桌面选择和计量已接通，新候选包复测、四页 48 组缩放/键盘及生命周期已通过；继续推进原生保存及独立用户安装验收。分支 `codex/s6-desktop` 从 S5 本机验收合并 `235bbdf` 建立。证据见 [只读 API](acceptance/S6-read-views.md)、[桌面初版](acceptance/S6-desktop-progress.md)、[真实联调](acceptance/S6-desktop-real.md) 、[候选包](acceptance/S6-desktop-packages.md)、[模型桌面接线](acceptance/S6-model-desktop.md)与[新版候选/生命周期](acceptance/S6-model-packages.md)。本清单细化既有实施方案，不修改 S6-T01–T12 的退出条件；S11/S12 仍为必选主链。
 
 ## 已确认的界面范围
 
@@ -16,11 +16,11 @@
 
 主内容遵守既有最大宽度、间距和字体；图/代码区域内部滚动。小窗口让次级详情收拢，不裁切主要操作；360px 补充视口不代表移动端交付。状态始终有文字，不依赖彩色圆点。初次视觉概念需包含四页及主要详情状态，不能只画一个首页。
 
-## 现有 API 与待补的只读入口
+## 现有 API 与只读入口
 
 当前服务已有创建项目/配置/任务、提交 Run、读取 Job/Run、事件、产物、审批、Commit/Branch、Replay 和 Diff，见 [API.md](API.md)。先复用服务层和认证/项目约束，不引入第二套后端。
 
-本次检查发现桌面还缺以下便捷的只读数据入口，需在 S6 中先定义有界契约、实现并测试，再接页面：
+以下便捷只读入口已在 S6 中定义有界契约、实现、测试并接入页面；保留其范围约束：
 
 1. 项目内 Run/Job 列表：现有 HTTP 主要按 ID 读取；需要项目限定、稳定游标和有界分页，不能让桌面直读数据库。项目初始选择也须由受控创建/读取流程提供，不能假设存在全局枚举 API。
 2. 执行详情：现有状态包含调用引用，HTTP 未直接发布完整执行证据。提供按项目、Run/调用归属核验的有界查询，明确物理来源、日志原字节/文本、截断、代码/命令及输出清单；不开放任意 CAS 摘要读取。
