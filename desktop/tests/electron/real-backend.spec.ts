@@ -16,6 +16,82 @@ async function sourceBranch(page: Page, sourceRun: string) {
   await expect(page.getByRole('heading', { name: '分支实验', exact: true })).toBeVisible();
 }
 
+test('执行环境异常：Worker 实际停止与恢复、独立不可达 Docker、镜像查询真实 404', async () => {
+  const backend = await startBackend(), evidence = await mkdtemp(join(tmpdir(), 'agentgit-environment-qa-'));
+  const executable = process.env.AGENTGIT_DESKTOP_EXECUTABLE;
+  const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
+    AGENTGIT_API_TOKEN: TOKEN, AGENTGIT_API_URL: backend.url, AGENTGIT_DESKTOP_PROFILE_DIR: join(evidence, 'profile') };
+  if (executable) {
+    for (const key of Object.keys(env)) if (['path', 'node_path', 'node_options'].includes(key.toLowerCase())) delete env[key];
+    env.PATH = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32');
+  }
+  const desktop = await electron.launch({ ...(executable ? { executablePath: resolve(executable), args: [], cwd: evidence } : { args: ['.'], cwd: resolve('.') }), env })
+    .catch(async error => { await backend.stop(); throw error; });
+  const cases: JsonObject[] = [];
+  try {
+    const stopped = await backend.command('worker_stop'); expect(stopped.alive).toBe(false);
+    const page = await desktop.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', entry => { if (entry.type() === 'error') errors.push(entry.text()); });
+    await expect(page).toHaveTitle('AgentGit'); expect(page.url()).toBe('agentgit://app/index.html');
+    if (executable) expect(await desktop.evaluate(({ app }) => app.isPackaged)).toBe(true);
+    await expect(page.locator('footer')).toContainText(`AgentGit ${await desktop.evaluate(({ app }) => app.getVersion())}`);
+    const submit = async (name: string, execution: boolean) => {
+      if (!(await page.getByRole('heading', { name: '连接与项目', exact: true }).isVisible())) await page.getByRole('button', { name: '切换项目', exact: true }).click();
+      await page.getByLabel('新项目名称').fill(name); await page.getByRole('button', { name: '创建并选择', exact: true }).click();
+      await page.getByRole('button', { name: '收起', exact: true }).click();
+      await page.getByRole('button', { name: '运行', exact: true }).click();
+      await page.getByRole('button', { name: '新建运行', exact: true }).click();
+      if (!execution) await page.getByLabel('启用固定五工具').uncheck();
+      await page.getByRole('button', { name: '提交运行', exact: true }).click();
+      await expect(page.getByRole('heading', { name: '时间线', exact: true })).toBeVisible();
+      return (await page.locator('.page-heading code').innerText()).trim();
+    };
+    const queued = await submit('Worker 停止验证', false), before = await readRun(page, queued);
+    const posts = await backend.command('traffic');
+    await expect(page.getByText('任务尚在排队，未取得执行进展。', { exact: false })).toBeVisible();
+    await page.waitForTimeout(3500);
+    expect(await readRun(page, queued)).toMatchObject({ status: 'queued', state_version: before.state_version });
+    expect(await backend.command('environment_audit')).toMatchObject({ worker_alive: false });
+    await page.screenshot({ path: join(evidence, 'worker-stopped.png'), fullPage: true });
+    await backend.command('worker_start', { mode: 'normal' }); await completed(page, queued);
+    await expect(page.locator('.page-heading .status')).toHaveText('已完成');
+    await expect(page.getByText('任务尚在排队，未取得执行进展。', { exact: false })).toHaveCount(0);
+    expect(await backend.command('traffic')).toEqual(posts);
+    cases.push({ case: 'worker_stopped', run: queued, stopped_pid: stopped.pid ?? null, resumed_without_posts: true });
+    for (const mode of ['unavailable', 'missing_image']) {
+      await backend.command('worker_stop'); await backend.command('worker_start', { mode });
+      const run = await submit(`执行环境 ${mode}`, true);
+      let detail: JsonObject = {};
+      await expect.poll(async () => {
+        const calls = objects(data(await page.evaluate(runId => window.agentgit.listExecutions({ runId, limit: 100 }), run)).items);
+        if (!calls.length) return null;
+        detail = data(await page.evaluate(({ runId, callId }) => window.agentgit.getExecution({ runId, callId }), { runId: run, callId: String(calls[0]!.id) }));
+        return (detail.result as JsonObject | null)?.error_code;
+      }, { timeout: 90000 }).toBe('sandbox_unavailable');
+      expect(detail.result).toMatchObject({ exit_code: null, output_manifest_ref: null, cleanup_confirmed: true, integrity_complete: false });
+      await expect(page.getByText('执行环境不可用（sandbox_unavailable）。', { exact: false })).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('未知 / 未发布', { exact: true })).toBeVisible();
+      await expect(page.getByText('（空内容）', { exact: true })).toBeVisible();
+      await page.screenshot({ path: join(evidence, `${mode}.png`), fullPage: true });
+      for (const width of [768, 360]) {
+        await page.setViewportSize({ width, height: 900 });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+        await page.screenshot({ path: join(evidence, `${mode}-${width}.png`), fullPage: true });
+      }
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await expect.poll(async () => (await readRun(page, run)).status, { timeout: 30000 }).not.toBe('running');
+      const state = await readRun(page, run); expect(state.status).not.toBe('completed');
+      cases.push({ case: mode, run, status: state.status ?? null, result: detail.result!, audit: await backend.command('environment_audit') });
+    }
+    const image = cases.at(-1)!.audit as JsonObject;
+    expect(objects(image.missing_image_responses).some(item => item.status === 404)).toBe(true);
+    expect(errors).toEqual([]);
+    await writeFile('../.agentgit/evidence/S6-environment-qa.json', JSON.stringify({ evidence, executable: executable ?? null, cases, errors,
+      scope: '自有 Worker 实际退出；私有 Docker context 的实际不可达管道；镜像查询映射到不存在摘要后接收真实 Docker 404，未移除共享固定镜像' }, null, 2));
+  } finally { try { await desktop.close(); } finally { await backend.stop(); } }
+});
+
 test('生命周期与 DPI：关闭、重开、重复启动、崩溃与断连只查询；键盘和缩放矩阵', async () => {
   const backend = await startBackend(), profile = await mkdtemp(join(tmpdir(), 'agentgit-lifecycle-'));
   const evidence = await mkdtemp(join(tmpdir(), 'agentgit-lifecycle-qa-'));

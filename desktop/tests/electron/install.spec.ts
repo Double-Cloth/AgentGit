@@ -13,9 +13,11 @@ async function exists(path: string) {
 }
 function inside(root: string, path: string) { const rel = relative(root, path); return !isAbsolute(rel) && rel !== '..' && !rel.startsWith('..\\'); }
 
-test('当前用户安装：0.1.0 → 0.1.1 覆盖升级 → 卸载保留业务数据 → 重装查询与新任务', async () => {
+test('当前用户安装：0.1.0 → 当前候选覆盖升级 → 卸载保留业务数据 → 重装查询与新任务', async () => {
   expect(process.platform).toBe('win32');
   expect(process.env.AGENTGIT_INSTALL_TEST, '仅在本次任务拥有的安装环境显式开启').toBe('1');
+  const version = (JSON.parse(await readFile(resolve('package.json'), 'utf8')) as { version: string }).version;
+  expect(version).toMatch(/^0\.1\.[1-9]\d*$/);
   const root = resolve(process.env.LOCALAPPDATA!, 'AgentGit');
   const physicalRoot = resolve(process.env.AGENTGIT_INSTALL_PHYSICAL_ROOT ?? root);
   expect(basename(physicalRoot)).toBe('AgentGit');
@@ -72,13 +74,13 @@ test('当前用户安装：0.1.0 → 0.1.1 覆盖升级 → 卸载保留业务�
     await ownRoot();
     await cli(setup, ['--silent']);
     const installLog = await readFile(join(process.env.LOCALAPPDATA!, 'SquirrelTemp/Squirrel-Install.log'), 'utf8');
-    expect(installLog).toContain(root); expect(installLog).toContain('app-0.1.1');
+    expect(installLog).toContain(root); expect(installLog).toContain(`app-${version}`);
     await writeFile(join(evidence, 'upgrade.log'), installLog);
     await copyFile(join(root, 'Squirrel-Shortcut.log'), join(evidence, 'shortcut.log'));
-    expect((await cli(reg, registry)).output).toContain('0.1.1');
-    desktop = await launch('0.1.1'); page = await desktop.firstWindow();
-    expect(await desktop.evaluate(({ app }) => app.getVersion())).toBe('0.1.1');
-    await expect(page.locator('footer')).toContainText('AgentGit 0.1.1');
+    expect((await cli(reg, registry)).output).toContain(version);
+    desktop = await launch(version); page = await desktop.firstWindow();
+    expect(await desktop.evaluate(({ app }) => app.getVersion())).toBe(version);
+    await expect(page.locator('footer')).toContainText(`AgentGit ${version}`);
     await expect(page.getByRole('button', { name: '查看时间线 →', exact: true })).toBeVisible();
     expect(data(await page.evaluate(() => window.agentgit.getConnection())).repositoryId).toBe(repo);
     expect(await backend.command('storage_audit', args)).toEqual(baseline);
@@ -90,7 +92,7 @@ test('当前用户安装：0.1.0 → 0.1.1 覆盖升级 → 卸载保留业务�
       const updater = await realpath(join(root, 'Update.exe'));
       expect(inside(physicalRoot, updater)).toBe(true);
       await cli(updater, ['--uninstall', '--silent']);
-      await expect.poll(() => exists(join(root, 'app-0.1.1/AgentGit.exe'))).toBe(false);
+      await expect.poll(() => exists(join(root, `app-${version}/AgentGit.exe`))).toBe(false);
       expect((await cli(reg, registry, [1])).code).toBe(1);
       expect(await exists(join(process.env.APPDATA!, 'Microsoft/Windows/Start Menu/Programs/AgentGit/AgentGit.lnk'))).toBe(false);
       const retained = JSON.parse(await readFile(join(profile, 'preferences.json'), 'utf8'));
@@ -102,7 +104,7 @@ test('当前用户安装：0.1.0 → 0.1.1 覆盖升级 → 卸载保留业务�
     expect((await fetch(`${backend.url}/health`)).status).toBe(200);
     expect(await backend.command('traffic')).toEqual(posts);
     await cli(setup, ['--silent']);
-    desktop = await launch('0.1.1'); page = await desktop.firstWindow();
+    desktop = await launch(version); page = await desktop.firstWindow();
     await expect(page.getByRole('button', { name: '查看时间线 →', exact: true })).toBeVisible();
     expect(objects(data(await page.evaluate(() => window.agentgit.listRuns({}))).items)).toHaveLength(1);
     expect(await backend.command('storage_audit', args)).toEqual(baseline);

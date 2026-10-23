@@ -52,6 +52,23 @@ def worker_main(schema, root):
     history = HistoryService(engine, ObjectStore(root / "objects"))
     research = ResearchService(history, root / "data")
     original = DockerEngine.local
+    original_request = DockerEngine.request
+
+    def request(self, method, path, payload=None, **kwargs):
+        # 仅本测试 Worker 将镜像查询映射到真实缺失摘要，不移除共享固定镜像。
+        if (root / "missing-image").exists():
+            assert method == "GET", "镜像缺失场景不得创建或修改容器"
+            if path.startswith("/images/"):
+                path = "/images/sha256:" + "0" * 64 + "/json"
+            try:
+                return original_request(self, method, path, payload, **kwargs)
+            except EngineError as error:
+                with (root / "missing-image-responses").open("a") as output:
+                    output.write(json.dumps({"path": path, "status": error.status}) + "\n")
+                raise
+        return original_request(self, method, path, payload, **kwargs)
+
+    DockerEngine.request = request
 
     def local(cls):
         if (root / "recorded-guard").exists():
@@ -267,6 +284,53 @@ def main():
     worker = None
     server = None
     thread = None
+
+    def start_worker(mode="normal"):
+        nonlocal worker
+        assert mode in {"normal", "unavailable", "missing_image"}
+        for name in ("worker-stop", "worker-ready", "missing-image"):
+            (root / name).unlink(missing_ok=True)
+        env = os.environ.copy()
+        if mode == "unavailable":
+            docker_config = root / "docker-config"
+            docker_config.mkdir(exist_ok=True)
+            if not (docker_config / "config.json").exists():
+                subprocess.run(
+                    [
+                        "docker",
+                        "--config",
+                        str(docker_config),
+                        "context",
+                        "create",
+                        "agentgit-test-unavailable",
+                        "--docker",
+                        "host=npipe:////./pipe/agentgit-test-" + schema,
+                    ],
+                    check=True,
+                    timeout=15,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                (docker_config / "config.json").write_text(
+                    json.dumps({"currentContext": "agentgit-test-unavailable"})
+                )
+            env["DOCKER_CONFIG"] = str(docker_config)
+            env["DOCKER_CONTEXT"] = "agentgit-test-unavailable"
+        if mode == "missing_image":
+            (root / "missing-image").write_text("injected")
+        worker = subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), "--worker", schema, str(root)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            env=env,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+        deadline = time.monotonic() + 15
+        while not (root / "worker-ready").exists():
+            assert worker.poll() is None and time.monotonic() < deadline, "联调 Worker 启动失败"
+            time.sleep(0.05)
+        return worker
+
     try:
         with engine.begin() as connection:
             config.attributes["connection"] = connection
@@ -298,16 +362,7 @@ def main():
         while not server.started:
             assert thread.is_alive() and time.monotonic() < deadline
             time.sleep(0.05)
-        worker = subprocess.Popen(
-            [sys.executable, str(Path(__file__).resolve()), "--worker", schema, str(root)],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-        )
-        deadline = time.monotonic() + 15
-        while not (root / "worker-ready").exists():
-            assert worker.poll() is None and time.monotonic() < deadline, "联调 Worker 启动失败"
-            time.sleep(0.05)
+        worker = start_worker()
         print(
             json.dumps(
                 {
@@ -358,6 +413,25 @@ def main():
                 }
             elif name == "traffic":
                 result = {"posts": [item for item in traffic if item.startswith("POST ")]}
+            elif name == "worker_stop":
+                (root / "worker-stop").write_text("stop")
+                worker.wait(timeout=100)
+                assert worker.returncode == 0
+                result = {"pid": worker.pid, "alive": worker.poll() is None}
+            elif name == "worker_start":
+                assert worker.poll() is not None, "必须先停止本测试 Worker"
+                worker = start_worker(request["mode"])
+                result = {"pid": worker.pid, "alive": worker.poll() is None}
+            elif name == "environment_audit":
+                failures = root / "missing-image-responses"
+                result = {
+                    "worker_alive": worker.poll() is None,
+                    "missing_image_responses": [
+                        json.loads(line) for line in failures.read_text().splitlines()
+                    ]
+                    if failures.exists()
+                    else [],
+                }
             elif name in {"worker_gate", "api_gate"}:
                 assert isinstance(request["enabled"], bool)
                 marker = root / name.replace("_", "-")
