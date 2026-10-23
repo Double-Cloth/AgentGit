@@ -38,7 +38,7 @@ web
 - 主进程 API 客户端只有固定回环端点、路由、方法和有界请求/响应；IPC 有业务白名单、sender/frame/参数/项目验证。渲染进程启用隔离、sandbox、CSP 和导航限制。
 - 外部资料、Markdown、HTML、代码和日志均是不可信数据。产物仅按 ID 下载，由主进程的原生保存对话框确定导出目标，渲染进程不能传入任意宿主路径。
 - 无外部模型密钥、无外网时离线 Demo 和确定性测试必须可用。S6 已接入固定 OpenAI Responses 模型，Runs/Live 显式选择并输入 USD 上限，Timeline 区分价格表估计、预留、历史逻辑和本次实际用量。密钥只在独立 Worker；真实供应商冒烟需明确开启、单列实际结果，不成为离线隐含条件。
-- S7 后端已提供冻结验收器、A/B Live/Hybrid 实验、持久 Job/Run 和 API/CLI，以及[类型化干预与只读上下文](doc/acceptance/S7-interventions.md)。Hybrid 已接入 Worker、不可变观测账本、实际/逻辑计量、恢复与 Recorded 复验；synthetic 与模拟结果显式标为 test_only。[精确分组统计与固定桌面桥接](doc/acceptance/S7-statistics.md)和[桌面受控实验视图](doc/acceptance/S7-desktop.md)已实现。来源/验收器冻结、A/B 条件、实验发现、统计/trial、控制与重开查询通过本机接线；真实 Live 10 trial 得到 9 通过及 1 取消，Hybrid 各 5 项全部通过并区分录制/合成来源。新视图尚未进入已审计 Windows 包，S7 未整体验收。
+- S7 后端已提供冻结验收器、A/B Live/Hybrid 实验、持久 Job/Run 和 API/CLI，以及[类型化干预与只读上下文](doc/acceptance/S7-interventions.md)。Hybrid 已接入 Worker、不可变观测账本、实际/逻辑计量、恢复与 Recorded 复验；synthetic 与模拟结果显式标为 test_only。[精确统计](doc/acceptance/S7-statistics.md)和[桌面受控实验视图](doc/acceptance/S7-desktop.md)已实现并进入 [Windows 0.1.4](doc/acceptance/S7-package-014.md)。新 ZIP 中的真实 Live 10 trial 得到 9 通过及 1 取消，Hybrid 各 5 项全部通过，录制/合成来源、原键确认及重开查询均实测。[S7 本机退出核对](doc/acceptance/S7-gates.md)齐备，S6/D1 前置待补，S7 未整体验收。
 
 ## Brand Commitments
 
@@ -48,7 +48,7 @@ web
 
 2026-10-23 用户明确授权暂缓当前环境/原生验收、先继续 S7 开发与测试；S6/D1 保持未完整验收，最终交付前补验。具体范围见[实施方案第 1.2 节](doc/AgentGit_实施方案_v1.0.0.md)。
 
-当前候选为[0.1.3](doc/acceptance/S6-keyboard-and-gates.md)，关系图键盘选择/焦点已修复，打包边界、四条解压包真实流程和 MSIX 安装生命周期通过，[D1 操作指南](doc/D1-desktop-demo.md)齐备。以下旧版本及包内容修正记录保留历史事实，当前摘要以 0.1.3 为准；原生保存和独立 Windows 验收仍未完成。
+当前候选为 [0.1.4](doc/acceptance/S7-package-014.md)，29 个运行构建文件、字体与授权审计、26 单元和 8 条打包 Electron 流程通过，包含新受控实验视图。本轮未安装/升级/卸载；0.1.3 的 MSIX 安装生命周期只保留为历史证据，[D1 操作指南](doc/D1-desktop-demo.md)及[独立 Windows 清单](doc/S6-windows-acceptance.md)已更新到新候选。以下旧版本及包内容修正保留历史事实；原生保存和独立 Windows 验收仍未完成。
 
 真实 PostgreSQL、固定 Linux 容器、完整五工具来源、CLI 与 API、逐检查点 Replay 证明、A/B Live 文件与预算隔离均有本机记录。原始运行证据在忽略的 `.agentgit/evidence/`；可提交的验收说明位于 `doc/acceptance/`。真实 Electron 与从 ZIP 解压的程序已通过独立测试库/Worker/容器五工具→Fork→Recorded/Live→Diff 联调，应用进程没有构建用 Node/npm 的 PATH。Windows x64 0.1.1 开发候选安装程序和 ZIP 已构建、均未签名；Codex MSIX 上下文中实际覆盖升级/卸载/重装及业务数据保留已验证。导出测试仍替换了原生对话框返回值，尚无独立 Windows 用户安装/升级/卸载证据，各项不能互相替代。
 

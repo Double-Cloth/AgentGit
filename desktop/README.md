@@ -1,8 +1,8 @@
 # AgentGit 桌面开发
 
-当前为 S6 实施版，候选版本 0.1.3。四页、受限 IPC、模型选择/计量、真实五工具/Fork/Recorded/Live/Diff 和当前用户安装生命周期已验证；关系图键盘选择已修复。原生保存和独立 Windows 环境仍待验收，阶段退出条件不变。操作步骤见 [D1 桌面离线指南](../doc/D1-desktop-demo.md)，逐项证据见[当前验收记录](../doc/acceptance/S6-keyboard-and-gates.md)。
+当前候选版本为 [Windows 0.1.4](../doc/acceptance/S7-package-014.md)，包含既有四页和 S7 受控实验；包内容审计、26 单元及 8 条打包 Electron 流程通过。原生保存和独立 Windows 环境仍待验收，S6/D1 阶段退出条件不变。既有安装生命周期证据对应历史候选，不能替代新包独立安装验收。操作步骤见 [D1 桌面离线指南](../doc/D1-desktop-demo.md)，剩余门槛见 [S6 清单](../doc/S6-windows-acceptance.md)。
 
-当前源码已准备 S7 验收器/实验/干预的七个固定 IPC，并通过 21 项单元与 2 项真实 Electron 测试；实际受控实验表单、统计和 trial 视图仍待接入。详情见 [S7 统计增量](../doc/acceptance/S7-statistics.md)和[桌面接线方案](../doc/S7-desktop-experiments-plan.md)。本轮未重建 0.1.3 分发候选，不把固定桥接当作新视图交付。
+S7 已接通验收器、实验/干预及实验列表共八个固定 IPC，以及来源冻结、A/B 表单、manifest、精确统计、trial、控制和重开查询。新 ZIP 的真实独立 API/Worker 流程验证 Live 9 通过/1 取消、Hybrid 各 5 全通过，recorded/synthetic 来源可区分。[S7 操作步骤](../doc/S7-desktop-demo.md)、[桌面记录](../doc/acceptance/S7-desktop.md)和[退出核对](../doc/acceptance/S7-gates.md)分别说明使用与证据范围。0.1.3 与 0.1.4 的分发文件均按摘要独立归档，不静默替换历史候选。
 
 ## 固定构建环境
 
@@ -105,5 +105,7 @@ npm.cmd test
 npm.cmd run build
 npx.cmd playwright test --config playwright.experiments.config.ts
 ```
+
+复验 ZIP 时，把 `AGENTGIT_DESKTOP_EXECUTABLE` 设为新解压目录下 AgentGit.exe 的绝对路径，并设独立的 `AGENTGIT_ELECTRON_EVIDENCE_PREFIX`（仅 1–80 个字母、数字、下划线或连字符）。打包模式验证真实程序路径、版本/页脚和仅 System32 的应用 PATH；省略 executable 则测试源码构建。实验配置和旧 real 流程均支持证据前缀，避免覆盖已归档的默认文件。每次测试使用独立临时用户数据目录，不用它冒充独立 Windows 账户。
 
 该专项包含明确标注的 HTTP fixture 边界与独立 PostgreSQL/API/Worker、固定容器真实流程，不替代独立 Windows 安装、原生保存和 DPI 验收。真实联调须先具备仓库测试配置、PostgreSQL 和已冻结镜像，使用自己的测试 Schema 和 Worker；不会操作外部服务或调用付费模型。
