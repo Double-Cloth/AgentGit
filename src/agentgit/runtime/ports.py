@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from agentgit.core.errors import AgentGitError
-from agentgit.core.models import EffectClass
+from agentgit.core.models import EffectClass, ModelCallBudget
 from agentgit.core.research import AgentState, CallTrace
 
 
@@ -43,6 +43,17 @@ class ModelAdapter(Protocol):
     def invoke(self, payload: bytes) -> bytes: ...
 
 
+class BoundedModelAdapter(ModelAdapter, Protocol):
+    def invoke_bounded(
+        self,
+        payload: bytes,
+        *,
+        timeout_ms: int,
+        max_reply_bytes: int,
+        cost_limit_micro_usd: int,
+    ) -> bytes: ...
+
+
 class CallGateway(Protocol):
     def recorded(
         self,
@@ -54,6 +65,7 @@ class CallGateway(Protocol):
         effect: EffectClass,
         request: bytes,
         max_bytes: int,
+        model_budget: ModelCallBudget | None = None,
     ) -> CallOutcome | None: ...
 
     def call(
@@ -67,6 +79,7 @@ class CallGateway(Protocol):
         request: bytes,
         invoke: Callable[[], bytes],
         max_bytes: int,
+        model_budget: ModelCallBudget | None = None,
     ) -> CallOutcome: ...
 
 

@@ -1,6 +1,6 @@
 # S6 单供应商模型适配实施清单
 
-状态：协议、计量与固定 HTTPS 基础层已实现，93 项新增离线/TLS 测试及全部 311 项单元回归通过，见[基础增量记录](acceptance/S6-model-foundation.md)。运行时、Worker、预算与 Replay 接线尚未完成，不是已通过真实供应商冒烟。继续使用 `codex/s6-desktop`，不改变 S6-T01–T12 或后续 S7–S12 的退出条件。
+状态：协议、计量与固定 HTTPS 基础层已实现；配置、Worker、运行时预算、恢复、Recorded 与 Live 接线已通过新增 14 项 PostgreSQL 验证和全部 322 项单元回归，分批回归去重 701 项通过，见[基础记录](acceptance/S6-model-foundation.md)及[运行时记录](acceptance/S6-model-runtime.md)。桌面选择/呈现和真实供应商冒烟尚未完成。继续使用 `codex/s6-desktop`，不改变 S6-T01–T12 或后续 S7–S12 的退出条件。
 
 ## 已选范围与资料
 

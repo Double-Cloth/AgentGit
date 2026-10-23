@@ -23,9 +23,10 @@ from agentgit.core.management import (
     NewTask,
     SubmitRun,
 )
-from agentgit.core.models import parse_contract
+from agentgit.core.models import CallIntent, parse_contract
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage
 from agentgit.core.versions import LiveReplay, NewBranch, RecordedReplay
+from agentgit.runtime.model_budget import call_budget
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.execution_views import ExecutionResource, ExecutionViewService
 from agentgit.services.history import TABLES, HistoryService
@@ -415,9 +416,11 @@ class ManagementService:
                     snapshots.c.run_id.in_(allowed),
                 )
             ).first()
+        state: AgentState | None = None
         if snapshot is not None and snapshot.run_id in allowed:
             restored = self.history.restore(repository_id, row["checkpoint_commit_id"])
-            usage = parse_contract(encode(restored.data), AgentState).usage
+            state = parse_contract(encode(restored.data), AgentState)
+            usage = state.usage
         limits = self.jobs.payload(job).limits if job is not None else None
         limits = limits or config.limits
         baseline = BudgetUsage()
@@ -459,11 +462,74 @@ class ManagementService:
                 "wall_ms": wall,
             },
         }
+        if limits.max_cost_micro_usd is not None:
+            held = usage.model_meter.reserved_cost_micro_usd if usage.model_meter else 0
+            if config.openai is not None:
+                pending = self._pending_model_budget(repository_id, allowed, state, config)
+                held = max(held, pending["cost_micro_usd"])
+                result["budget"]["pending_model_reservation"] = pending
+                result["budget"]["remaining"]["tokens"] = max(
+                    0,
+                    limits.max_tokens
+                    - spent["tokens"]
+                    - max(usage.reserved_tokens, pending["tokens"]),
+                )
+            result["budget"]["currency"] = "USD"
+            result["budget"]["cost_basis"] = "pricebook_estimate"
+            result["budget"]["remaining"]["cost_micro_usd"] = max(
+                0, limits.max_cost_micro_usd - spent["cost_micro_units"] - held
+            )
         if job is not None:
             report = self.replays.report(repository_id, job["id"])
             if report is not None:
                 result["replay"] = report
         return result
+
+    def _pending_model_budget(
+        self,
+        repository: UUID,
+        family: set[UUID],
+        state: AgentState | None,
+        config: AgentConfig,
+    ) -> dict[str, int]:
+        observed = (
+            tuple(
+                trace.logical_step_id
+                for trace in state.messages
+                if trace.provider.startswith("llm:")
+            )
+            if state is not None
+            else ()
+        )
+        calls = TABLES["external_calls"]
+        with self.history.engine.connect() as connection:
+            rows = list(
+                connection.execute(
+                    sa.select(calls.c.intent_ref)
+                    .where(
+                        calls.c.repository_id == repository,
+                        calls.c.run_id.in_(family),
+                        calls.c.provider.startswith("llm:"),
+                        calls.c.logical_step_id.not_in(observed),
+                    )
+                    .limit(1001)
+                ).scalars()
+            )
+        if len(rows) > 1000:
+            raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "待观察模型预算查询超过上限")
+        expected = call_budget(config)
+        distinct: dict[str, CallIntent] = {}
+        for ref in rows:
+            intent = parse_contract(self.history.objects.get(ref, ObjectType.CALL), CallIntent)
+            if intent.model_budget != expected:
+                raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "待观察模型意图的费用预留不符")
+            distinct[intent.occurrence.logical_step_id] = intent
+        assert expected is not None
+        return {
+            "call_count": len(distinct),
+            "tokens": len(distinct) * expected.tokens,
+            "cost_micro_usd": len(distinct) * expected.cost_micro_usd,
+        }
 
     def job(self, repository_id: UUID, job_id: UUID) -> dict[str, Any]:
         row = self.jobs.get(repository_id, job_id)

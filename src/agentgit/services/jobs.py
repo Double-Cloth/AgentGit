@@ -11,7 +11,7 @@ from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.jobs import TERMINAL_RUNS, JobPayload, Lease, Submission
 from agentgit.core.models import parse_contract
-from agentgit.core.research import BudgetLimits
+from agentgit.core.research import AgentConfig, BudgetLimits
 from agentgit.core.snapshots import EventPayload
 from agentgit.core.versions import LiveReplaySpec, RecordedReplaySpec
 from agentgit.services.environment import source_revision
@@ -96,12 +96,17 @@ class JobService:
             self.history.objects.get(task["budget_ref"], ObjectType.BLOB), BudgetLimits
         )
         limits = budget or task_budget
-        if any(
-            getattr(limits, name) > min(getattr(task_budget, name), getattr(config.limits, name))
-            for name in BudgetLimits.model_fields
-            if name != "schema_version"
-        ):
+        if not limits.within(task_budget, config.limits):
             raise AgentGitError(ErrorCode.FORBIDDEN, "Run 预算不能扩大 Task 或配置上限")
+        parse_contract(
+            encode(
+                {
+                    **config.model_dump(mode="json"),
+                    "limits": limits.model_dump(mode="json"),
+                }
+            ),
+            AgentConfig,
+        )
         payload = JobPayload(
             replay=replay,
             config_id=str(task["agent_config_id"]),

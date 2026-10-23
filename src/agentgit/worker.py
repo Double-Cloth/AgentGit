@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.engine import Connection
 
 from agentgit.adapters.corpus import Corpus
-from agentgit.adapters.mock import MockResearchModel
+from agentgit.adapters.models import select_model
 from agentgit.adapters.tools import WriteArguments
 from agentgit.adapters.workspace import ArtifactWorkspace
 from agentgit.core.canonical import ObjectType, decode, encode, object_digest
@@ -22,8 +22,9 @@ from agentgit.core.models import (
     RunStatus,
     parse_contract,
 )
-from agentgit.core.research import AgentState, ResearchGoal, evolve
+from agentgit.core.research import AgentConfig, AgentState, ResearchGoal, evolve
 from agentgit.core.snapshots import EventPayload, StateSnapshot
+from agentgit.runtime.model_budget import call_budget, reserve_model
 from agentgit.runtime.ports import CallSettlement, ModelAdapter
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.calls import RecordedCallGateway
@@ -68,7 +69,7 @@ class Worker:
         queue: JobService,
         *,
         name: str | None = None,
-        model_factory: Callable[[], ModelAdapter] = MockResearchModel,
+        model_factory: Callable[[], ModelAdapter] | None = None,
         fault: Callable[[str], None] | None = None,
     ):
         self.queue, self.name = queue, name or f"worker-{uuid4()}"
@@ -120,7 +121,7 @@ class Worker:
                 session.after_checkpoint = lambda: self.fault("after_checkpoint")
                 unknown = self._unresolved(lease, origins, session)
                 if unknown:
-                    session.environment = session._environment(self.model_factory())
+                    session.environment = session._environment(self._model(session.config))
                     if (
                         session.expected_environment is not None
                         and session.environment != session.expected_environment
@@ -129,7 +130,7 @@ class Worker:
                     if discard_stopped(session, self.queue, lease, origins, unknown, self.fault):
                         unknown = []
                 if unknown:
-                    state = self._unknown_state(session.state, unknown)
+                    state = self._unknown_state(session.state, unknown, session.config)
                     session.save(
                         state,
                         "run.outcome_unknown",
@@ -145,7 +146,7 @@ class Worker:
                         return self.queue.apply_control(lease)
 
                     state = session.execute(
-                        self.model_factory(), control=control, wall_budget_ms=remaining
+                        self._model(session.config), control=control, wall_budget_ms=remaining
                     )
                 self.queue.finish(lease, state.status.value)
                 return self._summary(lease)
@@ -228,7 +229,15 @@ class Worker:
             remaining = max(0, int((job_row["deadline_at"] - now).total_seconds() * 1000))
         config = research.config(lease.repository_id, UUID(payload.config_id))
         if payload.limits is not None:
-            config = evolve(config, limits=payload.limits)
+            config = parse_contract(
+                encode(
+                    {
+                        **config.model_dump(mode="json"),
+                        "limits": payload.limits.model_dump(mode="json"),
+                    }
+                ),
+                AgentConfig,
+            )
         goal = parse_contract(history.objects.get(payload.goal_ref, ObjectType.BLOB), ResearchGoal)
         state = AgentState(goal=goal, plan_version=payload.initial_plan_version)
         environment = None
@@ -402,20 +411,31 @@ class Worker:
                     )
             return pending
 
-    def _unknown_state(self, state: AgentState, calls: list[dict[str, Any]]) -> AgentState:
+    def _model(self, config: AgentConfig) -> ModelAdapter:
+        return self.model_factory() if self.model_factory is not None else select_model(config)
+
+    def _unknown_state(
+        self,
+        state: AgentState,
+        calls: list[dict[str, Any]],
+        config: AgentConfig,
+    ) -> AgentState:
         if state.status == RunStatus.OUTCOME_UNKNOWN:
             return state
-        models, tools, reserved = 0, 0, 0
+        tools = 0
+        usage = state.usage
         attempts = dict(state.attempts)
         for call in calls:
             if call["provider"].startswith("llm:"):
-                models += 1
                 intent = parse_contract(
                     self.queue.history.objects.get(call["intent_ref"], ObjectType.CALL), CallIntent
                 )
-                reserved += (
-                    len(self.queue.history.objects.get(call["request_digest"], ObjectType.BLOB))
-                    + intent.max_response_bytes
+                if intent.model_budget != call_budget(config):
+                    raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "未知模型意图预留与配置不符")
+                usage = reserve_model(
+                    usage,
+                    config,
+                    len(self.queue.history.objects.get(call["request_digest"], ObjectType.BLOB)),
                 )
             else:
                 tools += 1
@@ -423,11 +443,8 @@ class Worker:
                     attempts.get(call["logical_step_id"], 0), call["attempt"]
                 )
         usage = evolve(
-            state.usage,
-            steps=state.usage.steps + models,
-            model_calls=state.usage.model_calls + models,
-            tool_calls=state.usage.tool_calls + tools,
-            reserved_tokens=state.usage.reserved_tokens + reserved,
+            usage,
+            tool_calls=usage.tool_calls + tools,
         )
         return evolve(
             state,
@@ -508,6 +525,10 @@ class Worker:
         if (
             outcome.error is not None
             or intent.max_response_bytes != session.config.limits.max_response_bytes
+            or (
+                occurrence.provider.startswith("llm:")
+                and intent.model_budget != call_budget(session.config)
+            )
         ):
             raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "核对结果含错误或响应上限改变")
         request = session.history.objects.get(call["request_digest"], ObjectType.BLOB)

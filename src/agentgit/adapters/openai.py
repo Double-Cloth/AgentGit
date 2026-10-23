@@ -184,6 +184,7 @@ class OpenAIResearchModel:
         *,
         timeout_ms: int | None = None,
         max_reply_bytes: int = 16_384,
+        cost_limit_micro_usd: int | None = None,
     ) -> bytes:
         if type(max_reply_bytes) is not int or not 2048 <= max_reply_bytes <= 1_048_576:
             raise AgentGitError(ErrorCode.CONFIGURATION, "真实模型结果封装需要 2 KiB..1 MiB")
@@ -199,7 +200,12 @@ class OpenAIResearchModel:
             raise AgentGitError(ErrorCode.CONFIGURATION, "模型请求包含当前凭据，已拒绝发送")
         # Runtime 仍须在调用前持久化同等上界；这里防止 Adapter 被单独调用时绕过。
         reserve = price_micro_usd(self.options.max_input_tokens, self.options.max_output_tokens)
-        if reserve > self.cost_limit_micro_usd:
+        available_cost = (
+            self.cost_limit_micro_usd
+            if cost_limit_micro_usd is None
+            else min(self.cost_limit_micro_usd, cost_limit_micro_usd)
+        )
+        if reserve > available_cost:
             raise AgentGitError(ErrorCode.BUDGET_EXHAUSTED, "模型调用费用预留不足")
         duration = (
             self.options.timeout_ms
@@ -394,3 +400,18 @@ class OpenAIResearchModel:
         except (AgentGitError, ValueError, UnicodeError, RecursionError):
             return saved(**common_saved, code="validation")
         return saved(**common_saved, decision=decision)
+
+    def invoke_bounded(
+        self,
+        payload: bytes,
+        *,
+        timeout_ms: int,
+        max_reply_bytes: int,
+        cost_limit_micro_usd: int,
+    ) -> bytes:
+        return self.invoke(
+            payload,
+            timeout_ms=timeout_ms,
+            max_reply_bytes=max_reply_bytes,
+            cost_limit_micro_usd=cost_limit_micro_usd,
+        )

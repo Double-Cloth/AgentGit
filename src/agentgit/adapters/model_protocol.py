@@ -11,6 +11,7 @@ from agentgit.core.execution import CodeArguments, TerminalArguments
 from agentgit.core.model_usage import OpenAIOptions
 from agentgit.core.models import Contract, parse_contract
 from agentgit.core.research import (
+    AgentConfig,
     FinalDecision,
     ModelRequest,
     Plan,
@@ -99,6 +100,12 @@ def model_signature(options: OpenAIOptions) -> str:
             }
         ),
     )
+
+
+def configured_model_signature(config: AgentConfig) -> str:
+    if config.openai is not None:
+        return model_signature(config.openai)
+    return object_digest(ObjectType.CALL, encode({"schema_version": 1, "model": config.model}))
 
 
 def response_input(request: ModelRequest, options: OpenAIOptions) -> dict[str, Any]:

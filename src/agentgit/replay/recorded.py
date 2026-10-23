@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 
 from agentgit.core.canonical import ObjectType, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
-from agentgit.core.models import CallIntent, CallOccurrence, EffectClass
+from agentgit.core.models import CallIntent, CallOccurrence, EffectClass, ModelCallBudget
 from agentgit.core.research import CallTrace, SavedCallOutcome, evolve
 from agentgit.runtime.ports import CallOutcome
 
@@ -88,6 +88,7 @@ class RecordedAdapter:
         *,
         checkpoint: str | None,
         max_bytes: int,
+        model_budget: ModelCallBudget | None = None,
     ) -> CallOutcome:
         if self.position >= len(self.recordings):
             raise AgentGitError(ErrorCode.RECORDING_MISSING, "选定范围缺少下一次调用录制")
@@ -98,6 +99,7 @@ class RecordedAdapter:
             or request != record.request
             or checkpoint != record.intent.checkpoint
             or max_bytes != record.intent.max_response_bytes
+            or model_budget != record.intent.model_budget
         ):
             raise AgentGitError(
                 ErrorCode.REPLAY_MISMATCH, "录制 occurrence、请求、效果或检查点错配"
@@ -117,6 +119,7 @@ class RecordedAdapter:
         request: bytes,
         invoke: Callable[[], bytes],
         max_bytes: int,
+        model_budget: ModelCallBudget | None = None,
     ) -> CallOutcome:
         # invoke 只为兼容 Runtime 边界；任何成功或失败路径都不调用它。
         return self.take(
@@ -132,6 +135,7 @@ class RecordedAdapter:
             request,
             checkpoint=self.checkpoint(),
             max_bytes=max_bytes,
+            model_budget=model_budget,
         )
 
     def recorded(
@@ -144,6 +148,7 @@ class RecordedAdapter:
         effect: EffectClass,
         request: bytes,
         max_bytes: int,
+        model_budget: ModelCallBudget | None = None,
     ) -> CallOutcome | None:
         # 这是新的 Recorded 运行，不使用崩溃恢复的未观察调用结算入口。
         return None

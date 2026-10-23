@@ -75,12 +75,20 @@ class CallOccurrence(Contract):
     request_digest: Digest
 
 
+class ModelCallBudget(Contract):
+    tokens: NonNegative
+    currency: Literal["USD"] = "USD"
+    cost_micro_usd: NonNegative
+    pricebook: Annotated[str, Field(min_length=1, max_length=100)]
+
+
 class CallIntent(Contract):
     occurrence: CallOccurrence
     effect: EffectClass
     request_ref: Digest
     checkpoint: Digest | None
     max_response_bytes: Annotated[int, Field(ge=1, le=8 * 1024 * 1024)]
+    model_budget: ModelCallBudget | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
 class EventRange(Contract):

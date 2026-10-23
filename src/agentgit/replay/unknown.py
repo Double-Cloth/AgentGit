@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from agentgit.core.canonical import ObjectType, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.models import CallIntent, EffectClass, RunStatus
-from agentgit.core.research import AgentState, evolve
+from agentgit.core.research import AgentConfig, AgentState, BudgetLimits, evolve
+from agentgit.runtime.model_budget import call_budget, reserve_model
 
 
 @dataclass(frozen=True)
@@ -26,10 +27,12 @@ def rebuild_unknown(
     signature: str,
     effect: EffectClass,
     max_response_bytes: int,
+    config: AgentConfig | None = None,
 ) -> AgentState:
     before, intent = record.before, record.intent
     occurrence = intent.occurrence
     model = provider.startswith("llm:")
+    config = config or AgentConfig(limits=BudgetLimits(max_response_bytes=max_response_bytes))
     decision = before.pending_tool
     if (
         before.status not in (RunStatus.PLANNING, RunStatus.RUNNING)
@@ -37,6 +40,7 @@ def rebuild_unknown(
         or intent.checkpoint is None
         or intent.max_response_bytes != max_response_bytes
         or intent.effect != effect
+        or (model and intent.model_budget != call_budget(config))
         or occurrence.call_index != 0
         or occurrence.provider != provider
         or occurrence.signature_digest != signature
@@ -64,12 +68,14 @@ def rebuild_unknown(
         )
     ):
         raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "未知封存与原调用请求、身份或预算不符")
-    usage = evolve(
-        before.usage,
-        steps=before.usage.steps + int(model),
-        model_calls=before.usage.model_calls + int(model),
-        tool_calls=before.usage.tool_calls + int(not model),
-        reserved_tokens=len(record.request) + max_response_bytes if model else 0,
+    usage = (
+        reserve_model(before.usage, config, len(record.request))
+        if model
+        else evolve(
+            before.usage,
+            tool_calls=before.usage.tool_calls + 1,
+            reserved_tokens=0,
+        )
     )
     attempts = (
         before.attempts

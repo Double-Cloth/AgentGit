@@ -207,13 +207,17 @@ class ReplayService:
             raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "来源缺少完整冻结配置")
         config = request.overrides.config or parse_contract(encode(frozen["config"]), AgentConfig)
         if request.budget is not None:
-            if any(
-                getattr(request.budget, name) > getattr(config.limits, name)
-                for name in type(request.budget).model_fields
-                if name != "schema_version"
-            ):
+            if not request.budget.within(config.limits):
                 raise AgentGitError(ErrorCode.FORBIDDEN, "Live 预算不能扩大新配置授权上限")
-            config = evolve(config, limits=request.budget)
+            config = parse_contract(
+                encode(
+                    {
+                        **config.model_dump(mode="json"),
+                        "limits": request.budget.model_dump(mode="json"),
+                    }
+                ),
+                AgentConfig,
+            )
         snapshot = parse_contract(encode(view["snapshot"]), StateSnapshot)
         prepared = prepare_live(snapshot, config, request.overrides, self.history.objects.get)
         corpus = self._source_corpus(repository, UUID(request.source_run_id))
@@ -387,6 +391,11 @@ class ReplayService:
                 "unknown_outcomes": counts["unknown"],
                 "wall_ms": wall,
                 "cost_micro_units": delta["cost_micro_units"],
+                **(
+                    {"currency": "USD", "cost_basis": "pricebook_estimate"}
+                    if usage.model_meter is not None
+                    else {}
+                ),
             },
         }
 

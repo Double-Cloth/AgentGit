@@ -9,7 +9,13 @@ import sqlalchemy as sa
 from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.execution import SANDBOX_PROVIDERS
-from agentgit.core.models import CallIntent, CallOccurrence, EffectClass, parse_contract
+from agentgit.core.models import (
+    CallIntent,
+    CallOccurrence,
+    EffectClass,
+    ModelCallBudget,
+    parse_contract,
+)
 from agentgit.core.research import CallTrace, SavedCallOutcome
 from agentgit.core.snapshots import EventPayload
 from agentgit.runtime.ports import CallOutcome
@@ -53,6 +59,7 @@ class RecordedCallGateway:
         effect: EffectClass,
         request: bytes,
         max_bytes: int,
+        model_budget: ModelCallBudget | None = None,
     ) -> CallOutcome | None:
         """仅消费已耐久保存的结果；缺失时绝不创建意图或调用 Adapter。"""
         occurrence = CallOccurrence(
@@ -67,7 +74,7 @@ class RecordedCallGateway:
             raise AgentGitError(ErrorCode.FORBIDDEN, "录制消费缺少冻结工具策略")
         self.authorization.policy.rule(occurrence, effect)
         if self.origin_runs:
-            origin = self._reuse_origin(occurrence, effect, max_bytes)
+            origin = self._reuse_origin(occurrence, effect, max_bytes, model_budget)
             if origin is not None:
                 return origin
         head, _ = self.checkpoint()
@@ -100,6 +107,7 @@ class RecordedCallGateway:
                 or intent.effect != effect
                 or intent.checkpoint != head
                 or intent.max_response_bytes != max_bytes
+                or intent.model_budget != model_budget
             ):
                 raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "录制身份、检查点或响应限制不符")
             if row["result_ref"] is None:
@@ -120,6 +128,7 @@ class RecordedCallGateway:
         request: bytes,
         invoke: Callable[[], bytes],
         max_bytes: int,
+        model_budget: ModelCallBudget | None = None,
     ) -> CallOutcome:
         if type(max_bytes) is not int or not 1 <= max_bytes <= 8 * 1024 * 1024:
             raise AgentGitError(ErrorCode.VALIDATION, "响应上限必须为 1–8388608 字节")
@@ -137,7 +146,7 @@ class RecordedCallGateway:
             raise AgentGitError(ErrorCode.FORBIDDEN, "调用缺少本地工具策略")
         self.authorization.policy.rule(occurrence, effect)
         if self.origin_runs:
-            recovered = self._reuse_origin(occurrence, effect, max_bytes)
+            recovered = self._reuse_origin(occurrence, effect, max_bytes, model_budget)
             if recovered is not None:
                 return recovered
         head, version = self.checkpoint()
@@ -149,6 +158,7 @@ class RecordedCallGateway:
                 request_ref=request_obj.id,
                 checkpoint=head,
                 max_response_bytes=max_bytes,
+                model_budget=model_budget,
             ).model_dump(mode="json"),
         )
         calls = TABLES["external_calls"]
@@ -172,6 +182,11 @@ class RecordedCallGateway:
                 "occurrence": occurrence.model_dump(mode="json"),
                 "request_ref": request_obj.id,
                 "effect": effect.value,
+                **(
+                    {"model_budget": model_budget.model_dump(mode="json")}
+                    if model_budget is not None
+                    else {}
+                ),
             },
         )
         started_payload = history.objects.put_json(
@@ -225,6 +240,8 @@ class RecordedCallGateway:
                 if (
                     original.get("checkpoint") != head
                     or original.get("max_response_bytes") != max_bytes
+                    or original.get("model_budget")
+                    != (model_budget.model_dump(mode="json") if model_budget is not None else None)
                 ):
                     raise AgentGitError(
                         ErrorCode.REPLAY_MISMATCH, "已录制调用的 checkpoint 或响应限制不符"
@@ -391,7 +408,11 @@ class RecordedCallGateway:
         return outcome
 
     def _reuse_origin(
-        self, occurrence: CallOccurrence, effect: EffectClass, max_bytes: int
+        self,
+        occurrence: CallOccurrence,
+        effect: EffectClass,
+        max_bytes: int,
+        model_budget: ModelCallBudget | None = None,
     ) -> CallOutcome | None:
         history, calls = self.history, TABLES["external_calls"]
         head, _ = self.checkpoint()
@@ -431,7 +452,12 @@ class RecordedCallGateway:
             ):
                 raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "恢复调用与来源录制不符")
             intent = history.objects.get_json(origin["intent_ref"], ObjectType.CALL)
-            if intent.get("checkpoint") != head or intent.get("max_response_bytes") != max_bytes:
+            if (
+                intent.get("checkpoint") != head
+                or intent.get("max_response_bytes") != max_bytes
+                or intent.get("model_budget")
+                != (model_budget.model_dump(mode="json") if model_budget is not None else None)
+            ):
                 raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "恢复调用的 checkpoint 或限制不符")
             if origin["result_ref"] is None:
                 raise AgentGitError(ErrorCode.OUTCOME_UNKNOWN, "来源调用没有结果，不能在恢复中重发")

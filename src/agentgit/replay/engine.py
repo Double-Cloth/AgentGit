@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from agentgit import __version__
 from agentgit.adapters.corpus import Corpus
+from agentgit.adapters.model_protocol import configured_model_signature
 from agentgit.adapters.tools import ToolRegistry, WriteArguments
 from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
@@ -19,7 +20,13 @@ from agentgit.core.execution import (
     ExecutionManifest,
     ExecutionResult,
 )
-from agentgit.core.models import CommitManifest, EffectClass, RunStatus, parse_contract
+from agentgit.core.models import (
+    CommitManifest,
+    EffectClass,
+    ModelCallBudget,
+    RunStatus,
+    parse_contract,
+)
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage, CallTrace, ModelRequest
 from agentgit.core.snapshots import EventManifest, EventPayload, StateSnapshot
 from agentgit.replay.recorded import RecordedAdapter
@@ -100,6 +107,7 @@ class _Gateway:
         request: bytes,
         invoke: Callable[[], bytes],
         max_bytes: int,
+        model_budget: ModelCallBudget | None = None,
     ) -> CallOutcome:
         try:
             outcome = self.adapter.call(
@@ -111,6 +119,7 @@ class _Gateway:
                 request=request,
                 invoke=invoke,
                 max_bytes=max_bytes,
+                model_budget=model_budget,
             )
             # 写文件响应的观察依赖文件已存在；只在验证录制后重建内存状态。
             if outcome.error is None and provider == "tool:artifact_write/v1":
@@ -243,9 +252,7 @@ class RecordedReplayer:
         lock = Path(__file__).resolve().parents[3] / "uv.lock"
         if not lock.is_file():
             raise AgentGitError(ErrorCode.CONFIGURATION, "Recorded 兼容性检查缺少依赖锁文件")
-        signature = object_digest(
-            ObjectType.CALL, encode({"schema_version": 1, "model": config.model})
-        )
+        signature = configured_model_signature(config)
         if (
             environment.runtime_version != __version__
             or environment.python_version != platform.python_version()
@@ -447,7 +454,7 @@ class RecordedReplayer:
                                 ).model_dump(mode="json")
                             )
                             provider, binding, effect = (
-                                "llm:mock-research/v1",
+                                f"llm:{config.model}",
                                 signature,
                                 EffectClass.READ_ONLY,
                             )
@@ -470,6 +477,7 @@ class RecordedReplayer:
                             signature=binding,
                             effect=effect,
                             max_response_bytes=config.limits.max_response_bytes,
+                            config=config,
                         )
                         sealed.add(target)
                         journal.save(runtime.state, event_type, {"pending_calls": [stop.call_id]})

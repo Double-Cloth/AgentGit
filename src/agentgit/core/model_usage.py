@@ -88,6 +88,31 @@ class ModelMeter(Contract):
         return self
 
 
+class ModelTotals(Contract):
+    currency: Literal["USD"] = "USD"
+    pricebook: Literal["openai-gpt-5.4-mini-standard-usd/2026-10-23"] = OPENAI_PRICEBOOK
+    measured_calls: NonNegative = 0
+    estimated_calls: NonNegative = 0
+    not_generated_calls: NonNegative = 0
+    measured_input_tokens: NonNegative = 0
+    measured_output_tokens: NonNegative = 0
+    cached_tokens: NonNegative = 0
+    reasoning_tokens: NonNegative = 0
+    missing_cache_detail_calls: NonNegative = 0
+    missing_reasoning_detail_calls: NonNegative = 0
+    accounted_tokens: NonNegative = 0
+    reserved_cost_micro_usd: NonNegative = 0
+    unpriced_cost_micro_usd: NonNegative = 0
+    unpriced_calls: NonNegative = 0
+    next_retry_delay_ms: Annotated[int, Field(ge=0, le=120_000)] = 0
+
+    @model_validator(mode="after")
+    def retained_price_reservation(self) -> "ModelTotals":
+        if self.unpriced_cost_micro_usd > self.reserved_cost_micro_usd:
+            raise ValueError("未结算费用不能超过总预留")
+        return self
+
+
 class ModelReply(Contract):
     protocol: Literal["openai-responses-decision/v1"] = "openai-responses-decision/v1"
     model: Literal["gpt-5.4-mini-2026-03-17"] = OPENAI_MODEL
@@ -110,6 +135,8 @@ class ModelReply(Contract):
         if self.disposition == "decision":
             if self.decision is None or self.error_code is not None:
                 raise ValueError("成功响应必须且仅包含决策")
+            if self.meter.basis != "provider_usage" or not self.meter.price_verified:
+                raise ValueError("成功决策必须包含可核验的供应商计量与价格版本")
         elif self.decision is not None or self.error_code is None:
             raise ValueError("错误响应必须且仅包含错误码")
         if self.disposition == "retry" and (

@@ -14,7 +14,7 @@ from sqlalchemy.engine import Connection
 from agentgit import __version__
 from agentgit.adapters.corpus import Corpus
 from agentgit.adapters.execution.policy import bundled_policy
-from agentgit.adapters.mock import MockResearchModel
+from agentgit.adapters.models import select_model
 from agentgit.adapters.tools import ToolRegistry
 from agentgit.adapters.workspace import ArtifactWorkspace
 from agentgit.core.canonical import ObjectType, encode
@@ -363,7 +363,7 @@ class ResearchSession:
             python_version=platform.python_version(),
             code_revision=source_revision(),
             dependency_lock_digest=hashlib.sha256(lock.read_bytes()).hexdigest(),
-            model_signature="mock-research/v1:" + model.signature,
+            model_signature=self.config.model + ":" + model.signature,
             prompt_digest=hashlib.sha256(self.config.prompt.encode()).hexdigest(),
             tool_signatures=tuple(self.tools.signature(name) for name in sorted(self.config.tools)),
             input_ref=input_ref,
@@ -379,7 +379,7 @@ class ResearchSession:
         control: Callable[[], str | None] | None = None,
         wall_budget_ms: int | None = None,
     ) -> AgentState:
-        model = model or MockResearchModel()
+        model = model or select_model(self.config)
         if self.config.execution_policy is not None and self.execution_service is None:
             raise AgentGitError(ErrorCode.FORBIDDEN, "容器工具必须通过持久 Job/Worker 执行")
         self.environment = self._environment(model)
@@ -409,10 +409,10 @@ class ResearchSession:
         if gateway.authorization is None:
             rules = [
                 ToolRule(
-                    provider="llm:mock-research/v1",
+                    provider=f"llm:{self.config.model}",
                     signature_digest=model.signature,
                     effect=EffectClass.READ_ONLY,
-                    scope="local",
+                    scope="external" if self.config.openai is not None else "local",
                     preauthorized=True,
                 )
             ]
