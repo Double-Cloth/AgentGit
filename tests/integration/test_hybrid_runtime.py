@@ -148,6 +148,10 @@ def test_selected_readonly_call_is_atomic_nonphysical_and_recorded_replays(
         assert replay["actual"]["model_calls"] == 9
         assert replay["actual"]["tool_calls"] == 7
         assert replay["actual"]["recorded_observations"] == 1
+        assert replay["actual"]["model_usage"]["mock"]["calls"] == 9
+        assert (
+            replay["actual"]["model_usage"]["mock"]["total_bytes"] == replay["new_usage"]["tokens"]
+        )
         assert replay["new_usage"]["tool_calls"] == 8
         assert replay["observations"][0]["kind"] == "recorded"
         assert not replay["hybrid"]["unreached_call_ids"]

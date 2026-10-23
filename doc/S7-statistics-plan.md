@@ -1,5 +1,7 @@
 # S7 分组统计与桌面接线方案
 
+2026-10-24 后端统计与七个固定桌面 IPC 已实现并验证，见 [统计增量验收](acceptance/S7-statistics.md)。本方案的统计规则已落地，实际表单、统计/trial 视图和控制交互继续按 [桌面接线方案](S7-desktop-experiments-plan.md)推进；S7 未整体验收。
+
 接在 [Hybrid 持久运行](acceptance/S7-hybrid-runtime.md)之后完成实施方案 S7 第 5–6 步。继续使用既有实验查询、验收器和调用账本；不增加新迁移、外部统计服务或前端依赖。
 
 ## 统计来源与契约

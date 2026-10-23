@@ -188,7 +188,7 @@ uv run --locked agentgit worker --once
 
 ## S7 冻结验收与 A/B Live/Hybrid 实验
 
-当前增量提供冻结验收器、三类类型化干预、原子排队和真实 trial 状态。Hybrid 已接入 Worker、不可变观测账本、实际/逻辑计量及 Recorded 复验；聚合统计和桌面实验列表尚未完成，S7 未整体验收。
+当前增量提供冻结验收器、三类类型化干预、原子排队和真实 trial 状态。Hybrid 已接入 Worker、不可变观测账本、实际/逻辑计量及 Recorded 复验；分组统计已接入同一报告，桌面实验列表尚未完成，S7 未整体验收。
 
 | HTTP | 行为 |
 |---|---|
@@ -227,7 +227,23 @@ uv run --locked agentgit worker
 
 取消/暂停/恢复继续对 trial 当前 `run_id` 使用原控制接口及版本；中断接管创建新 Run 时，最初幂等响应不变，通过同一 `job_id` 与实验查询取得当前 Run。未完成、暂停、取消、预算耗尽和未知状态不能计为通过；completed 还须通过固定验收器检查真实产物。查询时状态发生变化会有界重读，持续变化可返回 409，刷新即可，不重发创建动作。
 
-每个 trial 的 `replay.budget_baseline/logical_usage/new_usage/actual` 保留既有含义；Mock 字节用量、供应商 Token、价格表估计和未知结果不得混淆。当前未提供总体方差统计，也不依据相同 Mock/seed 的重复结果推断真实模型随机性或严格因果。
+每个 trial 的 `replay.budget_baseline/logical_usage/new_usage/actual` 保留既有含义。`actual.model_usage` 进一步从本次真实调用账本重建模型计量，包含结果已保存但尚未推进检查点的调用，并沿恢复/可信核对来源读取证据；不重计恢复复用或 Hybrid 观测。Mock 的输入/输出字节与供应商 Token 分开，供应商的已测量、保守上界、未生成和缺失计量分别计数。
+
+### 分组统计
+
+`GET /experiments/{id}` 和 `experiment-status` 同时返回新增的 `statistics`，原有 `groups` 计数结构保持兼容。`statistics.groups` 按 A/B 展示预定、通过、失败和未完成数、成功率、整体冻结硬断言结果、再次领取 Job 的恢复结果及错误码计数。规则可能短路，不能把某错误码未出现当作该规则已通过。
+
+`success_rate` 的分母为全部预定 trial，另列已独立验收样本的 `assessed_success_rate`。`consumption_to_date` 描述所有 trial 截至查询时的消耗；`assessed_trials` 仅统计明确通过或失败的完整试验，取消、暂停、预算耗尽和未知结果不混入该分布。恢复统计的样本为 `attempt > 1` 的 Job，包括恢复/再次领取，不等同于只统计进程崩溃。
+
+两种范围的 `metrics` 分列实际调用、Hybrid 观测、墙钟毫秒、Mock 字节、供应商 Token/费用和检查点逻辑用量。逻辑 Token 按 `mock_utf8_bytes/provider_tokens/mixed_units` 各自统计。每项包含样本、缺失和不适用数量；`sum` 在有缺失时为 null，`known_sum` 仅为已知小计。均值与样本方差（分母 n-1）只使用已知样本，分子/分母为十进制字符串，合计和极值也使用字符串，避免浮点或安全整数截断。单样本方差和没有样本的比率为 null。
+
+```json
+{"mean":{"numerator":"3","denominator":"1"},"sample_variance":{"numerator":"0","denominator":"1"}}
+```
+
+`actual.model_usage.mock` 明确标为本地 Mock 免费；`provider.estimated_cost_micro_usd` 为完整可核验的价格表估计，缺失或未核验时为 null，`known_estimated_cost_micro_usd` 只是已知小计，`reserved_cost_micro_usd` 保留未结算调用的预算预留。供应商账单没有取得，因此存在供应商调用时 `billed_cost_micro_usd` 为 null；保守用量不冒充实测 Token。原 `actual.cost_micro_units` 是检查点已结算增量，可能滞后，不能拿它推断未知结果的最终费用。
+
+统计是各 trial 的有界状态投影，不承诺整个实验的瞬时原子快照。固定 Mock/fixture/seed 的重复结果只证明该条件下的确定性指标，不推断真实模型波动、泛化能力或严格因果。
 
 ### 类型化干预
 

@@ -14,6 +14,7 @@ from agentgit.core.models import EnvironmentManifest, parse_contract
 from agentgit.core.research import AgentConfig, AgentState, evolve
 from agentgit.core.snapshots import StateSnapshot
 from agentgit.core.versions import LiveOverrides, LiveReplay, RecordedRange
+from agentgit.experiments.statistics import experiment_statistics
 from agentgit.experiments.validation import frozen_inputs
 from agentgit.services.hybrid import freeze_policy
 from agentgit.services.interventions import InterventionService
@@ -306,6 +307,7 @@ class ExperimentService:
             "repository_id": str(repository_id),
             "manifest": manifest.model_dump(mode="json"),
             "trials": items,
+            "statistics": experiment_statistics(items),
             "groups": [
                 {
                     "key": key,

@@ -76,6 +76,17 @@ def test_ab_five_trials_have_independent_runs_inputs_files_and_actual_usage(
     assert report["groups"] == [
         {"key": key, "total": 5, "passed": 5, "incomplete": 0} for key in ("A", "B")
     ]
+    for group in report["statistics"]["groups"]:
+        assert group["success_rate"] == {"numerator": "1", "denominator": "1"}
+        assert group["hard_assertions"]["passed"] == 5
+        metrics = group["assessed_trials"]["metrics"]
+        assert metrics["actual.model_calls"]["sum"] == "15"
+        assert metrics["actual.model_calls"]["sample_variance"] == {
+            "numerator": "0",
+            "denominator": "1",
+        }
+        assert metrics["mock.total_bytes"]["samples"] == 5
+        assert metrics["provider.input_tokens"]["sum"] == "0"
     states = []
     workspace_paths = set()
     input_refs = {"A": set(), "B": set()}
@@ -212,6 +223,9 @@ def test_worker_crash_keeps_trial_identity_and_reports_current_recovery_run(hist
         next(item for item in report["trials"] if item["job_id"] == str(job_id))["verdict"]
         == "incomplete"
     )
+    pending = next(item for item in report["trials"] if item["job_id"] == str(job_id))
+    assert pending["replay"]["actual"]["model_usage"]["mock"]["total_bytes"] > 0
+    assert pending["replay"]["new_usage"]["tokens"] == 0
     before = manager.jobs.get(session.repository_id, job_id)
     with history.engine.begin() as connection:
         connection.execute(
@@ -229,6 +243,7 @@ def test_worker_crash_keeps_trial_identity_and_reports_current_recovery_run(hist
     assert recovered["verdict"] == "passed"
     assert manager.jobs.get(session.repository_id, job_id)["deadline_at"] == before["deadline_at"]
     assert recovered["replay"]["actual"]["model_calls"] == 3
+    assert recovered["replay"]["actual"]["model_usage"]["mock"]["calls"] == 3
 
 
 def test_partial_enqueue_rolls_back_every_trial_and_can_retry_same_key(
@@ -464,10 +479,21 @@ def test_repeated_fixture_experiments_reproduce_logical_and_actual_call_metrics(
     session, *_ = replay_source
     manager, request = prepared(replay_source)
     measurements = []
+    statistical_metrics = []
     for index in range(2):
         result = manager.create_experiment(session.repository_id, request, f"repeat-{index}")
         run_all(manager, 2)
         report = manager.experiment(session.repository_id, UUID(result["experiment_id"]))
+        statistical_metrics.append(
+            [
+                {
+                    name: value
+                    for name, value in group["assessed_trials"]["metrics"].items()
+                    if name != "actual.wall_ms"
+                }
+                for group in report["statistics"]["groups"]
+            ]
+        )
         measurements.append(
             [
                 {
@@ -482,6 +508,7 @@ def test_repeated_fixture_experiments_reproduce_logical_and_actual_call_metrics(
             ]
         )
     assert measurements[0] == measurements[1]
+    assert statistical_metrics[0] == statistical_metrics[1]
     assert all(trial["verdict"] == "passed" for trial in measurements[0])
 
 

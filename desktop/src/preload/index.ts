@@ -17,6 +17,9 @@ const api: DesktopApi = {
   getExecution: method('getExecution'), getExecutionContent: method('getExecutionContent'), readArtifact: method('readArtifact'),
   exportArtifact: method('exportArtifact'), createAgent: method('createAgent'), createTask: method('createTask'),
   submitRun: method('submitRun'), createBranch: method('createBranch'), replay: method('replay'), getReplay: method('getReplay'),
+  freezeValidator: method('freezeValidator'), getValidator: method('getValidator'),
+  createExperiment: method('createExperiment'), getExperiment: method('getExperiment'),
+  getInterventionContext: method('getInterventionContext'), createIntervention: method('createIntervention'), getIntervention: method('getIntervention'),
   getDiff: method('getDiff'), controlRun: method('controlRun'), decideApproval: method('decideApproval'),
   cancelReads: () => ipcRenderer.send('agentgit:cancel-reads'),
 };

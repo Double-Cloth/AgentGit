@@ -28,6 +28,7 @@ from agentgit.services.history import TABLES
 from agentgit.services.hybrid import observations, owned_policy, register_inputs
 from agentgit.services.jobs import JobService
 from agentgit.services.recordings import RecordingReader
+from agentgit.services.replay_metering import physical_model_usage
 from agentgit.services.research import ResearchService
 from agentgit.services.versions import VersionService
 from agentgit.storage.database import transaction
@@ -341,6 +342,15 @@ class ReplayService:
                 current = self.history._run(connection, repository, current)["origin_run_id"]
             calls = TABLES["external_calls"]
             hybrid = TABLES["hybrid_observations"]
+            physical = (
+                calls.c.repository_id == repository,
+                calls.c.run_id.in_(family),
+                calls.c.origin_call_id.is_(None),
+                ~sa.exists().where(
+                    hybrid.c.call_id == calls.c.id, hybrid.c.repository_id == repository
+                ),
+                calls.c.status.in_(("started", "succeeded", "failed", "outcome_unknown")),
+            )
             counts = (
                 connection.execute(
                     sa.select(
@@ -350,18 +360,26 @@ class ReplayService:
                         .filter(calls.c.status == "outcome_unknown")
                         .label("unknown"),
                     ).where(
-                        calls.c.repository_id == repository,
-                        calls.c.run_id.in_(family),
-                        calls.c.origin_call_id.is_(None),
-                        ~sa.exists().where(
-                            hybrid.c.call_id == calls.c.id, hybrid.c.repository_id == repository
-                        ),
-                        calls.c.status.in_(("started", "succeeded", "failed", "outcome_unknown")),
+                        *physical,
                     )
                 )
                 .mappings()
                 .one()
             )
+            objects = TABLES["objects"]
+            if counts["models"] > 1000:
+                raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "本次真实模型调用超过冻结预算上限")
+            model_rows = list(
+                connection.execute(
+                    sa.select(calls, objects.c.byte_length.label("input_bytes"))
+                    .select_from(calls.outerjoin(objects, objects.c.id == calls.c.request_digest))
+                    .where(*physical, calls.c.provider.like("llm:%"))
+                    .order_by(calls.c.id)
+                    .limit(1001)
+                ).mappings()
+            )
+            if len(model_rows) != counts["models"]:
+                raise AgentGitError(ErrorCode.VERSION_CONFLICT, "模型调用账本正在变化，请刷新计量")
             events = TABLES["events"]
             last = connection.execute(
                 sa.select(sa.func.max(events.c.recorded_at)).where(
@@ -414,6 +432,9 @@ class ReplayService:
                 "unknown_outcomes": counts["unknown"],
                 "wall_ms": wall,
                 "cost_micro_units": delta["cost_micro_units"],
+                "model_usage": physical_model_usage(
+                    self.history, repository, [dict(row) for row in model_rows]
+                ),
                 **(
                     {"currency": "USD", "cost_basis": "pricebook_estimate"}
                     if usage.model_meter is not None

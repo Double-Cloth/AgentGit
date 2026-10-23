@@ -10,6 +10,8 @@ const REPO = '00000000-0000-4000-8000-000000000001';
 const RUN = '00000000-0000-4000-8000-000000000002';
 const COMMIT = 'a'.repeat(64);
 const PARENT = 'b'.repeat(64);
+const EVIDENCE = process.env.AGENTGIT_ELECTRON_EVIDENCE_PREFIX ?? 'S6';
+if (!/^[a-zA-Z0-9_-]{1,80}$/.test(EVIDENCE)) throw new Error('测试证据前缀无效');
 
 test('连接降级：API 未监听、数据库 503、版本不兼容、身份拒绝及恢复', async () => {
   let mode = 'healthy';
@@ -56,7 +58,7 @@ test('连接降级：API 未监听、数据库 503、版本不兼容、身份拒
     await expect(page.getByText('未知 / 未探测', { exact: true })).toBeVisible();
     await page.screenshot({ path: join(evidence, 'recovered.png'), fullPage: true });
     expect(methods.every(method => method === 'GET')).toBe(true); expect(errors).toEqual([]);
-    await writeFile('../.agentgit/evidence/S6-connection-qa.json', JSON.stringify({ evidence, executable: executable ?? null, methods, errors,
+    await writeFile(`../.agentgit/evidence/${EVIDENCE}-connection-qa.json`, JSON.stringify({ evidence, executable: executable ?? null, methods, errors,
       cases: ['实际未监听端口', 'HTTP fixture 数据库 503', 'HTTP fixture 版本不兼容', 'HTTP fixture 401', '恢复且无修改请求'],
       workerAndDocker: '始终未知；未在本测试停机、移除镜像或声称已就绪' }, null, 2));
   } finally {
@@ -128,6 +130,9 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
     await expect(page.getByText('API 与数据库可用；Worker')).toBeVisible();
     expect(await page.evaluate(() => ({ require: typeof (globalThis as { require?: unknown }).require,
       process: typeof (globalThis as { process?: unknown }).process, bridgeKeys: Object.keys(window.agentgit) }))).toMatchObject({ require: 'undefined', process: 'undefined' });
+    expect(await page.evaluate(() => Object.keys(window.agentgit))).toEqual(expect.arrayContaining([
+      'freezeValidator', 'getValidator', 'createExperiment', 'getExperiment', 'getInterventionContext', 'createIntervention', 'getIntervention',
+    ]));
     const preferences = await desktop.evaluate(({ BrowserWindow }) => {
       // 固定 Electron 运行时的测试观测方法未列入公开类型；产品代码不依赖它。
       const contents = BrowserWindow.getAllWindows()[0]!.webContents as unknown as { getLastWebPreferences: () => Electron.WebPreferences };
@@ -137,16 +142,18 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
     expect(await desktop.evaluate(() => process.env.AGENTGIT_API_TOKEN)).toBeUndefined();
     await page.getByLabel('已有项目 ID').fill(REPO); await page.getByRole('button', { name: '选择项目', exact: true }).click();
     await expect(page.getByText('Electron 边界测试运行')).toBeVisible();
+    expect(await page.evaluate(() => window.agentgit.getExperiment({ experimentId: '../private' }))).toMatchObject({ ok: false, error: { code: 'validation' } });
+    expect(requests.some(request => request.url?.startsWith('/experiments/'))).toBe(false);
     await page.getByRole('button', { name: '收起', exact: true }).click();
     for (const width of [1440, 1024, 768, 360]) {
       await page.setViewportSize({ width, height: 900 });
       const layout = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth,
         overflow: [...document.querySelectorAll('body *')].filter(element => element.getBoundingClientRect().right > document.documentElement.clientWidth && !element.closest('.table-scroll')).slice(0, 10).map(element => ({ tag: element.tagName, class: element.className, text: element.textContent?.slice(0, 80), right: element.getBoundingClientRect().right })) }));
-      await page.screenshot({ path: `../.agentgit/evidence/S6-runs-${width}.png`, fullPage: true });
+      await page.screenshot({ path: `../.agentgit/evidence/${EVIDENCE}-runs-${width}.png`, fullPage: true });
       expect(layout.scroll, JSON.stringify({ requestedWidth: width, ...layout })).toBeLessThanOrEqual(layout.width);
     }
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.screenshot({ path: '../.agentgit/evidence/S6-runs-electron.png', fullPage: true });
+    await page.screenshot({ path: `../.agentgit/evidence/${EVIDENCE}-runs-electron.png`, fullPage: true });
     await page.getByRole('button', { name: '查看时间线 →' }).click();
     await expect(page.getByRole('heading', { name: '时间线', exact: true })).toBeVisible();
     await expect(page.getByLabel('检查点关系图')).toBeVisible();
@@ -172,7 +179,7 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
     await page.getByRole('group', { name: `检查点 ${COMMIT}`, exact: true }).click();
     await expect(page.locator('.inspector .section-heading code')).toHaveText(COMMIT.slice(0, 12));
     await page.getByRole('tab', { name: '执行证据', exact: true }).click();
-    await writeFile('../.agentgit/evidence/S6-keyboard-graph-qa.json', JSON.stringify({ screenshot: join(profile, 'graph-keyboard.png'),
+    await writeFile(`../.agentgit/evidence/${EVIDENCE}-keyboard-graph-qa.json`, JSON.stringify({ screenshot: join(profile, 'graph-keyboard.png'),
       selected: PARENT, keys: ['Tab', 'Enter', 'Space'], desktop: desktopVersion, executable: executable ?? null }, null, 2));
     await expect(page.getByText('statistics written', { exact: true })).toBeVisible();
     await page.getByLabel('原始证据').selectOption('code');
@@ -188,10 +195,10 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
     for (const width of [768, 360]) {
       await page.setViewportSize({ width, height: 900 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-      await page.screenshot({ path: `../.agentgit/evidence/S6-timeline-${width}.png`, fullPage: true });
+      await page.screenshot({ path: `../.agentgit/evidence/${EVIDENCE}-timeline-${width}.png`, fullPage: true });
     }
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.screenshot({ path: '../.agentgit/evidence/S6-timeline-electron.png', fullPage: true });
+    await page.screenshot({ path: `../.agentgit/evidence/${EVIDENCE}-timeline-electron.png`, fullPage: true });
     await page.getByRole('button', { name: '从所选检查点分支 →' }).click();
     await expect(page.getByRole('heading', { name: '分支实验', exact: true })).toBeVisible();
     await expect(page.getByLabel('安全起点 Commit')).toHaveValue(COMMIT);
@@ -204,7 +211,7 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     }
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.screenshot({ path: '../.agentgit/evidence/S6-branch-electron.png', fullPage: true });
+    await page.screenshot({ path: `../.agentgit/evidence/${EVIDENCE}-branch-electron.png`, fullPage: true });
     await page.getByRole('button', { name: '差异', exact: true }).click();
     await page.getByLabel('BASE · 基线 Commit', { exact: true }).fill(COMMIT);
     await page.getByLabel('HEAD · 对照 Commit', { exact: true }).fill('b'.repeat(64));
@@ -216,7 +223,7 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     }
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.screenshot({ path: '../.agentgit/evidence/S6-diff-electron.png', fullPage: true });
+    await page.screenshot({ path: `../.agentgit/evidence/${EVIDENCE}-diff-electron.png`, fullPage: true });
     await page.getByRole('button', { name: '运行', exact: true }).click();
     await page.getByRole('button', { name: '新建运行', exact: true }).click();
     await page.getByRole('button', { name: '提交运行', exact: true }).dblclick();

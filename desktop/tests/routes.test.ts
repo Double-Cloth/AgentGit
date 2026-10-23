@@ -72,6 +72,12 @@ test('业务白名单、参数和项目归属在请求前验证，POST 保持原
       ['controlRun', { runId: REPO, action: ['pause'], expectedVersion: 1, key: 'one' }],
       ['decideApproval', { approvalId: REPO, decision: ['approve'], expectedVersion: 1, key: 'one' }],
       ['exportArtifact', { artifactId: REPO, path: 'C:\\private.txt' }],
+      ['getExperiment', { experimentId: '../private' }], ['getValidator', { validatorRef: REPO }],
+      ['getIntervention', { interventionId: OTHER, repositoryId: OTHER }],
+      ['getInterventionContext', { sourceRunId: REPO, fromCommit: 'a'.repeat(64), targetEventId: OTHER, validatorRef: 'b'.repeat(64), url: 'http://localhost:9999' }],
+      ['freezeValidator', { sourceRunId: REPO, fromCommit: 'a'.repeat(64), fixtureSplit: 'everything', key: 'freeze' }],
+      ['createExperiment', { request: [], key: 'experiment' }],
+      ['createIntervention', { request: {}, key: 'patch', path: '/private' }],
     ]) await assert.rejects(f.controller.handle(operation, args), rejected('validation'));
     assert.equal(f.requests.length, before);
     await f.controller.handle('listRuns', { limit: 1 });
@@ -182,5 +188,46 @@ test('切页取消业务读取不能把并行连接探测误报为断连', async
     await started; f.controller.cancelReads(); release!();
     const state = await probe as ConnectionState;
     assert.equal(state.api, 'reachable'); assert.equal(state.identity, 'accepted'); assert.equal(state.repositoryId, REPO);
+  } finally { await f.close(); }
+});
+
+test('S7 只桥接固定实验端点，绑定项目和幂等键并保留精确统计字符串', async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const f = await fixture({ respond: (request, response) => {
+    if (request.url === `/experiments/${REPO}`) {
+      response.end(JSON.stringify({ statistics: { mean: { numerator: '9007199254740993', denominator: '2' } } })); return true;
+    }
+    if (request.method === 'POST' && ['/validators', '/experiments', '/interventions'].includes(request.url!)) {
+      const chunks: Buffer[] = [];
+      request.on('data', chunk => chunks.push(chunk));
+      request.on('end', () => { bodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>); response.end(JSON.stringify({ accepted: true })); });
+      return true;
+    }
+    return false;
+  } });
+  try {
+    await connect(f.controller);
+    const before = f.requests.length;
+    await f.controller.handle('freezeValidator', { sourceRunId: REPO, fromCommit: 'a'.repeat(64), fixtureSplit: 'confirm', key: 'frozen-validator' });
+    await f.controller.handle('getValidator', { validatorRef: 'b'.repeat(64) });
+    await f.controller.handle('createExperiment', { request: { repeats: 5 }, key: 'experiment-key' });
+    const result = await f.controller.handle('getExperiment', { experimentId: REPO }) as { statistics: { mean: { numerator: string; denominator: string } } };
+    assert.deepEqual(result.statistics.mean, { numerator: '9007199254740993', denominator: '2' });
+    await f.controller.handle('getInterventionContext', { sourceRunId: REPO, fromCommit: 'a'.repeat(64), targetEventId: OTHER, validatorRef: 'b'.repeat(64) });
+    await f.controller.handle('createIntervention', { request: { operator: 'PROMPT_PATCH' }, key: 'intervention-key' });
+    await f.controller.handle('getIntervention', { interventionId: OTHER });
+    const requests = f.requests.slice(before);
+    assert.deepEqual(requests.map(request => new URL(request.url!, 'http://localhost').pathname), [
+      '/validators', `/validators/${'b'.repeat(64)}`, '/experiments', `/experiments/${REPO}`, '/intervention-context', '/interventions', `/interventions/${OTHER}`,
+    ]);
+    assert.ok(requests.every(request => request.headers['x-repository-id'] === REPO));
+    assert.deepEqual(requests.filter(request => request.method === 'POST').map(request => request.headers['idempotency-key']), ['frozen-validator', 'experiment-key', 'intervention-key']);
+    assert.deepEqual(bodies, [
+      { schema_version: 1, source_run_id: REPO, from_commit: 'a'.repeat(64), fixture_split: 'confirm' },
+      { schema_version: 1, repeats: 5 }, { schema_version: 1, operator: 'PROMPT_PATCH' },
+    ]);
+    const query = new URL(requests[4]!.url!, 'http://localhost').searchParams;
+    assert.equal(query.get('target_event_id'), OTHER); assert.equal(query.get('validator_ref'), 'b'.repeat(64));
+    assert.equal(query.get('source_run_id'), REPO); assert.equal(query.get('from_commit'), 'a'.repeat(64));
   } finally { await f.close(); }
 });

@@ -10,6 +10,8 @@ S7 新增 `0013_branch_experiments`、`0014_frozen_interventions` 及 `0015_hybr
 
 通用 `RecordingReader` 的冻结输入可以是不透明字节，不能要求所有历史输入都按研究 Agent 的 JSON 解析。Hybrid 来源仍必须严格验证受控 JSON、policy、Job 归属及全部输入引用；CAS 缺失或损坏不能进入通用兼容路径。改动此处时同时运行 `test_recording_reader.py` 与 Hybrid/Recorded 交叉用例。
 
+S7 分组统计和 `actual.model_usage` 为只读投影，不新增迁移。统计分数与合计使用十进制字符串，模型计量读取原始调用及可信核对归属；检查点用量可能滞后，不能用旧 `actual.cost_micro_units` 推断未知费用。示例见 [API.md](API.md)，当前[验收范围](acceptance/S7-statistics.md)明确区分后端、桌面桥接和待实现视图。
+
 - Python 3.12；`.python-version` 与 `requires-python` 限定 3.12 系列。
 - uv 0.12.19；后端版本由 `uv.lock` 冻结，使用 `--locked` 阻止隐式改锁。
 - PostgreSQL 17.6；Docker Compose 只启动本地开发数据库，端口限定 `127.0.0.1:55432`。

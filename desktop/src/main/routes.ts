@@ -292,6 +292,22 @@ export class BusinessController {
       case 'createBranch': input = fields(raw, ['sourceRunId', 'fromCommit', 'branchName', 'key']); return post('/branches',
         { source_run_id: id(input.sourceRunId), from_commit: digest(input.fromCommit), name: text(input.branchName, 100), expected_version: 0 });
       case 'replay': input = fields(raw, ['request', 'key']); return post('/replays', jsonObject(input.request));
+      case 'freezeValidator': {
+        input = fields(raw, ['sourceRunId', 'fromCommit', 'key'], ['fixtureSplit']);
+        const split = input.fixtureSplit === undefined ? 'screen' : text(input.fixtureSplit, 10);
+        if (!['screen', 'confirm', 'regression'].includes(split)) throw new DesktopError('validation', '验收样本标签无效');
+        return post('/validators', { source_run_id: id(input.sourceRunId), from_commit: digest(input.fromCommit), fixture_split: split });
+      }
+      case 'getValidator': input = fields(raw, ['validatorRef']); return get(`/validators/${digest(input.validatorRef)}`, 1048576);
+      case 'createExperiment': input = fields(raw, ['request', 'key']); return post('/experiments', jsonObject(input.request));
+      case 'getExperiment': input = fields(raw, ['experimentId']); return get(`/experiments/${id(input.experimentId)}`, 1048576);
+      case 'getInterventionContext': {
+        input = fields(raw, ['sourceRunId', 'fromCommit', 'targetEventId', 'validatorRef']);
+        return get(query('/intervention-context', { source_run_id: id(input.sourceRunId), from_commit: digest(input.fromCommit),
+          target_event_id: id(input.targetEventId), validator_ref: digest(input.validatorRef) }), 1048576);
+      }
+      case 'createIntervention': input = fields(raw, ['request', 'key']); return post('/interventions', jsonObject(input.request));
+      case 'getIntervention': input = fields(raw, ['interventionId']); return get(`/interventions/${id(input.interventionId)}`, 1048576);
       case 'controlRun': {
         input = fields(raw, ['runId', 'action', 'expectedVersion', 'key']);
         const action = text(input.action, 10);

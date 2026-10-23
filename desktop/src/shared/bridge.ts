@@ -51,6 +51,13 @@ export interface Inputs {
   createBranch: { sourceRunId: string; fromCommit: string; branchName: string; key: string };
   replay: { request: JsonObject; key: string };
   getReplay: { jobId: string };
+  freezeValidator: { sourceRunId: string; fromCommit: string; fixtureSplit?: 'screen' | 'confirm' | 'regression'; key: string };
+  getValidator: { validatorRef: string };
+  createExperiment: { request: JsonObject; key: string };
+  getExperiment: { experimentId: string };
+  getInterventionContext: { sourceRunId: string; fromCommit: string; targetEventId: string; validatorRef: string };
+  createIntervention: { request: JsonObject; key: string };
+  getIntervention: { interventionId: string };
   getDiff: { base: string; head: string; after?: number; limit?: number };
   controlRun: { runId: string; action: 'pause' | 'resume' | 'cancel'; expectedVersion: number; key: string };
   decideApproval: { approvalId: string; decision: 'approve' | 'reject'; expectedVersion: number; key: string };

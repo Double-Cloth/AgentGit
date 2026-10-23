@@ -2,6 +2,8 @@
 
 当前为 S6 实施版，候选版本 0.1.3。四页、受限 IPC、模型选择/计量、真实五工具/Fork/Recorded/Live/Diff 和当前用户安装生命周期已验证；关系图键盘选择已修复。原生保存和独立 Windows 环境仍待验收，阶段退出条件不变。操作步骤见 [D1 桌面离线指南](../doc/D1-desktop-demo.md)，逐项证据见[当前验收记录](../doc/acceptance/S6-keyboard-and-gates.md)。
 
+当前源码已准备 S7 验收器/实验/干预的七个固定 IPC，并通过 21 项单元与 2 项真实 Electron 测试；实际受控实验表单、统计和 trial 视图仍待接入。详情见 [S7 统计增量](../doc/acceptance/S7-statistics.md)和[桌面接线方案](../doc/S7-desktop-experiments-plan.md)。本轮未重建 0.1.3 分发候选，不把固定桥接当作新视图交付。
+
 ## 固定构建环境
 
 Windows x64，Node.js **24.19.0**，npm **12.1.0**。使用 `package-lock.json`，不隐式升级依赖。
@@ -70,6 +72,8 @@ renderer 构建前会从已锁定且已安装的声明依赖生成 26 项授权�
 打包和审计仅接受 .build、package.json、node_modules 三个根入口；新增配置、测试失败轨迹和其他根文件一律不分发。审计实际拒绝旧候选，并验证新候选的 ZIP / Nupkg 内容；不要只检查已知禁止文件名。
 
 `npm test` 检查主进程客户端、参数/项目/来源验证、二进制导出与偏好；`test:electron` 启动真实 Electron，使用受控 HTTP fixture 检查四页、渲染隔离、注入文本、拒绝导航/额外窗口 IPC、双击提交和窗口宽度。fixture 不冒充真实后端执行，详见 [初版证据](../doc/acceptance/S6-desktop-progress.md)。
+
+后续边界复验可设置 `AGENTGIT_ELECTRON_EVIDENCE_PREFIX`（1–80 位字母、数字、下划线或连字符），例如 `S7-statistics`，将本轮截图/观测写入独立前缀，保留旧 S6 证据。该变量只控制测试产物名，不进入应用参数或安装包。
 
 `test:electron:real` 另外要求已准备 PostgreSQL 测试库、Docker Linux 与固定镜像。它使用独立测试 Schema 和独立 Worker，真实执行五工具、分支/Replay/Diff，并核验来源不变、容器清理和原字节导出。缺设施即失败，不 skip；产品 Python 源码在测试期间应冻结。详见 [真实联调](../doc/acceptance/S6-desktop-real.md)。默认保存测试替换原生对话框返回值，不算原生对话框交互已验收。生命周期用例通过独立 Worker 门控证明关窗后任务继续，检查重开/单实例/渲染崩溃与 503 恢复不新增 POST，并以 Chromium device scale factor 1/1.5/2 验证四页、图节点键盘选择和长内容；不是修改 Windows 显示设置。四个配置分别使用 test-results 的 boundary/real/install/native 子目录，避免跨配置并发清理轨迹；同一配置的运行仍应串行。
 
