@@ -1,11 +1,24 @@
-import React, { useRef, useState } from 'react';
+import React, { lazy, Suspense, useRef, useState } from 'react';
+import { hasFeature } from '../shared/experiments';
 import type { JsonObject } from '../shared/bridge';
 import { jsonObject, liveBudget, liveIsExternal } from '../shared/model-config';
 import { ReplayUsage } from './BudgetSummary';
 import { call, Empty, JsonView, Notice, object, rows, short, str, useAction, useRead, type PageProps } from './ui';
 
 type Mode = 'recorded' | 'live' | 'fork';
+const Experiments = lazy(() => import('./Experiments'));
 export default function Branch(props: PageProps) {
+  const [view, setView] = useState('single'), [opened, setOpened] = useState(false);
+  const capabilities = useRead(() => call(window.agentgit.capabilities()), [], 5000);
+  const supported = hasFeature(capabilities.data, 'controlled_experiments') && hasFeature(capabilities.data, 'experiment_statistics');
+  return <><div className="page-heading"><div><span className="eyebrow">BRANCH EXPERIMENT</span><h1>分支实验</h1><p>选择安全检查点，明确历史验证与独立重执行的边界。</p></div></div>
+    <div className="tabs" role="group" aria-label="实验入口"><button aria-pressed={view === 'single'} className={view === 'single' ? 'active' : ''} onClick={() => setView('single')}>单次分支</button><button disabled={!supported} aria-pressed={view === 'experiment'} className={view === 'experiment' ? 'active' : ''} onClick={() => { setOpened(true); setView('experiment'); }}>受控 A/B 实验</button></div>
+    {!supported && <p className="small muted">当前后端尚未确认支持受控实验与统计。单次分支仍可使用。</p>}
+    <div hidden={view !== 'single'}><SingleBranch {...props} active={view === 'single'} /></div>
+    {opened && <div hidden={view !== 'experiment'}><Suspense fallback={<p role="status">正在载入实验表单…</p>}><Experiments {...props} active={view === 'experiment' && supported} capabilities={capabilities.data} /></Suspense></div>}
+  </>;
+}
+function SingleBranch(props: PageProps & { active: boolean }) {
   const [mode, setMode] = useState<Mode>('recorded'), [source, setSource] = useState(props.runId), [from, setFrom] = useState(props.selectedCommit);
   const [until, setUntil] = useState(''), [name, setName] = useState(''), [overrides, setOverrides] = useState('{}'), [budget, setBudget] = useState('');
   const [jobId, setJobId] = useState(''), [accepted, setAccepted] = useState<JsonObject | null>(null), [frozen, setFrozen] = useState(false);
@@ -14,10 +27,10 @@ export default function Branch(props: PageProps) {
   const runs = useRead(() => call(window.agentgit.listRuns({ limit: 100 })), []);
   const run = useRead(() => source ? call(window.agentgit.getRun({ runId: source })) : Promise.resolve({} as JsonObject), [source]);
   const commits = useRead(() => source && run.data?.branch_name ? call(window.agentgit.listCommits({ branchName: str(run.data.branch_name), limit: 100 })) : Promise.resolve({} as JsonObject), [run.data?.branch_name]);
-  const report = useRead(() => jobId ? call(window.agentgit.getReplay({ jobId })) : Promise.resolve({} as JsonObject), [jobId], jobId ? 3000 : 0);
+  const report = useRead(() => jobId && props.active ? call(window.agentgit.getReplay({ jobId })) : Promise.resolve(accepted ?? {} as JsonObject), [jobId, props.active], jobId && props.active ? 3000 : 0, jobId);
   const externalLive = mode === 'live' && liveIsExternal(run.data, overrides);
   const sourceReady = str(run.data?.id).toLowerCase() === source.trim().toLowerCase() && Boolean(source.trim());
-  return <><div className="page-heading"><div><span className="eyebrow">BRANCH EXPERIMENT</span><h1>分支实验</h1><p>选择安全检查点，明确历史验证与独立重执行的边界。</p></div></div>
+  return <>
     <div className="branch-layout"><section className="panel"><h2>建立独立分支</h2><div className="mode-options" role="radiogroup" aria-label="分支模式">{([['recorded', 'Recorded', '验证已记录历史'], ['live', 'Live', '重新执行剩余计划'], ['fork', 'Fork', '只建立安全分支']] as const).map(([id, title, description]) => <label key={id} className={mode === id ? 'selected' : ''}><input type="radio" name="mode" value={id} checked={mode === id} disabled={frozen} onChange={() => setMode(id)} /><strong>{title}</strong><span>{description}</span></label>)}</div>
       <form onSubmit={event => { event.preventDefault(); void action.run(async () => {
         if (!attempt.current) {

@@ -201,6 +201,8 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
     await page.screenshot({ path: `../.agentgit/evidence/${EVIDENCE}-timeline-electron.png`, fullPage: true });
     await page.getByRole('button', { name: '从所选检查点分支 →' }).click();
     await expect(page.getByRole('heading', { name: '分支实验', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '受控 A/B 实验', exact: true })).toBeDisabled();
+    for (const name of ['Recorded 验证已记录历史', 'Live 重新执行剩余计划', 'Fork 只建立安全分支']) await expect(page.getByRole('radio', { name, exact: true })).toBeEnabled();
     await expect(page.getByLabel('安全起点 Commit')).toHaveValue(COMMIT);
     await expect(page.getByLabel('验证终点 Commit')).toBeVisible();
     await page.getByRole('radio', { name: /Live/ }).check();

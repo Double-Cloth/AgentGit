@@ -342,16 +342,44 @@ def main():
         api_settings = settings.model_copy(update={"api_token": SecretStr(token)})
         app = create_app(api_settings, management=manager)
         traffic = []
+        mutations = []
+        responses = []
 
         @app.middleware("http")
         async def fixture_availability(request, call_next):
             traffic.append(f"{request.method} {request.url.path}")
+            if request.method == "POST":
+                mutations.append(
+                    {"path": request.url.path, "key": request.headers.get("Idempotency-Key")}
+                )
             if (root / "api-gate").exists():
                 return JSONResponse(
                     {"error": {"code": "fixture_unavailable", "message": "测试 API 暂不可用"}},
                     status_code=503,
                 )
-            return await call_next(request)
+            started = time.monotonic()
+            response = await call_next(request)
+            responses.append(
+                {
+                    "path": request.url.path,
+                    "status": response.status_code,
+                    "elapsed_ms": round((time.monotonic() - started) * 1000),
+                }
+            )
+            marker = root / "lose-experiment-reply"
+            if request.method == "POST" and request.url.path == "/experiments" and marker.exists():
+                marker.unlink()
+                assert response.status_code == 202
+                return JSONResponse(
+                    {
+                        "error": {
+                            "code": "fixture_unavailable",
+                            "message": "测试丢失已提交的实验响应",
+                        }
+                    },
+                    status_code=503,
+                )
+            return response
 
         opened = socket.socket()
         opened.bind(("127.0.0.1", 0))
@@ -413,6 +441,13 @@ def main():
                 }
             elif name == "traffic":
                 result = {"posts": [item for item in traffic if item.startswith("POST ")]}
+            elif name == "mutation_audit":
+                result = {"mutations": mutations}
+            elif name == "response_audit":
+                result = {"responses": responses}
+            elif name == "lose_experiment_reply":
+                (root / "lose-experiment-reply").write_text("once")
+                result = {"enabled": True}
             elif name == "worker_stop":
                 (root / "worker-stop").write_text("stop")
                 worker.wait(timeout=100)

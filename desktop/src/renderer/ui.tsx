@@ -43,9 +43,9 @@ export function useAction() {
   }
   return { busy, error, run, clearError: () => setError('') };
 }
-const STATUS: Record<string, string> = { queued: '排队中', running: '运行中', completed: '已完成', failed: '失败',
+const STATUS: Record<string, string> = { queued: '排队中', planning: '规划中', running: '运行中', completed: '已完成', failed: '失败',
   cancelled: '已取消', paused: '已暂停', waiting_approval: '等待审批', outcome_unknown: '结果未知', interrupted: '已中断',
-  pending: '待处理', approved: '已批准', rejected: '已拒绝', expired: '已过期' };
+  pending: '待处理', approved: '已批准', rejected: '已拒绝', expired: '已过期', budget_exhausted: '预算耗尽' };
 export function Status({ value }: { value: Json | undefined }) {
   const state = str(value);
   return <span className={`status status-${state}`}><span aria-hidden="true" />{(STATUS[state] ?? state) || '未知'}</span>;

@@ -216,3 +216,25 @@ dd { margin: 0; color: var(--ink); }
   .welcome h1 { font-size: 36px; }
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+.experiments { min-width: 0; }
+.workspace { border: 0; margin: 0; padding: 0; min-width: 0; }
+.experiment-layout { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+.experiments fieldset { border: 0; border-top: 1px solid var(--line); margin: 24px 0; padding: 20px 0 0; min-width: 0; }
+.experiments legend { font-weight: 500; padding-right: 12px; }
+.experiments fieldset > label ~ label { margin-top: 20px; }
+.experiments details { margin-block: 16px; min-width: 0; }
+.experiments summary { cursor: pointer; overflow-wrap: anywhere; }
+.experiment-groups, .experiment-group-results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.experiments .panel, .experiment-group-results > section { min-width: 0; }
+.experiment-history, .experiment-report { margin-top: 32px; }
+.experiment-list { list-style: none; padding: 0; }
+.experiment-list li { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding-block: 12px; border-bottom: 1px solid var(--line); }
+.experiment-list span, .experiment-report code, .intervention-context code { overflow-wrap: anywhere; }
+.experiment-report .section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-block: 32px 16px; }
+.experiment-report .compact-label { margin: 0; }
+.experiment-report td details { max-width: 32rem; }
+.experiment-report td .code { max-height: 360px; }
+.experiment-statistics .table-scroll { max-width: 100%; }
+@media (max-width: 1199px) { .experiment-group-results { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1023px) { .experiment-layout { grid-template-columns: minmax(0, 1fr); } .experiment-layout .branch-aside { display: block; } }
+@media (max-width: 767px) { .experiment-groups { grid-template-columns: minmax(0, 1fr); gap: 0; } .experiment-report h2 code { display: block; font-size: 18px; } }

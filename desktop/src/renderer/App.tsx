@@ -12,6 +12,7 @@ export function App() {
   const [page, setPage] = useState<Page>('runs'), [connection, setConnection] = useState<ConnectionState | null>(null);
   const [settings, setSettings] = useState(false), [problem, setProblem] = useState('');
   const [runId, setRunId] = useState(''), [commit, setCommit] = useState('');
+  const [confirmedWorkspace, setConfirmedWorkspace] = useState('');
   useEffect(() => {
     let active = true, first = true, timer: ReturnType<typeof setTimeout>;
     async function check() {
@@ -26,6 +27,9 @@ export function App() {
   }, []);
   useEffect(() => () => window.agentgit.cancelReads(), [page, connection?.repositoryId, connection?.baseUrl]);
   const ready = connection?.identity === 'accepted' && connection.database === 'ready' && connection.compatibility === 'compatible';
+  const workspace = connection?.repositoryId ? connection.repositoryId + ':' + connection.baseUrl : '';
+  useEffect(() => { if (ready && workspace) setConfirmedWorkspace(workspace); }, [ready, workspace]);
+  const retainWorkspace = Boolean(workspace && (ready || confirmedWorkspace === workspace));
   function changeConnection(value: ConnectionState) { setConnection(value); setRunId(''); setCommit(''); }
   const props = { runId, setRunId, selectedCommit: commit, setSelectedCommit: setCommit,
     openTimeline: (id: string) => { setRunId(id); setPage('timeline'); },
@@ -36,10 +40,10 @@ export function App() {
   </div></header><div className="shell contextbar"><span>当前项目</span><code>{connection?.repositoryId ?? '尚未选择'}</code><button className="text-button" onClick={() => setSettings(true)}>切换项目</button><span className="context-end">本机 · Windows x64</span></div>
     <main id="main" className="shell" tabIndex={-1}><Notice>{problem || (connection && !ready ? connection.message : '')}</Notice>
       {settings && <Connection key={connection?.baseUrl ?? 'initial'} state={connection} onChange={changeConnection} onClose={() => setSettings(false)} />}
-      {!ready || !connection?.repositoryId ? <section className="welcome"><span className="eyebrow">执行历史 · 隔离分支 · 可审计回放</span><h1>让每次执行有据可查。</h1><p>连接本机 API 后选择项目，查看运行、追溯检查点，并比较独立分支的结果。</p><p className="muted">桌面只展示和管理任务。Worker 与固定容器是否就绪，以实际任务证据为准。</p>{!settings && <button className="primary" onClick={() => setSettings(true)}>配置连接与项目</button>}</section>
-        : <div key={connection.repositoryId + ':' + connection.baseUrl}><Suspense fallback={<p role="status">正在打开页面…</p>}>
+      {!retainWorkspace && <section className="welcome"><span className="eyebrow">执行历史 · 隔离分支 · 可审计回放</span><h1>让每次执行有据可查。</h1><p>连接本机 API 后选择项目，查看运行、追溯检查点，并比较独立分支的结果。</p><p className="muted">桌面只展示和管理任务。Worker 与固定容器是否就绪，以实际任务证据为准。</p>{!settings && <button className="primary" onClick={() => setSettings(true)}>配置连接与项目</button>}</section>}
+      {retainWorkspace && <fieldset className="workspace" disabled={!ready} aria-label="当前项目工作区" key={workspace}><Suspense fallback={<p role="status">正在打开页面…</p>}>
           {page === 'runs' ? <Runs {...props} /> : page === 'timeline' ? <Timeline {...props} /> : page === 'branch' ? <Branch {...props} /> : <Diff />}
-        </Suspense></div>}
+        </Suspense></fieldset>}
     </main><footer className="shell footer"><span>AgentGit {__AGENTGIT_DESKTOP_VERSION__}</span><span>状态可恢复、历史可验证与修复有效，分别判断。</span></footer></>;
 }
 

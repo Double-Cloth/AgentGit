@@ -38,7 +38,7 @@ web
 - 主进程 API 客户端只有固定回环端点、路由、方法和有界请求/响应；IPC 有业务白名单、sender/frame/参数/项目验证。渲染进程启用隔离、sandbox、CSP 和导航限制。
 - 外部资料、Markdown、HTML、代码和日志均是不可信数据。产物仅按 ID 下载，由主进程的原生保存对话框确定导出目标，渲染进程不能传入任意宿主路径。
 - 无外部模型密钥、无外网时离线 Demo 和确定性测试必须可用。S6 已接入固定 OpenAI Responses 模型，Runs/Live 显式选择并输入 USD 上限，Timeline 区分价格表估计、预留、历史逻辑和本次实际用量。密钥只在独立 Worker；真实供应商冒烟需明确开启、单列实际结果，不成为离线隐含条件。
-- S7 后端已提供冻结验收器、A/B Live/Hybrid 实验、持久 Job/Run 和 API/CLI，以及[类型化干预与只读上下文](doc/acceptance/S7-interventions.md)。Hybrid 已接入 Worker、不可变观测账本、实际/逻辑计量、恢复与 Recorded 复验；synthetic 与模拟结果显式标为 test_only。[精确分组统计与固定桌面桥接](doc/acceptance/S7-statistics.md)已实现，成功率、方差、Token 与未知费用分别说明。实际桌面实验表单、统计/trial 视图和控制交互仍待完成，S7 未整体验收。
+- S7 后端已提供冻结验收器、A/B Live/Hybrid 实验、持久 Job/Run 和 API/CLI，以及[类型化干预与只读上下文](doc/acceptance/S7-interventions.md)。Hybrid 已接入 Worker、不可变观测账本、实际/逻辑计量、恢复与 Recorded 复验；synthetic 与模拟结果显式标为 test_only。[精确分组统计与固定桌面桥接](doc/acceptance/S7-statistics.md)和[桌面受控实验视图](doc/acceptance/S7-desktop.md)已实现。来源/验收器冻结、A/B 条件、实验发现、统计/trial、控制与重开查询通过本机接线；真实 Live 10 trial 得到 9 通过及 1 取消，Hybrid 各 5 项全部通过并区分录制/合成来源。新视图尚未进入已审计 Windows 包，S7 未整体验收。
 
 ## Brand Commitments
 

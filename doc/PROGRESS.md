@@ -11,7 +11,7 @@
 | S4 | 已验收（本机） | [S4.md](acceptance/S4.md)：T01–T20 逐项核对；当前 392 项分批覆盖，真实 CLI 五工具/产物 hash 通过；清理后新 attempt、预算与恢复控制完成，doctor 实测就绪 |
 | S5 | 已验收（本机） | [S5.md](acceptance/S5.md)：T01–T09 核对；599 项由三个不重叠组全部覆盖，无失败/跳过；实际 CLI 五工具→Recorded→复合 Recorded→A/B Live→Diff 通过；来源不变，4 个容器独立且清理确认 |
 | S6 | 实施中，未验收 | [当前 0.1.3 与 T01–T12 核对](acceptance/S6-keyboard-and-gates.md)：20 项桌面单元、2 条打包 Electron 边界、4 条解压包真实后端流程、MSIX 安装/升级/卸载/重装通过；关系图键盘选择与焦点已修正，[D1 操作指南](D1-desktop-demo.md)齐备。此前[模型接线](acceptance/S6-model-desktop.md)的分批后端回归去重 701 项。原生保存、独立用户/原生 DPI/禁止外网及真实依赖缺失交叉复核待完成；真实供应商冒烟单列未运行 |
-| S7 | 实施中，未验收 | 冻结验收器、实验/API/CLI、类型化干预、Hybrid 持久运行和[精确分组统计](acceptance/S7-statistics.md)已实现。当前 416 单元、347 集成及 1 条真实 Hybrid 容器链共 764 项去重通过；桌面固定桥接另有 21 单元和 2 条 Electron 验证。上轮其余 16 条真实执行专项保留历史证据，不重复累计。实际表单、统计/trial 视图与控制按[桌面接线方案](S7-desktop-experiments-plan.md)继续；S6/D1 原生/环境专项延后补验 |
+| S7 | 实施中，未验收 | 冻结验收器、实验/API/CLI、类型化干预、Hybrid 持久运行、[精确统计](acceptance/S7-statistics.md)及[桌面受控实验](acceptance/S7-desktop.md)已实现。此前 764 项后端全覆盖保留历史证据；本轮 497 项定向后端回归、26 桌面单元、既有 2 条边界和新增 2 条 Electron 流程按新记录单列，不累加旧结果。真实 Live 10 trial 为 9 通过/1 取消，Hybrid A/B 各 5 全通过，录制/合成来源、原键重试及重开无 POST 已核对。下一步构建审计含新视图的 Windows 候选及核对 S7 总退出条件；S6/D1 原生/环境专项延后补验 |
 | S8–S10 | 未开始 | S7 后进入定位、修复搜索与 D2；不能提前算作已交付 |
 | S11 | 必选，未开始 | D2 后完成三方产物/结构化状态合并、桌面 Merge Review 及验收，再进入 S12 |
 | S12-A/B/C/D | 必选，未开始 | S11 及四项适配全部验收、最终桌面包验证后才达到 D3 |

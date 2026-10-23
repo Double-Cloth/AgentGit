@@ -88,3 +88,22 @@ renderer 构建前会从已锁定且已安装的声明依赖生成 26 项授权�
 安装回归单独使用 `npm run test:electron:install`，不会混入默认 `npm test` / `test:electron:real`。它真实覆盖安装目录并卸载，**只能在本次测试拥有、已准备 0.1.0 基线且没有已有 preferences.json 的环境**运行。必须显式提供 `AGENTGIT_INSTALL_TEST=1`、`AGENTGIT_INSTALL_SETUP` 的绝对路径与其已核验的 `AGENTGIT_INSTALL_SETUP_SHA256`。存在 MSIX 重定向时，还必须明确填写已经检查的 `AGENTGIT_INSTALL_PHYSICAL_ROOT`；脚本固定比较 realpath，不自动接受重定向。不能把当前 MSIX 上下文当作独立 Windows 用户或无构建 Node 的环境。
 
 桌面版本号由 Vite 在构建时读取 package.json，页脚与授权面板和 Electron app.getVersion 一致；后端能力协议仍固定 0.1.0，不随桌面 patch 版本隐式升级。
+
+## S7 受控实验
+
+Branch Experiment 的“受控 A/B 实验”先核对来源 Run 和安全起点，再显式冻结共同验收器。每组默认 5 次，可选完整 Prompt、完整计划或既有有序干预 ID；模型、权限、split、预算及验收规则不能按组修改。外部模型须输入每个 trial 的 USD 上限，金额按两组次数分别授权，仍由后端核对不扩大来源权限。
+
+Hybrid 的只读上下文使用正整数事件 ID，返回调用 UUID、签名和前置条件；响应补丁只引用完整同参录制，并显式标为 test_only。先冻结补丁，再加入 B 组；不会提供应用正式配置动作。统计区分全部消耗与已验收完整试验，按有界 BigInt 显示分数、方差、Token 和微美元；未知费用不显示为零，近似数值带 `≈`。
+
+提交和控制动作固定请求与幂等键。断连禁用操作并保留当前工作区；恢复连接后继续查询，未知提交结果只用原键重试。退出和重开不自动 POST，可从当前项目实验列表或 Experiment UUID 查询历史报告。不兼容验收器显示错误，不能据此重判为失败或零成功率。暂停和取消须等待 Worker 安全点落实。
+
+源码本机专项命令（在 `desktop` 目录）：
+
+```powershell
+npm.cmd run typecheck
+npm.cmd test
+npm.cmd run build
+npx.cmd playwright test --config playwright.experiments.config.ts
+```
+
+该专项包含明确标注的 HTTP fixture 边界与独立 PostgreSQL/API/Worker、固定容器真实流程，不替代独立 Windows 安装、原生保存和 DPI 验收。真实联调须先具备仓库测试配置、PostgreSQL 和已冻结镜像，使用自己的测试 Schema 和 Worker；不会操作外部服务或调用付费模型。
