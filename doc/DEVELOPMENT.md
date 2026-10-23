@@ -2,6 +2,8 @@
 
 实现进度与阶段证据见 [PROGRESS.md](PROGRESS.md)。README 保留项目介绍；方案和设计的 S0 描述是规划时的历史基线。
 
+S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命令、身份预置和字体授权见 [desktop/README.md](../desktop/README.md)。当前是已通过定向测试的初版，安装/便携包及独立用户验收尚未完成。
+
 ## 环境
 
 - Python 3.12；`.python-version` 与 `requires-python` 限定 3.12 系列。

@@ -27,3 +27,7 @@ Dockerfile text eol=lf
 *.gif binary
 *.webp binary
 *.pdf binary
+# 上游字体与授权保持原字节，授权原文的行尾空格不作为项目格式错误。
+desktop/src/renderer/assets/fonts/*.ttf binary
+desktop/src/renderer/assets/fonts/*-OFL.txt -text whitespace=-trailing-space
+desktop/src/renderer/public/licenses/*-OFL.txt -text whitespace=-trailing-space
