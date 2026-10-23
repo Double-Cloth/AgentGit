@@ -2,9 +2,11 @@
 
 实现进度与阶段证据见 [PROGRESS.md](PROGRESS.md)。README 保留项目介绍；方案和设计的 S0 描述是规划时的历史基线。
 
-S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命令、身份预置和字体授权见 [desktop/README.md](../desktop/README.md)。当前是已通过定向测试的初版，安装/便携包及独立用户验收尚未完成。
+S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命令、身份预置和字体授权见 [desktop/README.md](../desktop/README.md)。当前候选 0.1.3 的本机证据见[核对矩阵](acceptance/S6-keyboard-and-gates.md)，独立用户/原生专项仍未验收。用户已授权延后这些专项、先继续 S7；范围见实施方案第 1.2 节。
 
 ## 环境
+
+S7 新增 `0013_branch_experiments`，只增加不可变实验/trial 归属索引，运行状态仍由既有 Job/Run 管理。新入口和示例见 [API.md](API.md)；本次自动化验证仅迁移独立测试 schema，没有自动迁移用户的业务库或重建桌面包。历史迁移保持冻结。
 
 - Python 3.12；`.python-version` 与 `requires-python` 限定 3.12 系列。
 - uv 0.12.19；后端版本由 `uv.lock` 冻结，使用 `--locked` 阻止隐式改锁。
@@ -71,7 +73,7 @@ CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障�
 
 ## S3 离线研究演示
 
-S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 head 已推进至 `0012_replay_source_index`。先升级开发库，再运行：
+S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 head 已推进至 `0013_branch_experiments`。先升级开发库，再运行：
 
 ```powershell
 uv run --locked alembic upgrade head

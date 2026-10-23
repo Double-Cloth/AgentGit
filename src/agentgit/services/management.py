@@ -15,6 +15,7 @@ from agentgit.config import Settings
 from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.effects import ToolPolicy
 from agentgit.core.errors import AgentGitError, ErrorCode
+from agentgit.core.experiments import FreezeValidator, NewExperiment
 from agentgit.core.management import (
     ControlRun,
     DecideApproval,
@@ -26,10 +27,11 @@ from agentgit.core.management import (
 from agentgit.core.model_usage import OpenAIOptions, price_micro_usd
 from agentgit.core.models import CallIntent, parse_contract
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage
-from agentgit.core.versions import LiveReplay, NewBranch, RecordedReplay
+from agentgit.core.versions import LiveReplay, NewBranch, RecordedRange, RecordedReplay
 from agentgit.runtime.model_budget import call_budget
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.execution_views import ExecutionResource, ExecutionViewService
+from agentgit.services.experiments import ExperimentService
 from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.inspection import InspectionService
 from agentgit.services.jobs import JobService
@@ -62,6 +64,65 @@ class ManagementService:
         self.replays = ReplayService(research)
         self.inspection = InspectionService(self.history)
         self.execution_views = ExecutionViewService(self.history)
+        self.experiments = ExperimentService(research)
+
+    def create_experiment(
+        self, repository_id: UUID, payload: NewExperiment, key: str
+    ) -> dict[str, Any]:
+        return self._mutate(
+            "POST /experiments",
+            key,
+            repository_id,
+            payload.model_dump(mode="json"),
+            lambda connection: self.experiments.submit(
+                repository_id, payload, actor=self.actor, connection=connection
+            ),
+        )
+
+    def freeze_validator(
+        self, repository_id: UUID, payload: FreezeValidator, key: str
+    ) -> dict[str, Any]:
+        def action(connection: Connection) -> dict[str, Any]:
+            self.versions.select_range(
+                repository_id,
+                RecordedRange(
+                    source_run_id=payload.source_run_id,
+                    from_commit=payload.from_commit,
+                    until_commit=payload.from_commit,
+                ),
+            )
+            view = self.versions.checkout(repository_id, payload.from_commit)
+            state = parse_contract(encode(view["snapshot"]["data"]), AgentState)
+            corpus = self.replays._source_corpus(repository_id, UUID(payload.source_run_id))
+            source_input = self.history.objects.get_json(
+                view["environment"]["input_ref"], ObjectType.BLOB
+            )
+            if (
+                not isinstance(source_input, dict)
+                or source_input.get("goal") != state.goal.model_dump(mode="json")
+                or source_input.get("corpus_digest") != corpus.digest()
+                or view["environment"]["evaluation_time"] != corpus.evaluation_time
+            ):
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "来源冻结输入或语料无法复核")
+            ref = self.experiments.validators.freeze(
+                repository_id,
+                state.goal,
+                corpus,
+                fixture_split=payload.fixture_split,
+                connection=connection,
+            )
+            return {"schema_version": 1, "repository_id": str(repository_id), "validator_ref": ref}
+
+        return self._mutate(
+            "POST /validators", key, repository_id, payload.model_dump(mode="json"), action
+        )
+
+    def validator(self, repository_id: UUID, validator_ref: str) -> dict[str, Any]:
+        manifest = self.experiments.validators.manifest(repository_id, validator_ref)
+        return {"validator_ref": validator_ref, "manifest": manifest.model_dump(mode="json")}
+
+    def experiment(self, repository_id: UUID, experiment_id: UUID) -> dict[str, Any]:
+        return self.experiments.report(repository_id, experiment_id)
 
     def capabilities(self) -> dict[str, Any]:
         config = AgentConfig()

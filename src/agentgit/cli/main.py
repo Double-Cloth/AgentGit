@@ -20,6 +20,7 @@ from agentgit.adapters.execution.policy import bundled_policy
 from agentgit.config import Settings
 from agentgit.core.canonical import decode, encode
 from agentgit.core.errors import AgentGitError, ErrorCode
+from agentgit.core.experiments import FreezeValidator, NewExperiment
 from agentgit.core.management import (
     ControlRun,
     DecideApproval,
@@ -177,6 +178,54 @@ def task(
             NewTask,
         )
         emit(service.create_task(repository_id, payload, key))
+
+
+@app.command("freeze-validator")
+def freeze_validator(
+    repository_id: UUID,
+    source_run: Annotated[UUID, typer.Option()],
+    from_commit: Annotated[str, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    fixture_split: str = "screen",
+    testing: bool = False,
+) -> None:
+    """从明确归属的历史输入冻结固定验收规则，不执行 trial。"""
+    with management(testing) as service:
+        payload = parse_contract(
+            encode(
+                {
+                    "schema_version": 1,
+                    "source_run_id": str(source_run),
+                    "from_commit": from_commit,
+                    "fixture_split": fixture_split,
+                }
+            ),
+            FreezeValidator,
+        )
+        emit(service.freeze_validator(repository_id, payload, key))
+
+
+@app.command("experiment")
+def experiment(
+    repository_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """按冻结 JSON 条件原子排队 A/B trial；执行交给独立 Worker。"""
+    with management(testing) as service:
+        with file.open("rb") as stream:
+            payload = stream.read(1_048_577)
+        if len(payload) > 1_048_576:
+            raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "实验输入文件超过上限")
+        emit(service.create_experiment(repository_id, parse_contract(payload, NewExperiment), key))
+
+
+@app.command("experiment-status")
+def experiment_status(repository_id: UUID, experiment_id: UUID, testing: bool = False) -> None:
+    """读取实际 Job/Run、冻结验收和 trial 计量。"""
+    with management(testing) as service:
+        emit(service.experiment(repository_id, experiment_id))
 
 
 @app.command("replay")

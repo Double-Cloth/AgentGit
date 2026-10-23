@@ -2,6 +2,8 @@
 
 本记录只覆盖 S7 第一步；S7 整体尚未验收。当前开发顺序依据用户 2026-10-23 的明确授权，S6 剩余环境/原生专项延后补验，见[实施方案第 1.2 节](../AgentGit_实施方案_v1.0.0.md)。
 
+后续实验调度与 API/CLI 增量已继续推进，最新范围见 [S7 实施记录](../S7-experiments-plan.md)。本文的 37/406 项是 `f3fcb57` 增量的历史证据，不据此宣称后续代码已通过相同范围。
+
 ## 已实现
 
 - `ValidatorManifest` 固定 `research-validator/v1` 的八组硬规则、任务输入、语料、UTC 评估时间、fixture split、代码版本、依赖锁摘要和报告 Schema 摘要。输入/语料/manifest 使用现有 AGJSON-v1 和带类型的 CAS 摘要；不新增依赖或修改历史 Schema。

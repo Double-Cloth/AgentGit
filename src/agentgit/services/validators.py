@@ -4,6 +4,7 @@ from typing import Literal
 from uuid import UUID
 
 import sqlalchemy as sa
+from sqlalchemy.engine import Connection
 
 from agentgit.adapters.corpus import Corpus
 from agentgit.core.canonical import ObjectType, encode
@@ -13,6 +14,7 @@ from agentgit.core.models import parse_contract
 from agentgit.core.research import AgentState, ResearchGoal
 from agentgit.experiments.validation import evaluate_frozen, freeze_validator
 from agentgit.services.history import HistoryService
+from agentgit.storage.database import transaction
 from agentgit.storage.schema import build_metadata
 
 TABLES = build_metadata().tables
@@ -29,8 +31,10 @@ class ValidatorService:
         corpus: Corpus,
         *,
         fixture_split: Literal["screen", "confirm", "regression"] = "screen",
+        connection: Connection | None = None,
     ) -> str:
-        with self.history.engine.connect() as connection:
+        provided = connection
+        with transaction(self.history.engine, provided) as connection:
             if (
                 connection.execute(
                     sa.select(TABLES["repositories"].c.id).where(
@@ -54,7 +58,7 @@ class ValidatorService:
                     ),
                 )
             )
-        with self.history.engine.begin() as connection:
+        with transaction(self.history.engine, provided) as connection:
             for role, obj in references:
                 self.history._ref(connection, repository_id, obj, "validator", item.id, role)
         return item.id

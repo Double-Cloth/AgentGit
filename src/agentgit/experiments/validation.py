@@ -47,12 +47,10 @@ def freeze_validator(
     )
 
 
-def evaluate_frozen(
+def frozen_inputs(
     objects: ObjectStore,
     manifest: ValidatorManifest,
-    state: AgentState,
-    contents: Mapping[str, bytes],
-) -> tuple[Literal["passed", "failed", "incomplete"], Evaluation]:
+) -> tuple[ResearchGoal, Corpus]:
     # 每次加载都核对兼容性，不能让旧 manifest 悄悄使用新代码或新依赖判分。
     manifest = parse_contract(encode(manifest.model_dump(mode="json")), ValidatorManifest)
     if (
@@ -69,6 +67,16 @@ def evaluate_frozen(
         or corpus.evaluation_time != manifest.evaluation_time
     ):
         raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "冻结语料、评估时间或摘要不符")
+    return goal, corpus
+
+
+def evaluate_frozen(
+    objects: ObjectStore,
+    manifest: ValidatorManifest,
+    state: AgentState,
+    contents: Mapping[str, bytes],
+) -> tuple[Literal["passed", "failed", "incomplete"], Evaluation]:
+    goal, corpus = frozen_inputs(objects, manifest)
     if state.goal != goal:
         raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "待验收运行的任务输入与冻结输入不同")
     if state.status not in (RunStatus.COMPLETED, RunStatus.FAILED):

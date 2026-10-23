@@ -21,6 +21,7 @@ from agentgit.api.security import LocalBoundary, RequestStats, error_response
 from agentgit.config import Settings
 from agentgit.core.canonical import encode
 from agentgit.core.errors import AgentGitError, ErrorCode
+from agentgit.core.experiments import FreezeValidator, NewExperiment
 from agentgit.core.management import (
     ControlRun,
     DecideApproval,
@@ -175,6 +176,40 @@ def create_app(
         service: Annotated[ManagementService, Depends(get_manager)],
     ) -> dict[str, Any]:
         return service.create_branch(repo, parse_contract(encode(body), NewBranch), key)
+
+    @app.post("/validators", status_code=201)
+    def freeze_validator(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.freeze_validator(repo, parse_contract(encode(body), FreezeValidator), key)
+
+    @app.get("/validators/{validator_ref}")
+    def validator(
+        validator_ref: str,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.validator(repo, validator_ref)
+
+    @app.post("/experiments", status_code=202)
+    def experiment(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_experiment(repo, parse_contract(encode(body), NewExperiment), key)
+
+    @app.get("/experiments/{experiment_id}")
+    def experiment_status(
+        experiment_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.experiment(repo, experiment_id)
 
     @app.post("/replays", status_code=202)
     def replay(
