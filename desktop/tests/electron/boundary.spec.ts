@@ -58,6 +58,9 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     await expect(page).toHaveTitle('AgentGit'); expect(page.url()).toBe('agentgit://app/index.html');
     await expect(page.getByRole('heading', { name: '连接与项目' })).toBeVisible();
+    await page.getByText('版本与开源授权', { exact: true }).click();
+    await expect(page.getByText('AgentGit 第三方软件授权说明', { exact: false })).toBeVisible();
+    await page.getByText('版本与开源授权', { exact: true }).click();
     await expect(page.getByText('API 与数据库可用；Worker')).toBeVisible();
     expect(await page.evaluate(() => ({ require: typeof (globalThis as { require?: unknown }).require,
       process: typeof (globalThis as { process?: unknown }).process, bridgeKeys: Object.keys(window.agentgit) }))).toMatchObject({ require: 'undefined', process: 'undefined' });

@@ -31,3 +31,5 @@ Dockerfile text eol=lf
 desktop/src/renderer/assets/fonts/*.ttf binary
 desktop/src/renderer/assets/fonts/*-OFL.txt -text whitespace=-trailing-space
 desktop/src/renderer/public/licenses/*-OFL.txt -text whitespace=-trailing-space
+desktop/src/renderer/assets/THIRD_PARTY_NOTICES.txt text eol=lf whitespace=-trailing-space
+desktop/src/renderer/public/licenses/THIRD_PARTY_NOTICES.txt text eol=lf whitespace=-trailing-space

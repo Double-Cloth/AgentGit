@@ -34,6 +34,8 @@ for (const file of fontManifest.files) {
   assert.equal(location[0].sha256, file.sha256, `上游字体/授权字节不一致：${file.file}`);
 }
 const manifest = JSON.parse(asar.extractFile(archive, 'package.json').toString('utf8'));
+const notices = JSON.parse(asar.extractFile(archive, path.normalize('.build/renderer/licenses/npm-dependencies.json')).toString('utf8'));
+assert.ok(notices.packages.length >= 4, '缺少声明依赖授权清单');
 assert.equal(manifest.main, '.build/main/index.js');
 assert.ok(!manifest.devDependencies && !manifest.scripts, '包内不应保留构建脚本或开发依赖');
 const dependencies = entries.filter(name => /^\/node_modules\/(?:@[^/]+\/)?[^/]+\/package\.json$/.test(name)).map(name => {
@@ -46,8 +48,8 @@ if (knownToken) for (const file of build) {
 }
 const result = { schema_version: 1, product: manifest.name, version: manifest.version, platform: 'win32', arch: 'x64',
   archive: { bytes: fs.statSync(archive).size, sha256: hash(fs.readFileSync(archive)), entries: entries.length },
-  forbidden, build, dependencies, fonts: { upstream_commit: fontManifest.commit, verified: true },
+  forbidden, build, dependencies, notices: { packages: notices.packages, verified: true }, fonts: { upstream_commit: fontManifest.commit, verified: true },
   credential_scan: knownToken ? '当前进程凭据未命中' : '无当前凭据，仅执行包内容白名单与字节一致性检查' };
 if (process.argv[3]) fs.writeFileSync(path.resolve(process.argv[3]), JSON.stringify(result, null, 2));
 console.log(JSON.stringify({ product: result.product, version: result.version, entries: entries.length,
-  build_files: build.length, fonts_verified: true, forbidden, dependencies }));
+  build_files: build.length, fonts_verified: true, notice_packages: notices.packages.length, forbidden, dependencies }));

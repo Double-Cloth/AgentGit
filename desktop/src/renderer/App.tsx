@@ -61,5 +61,16 @@ function Connection({ state, onChange, onClose }: { state: ConnectionState | nul
       setCreation(null); setName(''); createKey.current = crypto.randomUUID();
     }); }}><label>新项目名称<input maxLength={200} value={creation?.name ?? name} disabled={creation !== null} onChange={event => setName(event.target.value)} placeholder="例如：框架研究" /></label><button disabled={!available || action.busy || !(creation?.name ?? name).trim()}>{creation ? '继续原创建操作' : '创建并选择'}</button></form></div>
     <Notice>{action.error}</Notice><p className="muted small">创建结果未确认时保留原幂等键；重新打开窗口只查询，不自动重发创建。退出桌面不会停止后端任务。</p>
+    <LicenseNotices />
   </section>;
+}
+
+function LicenseNotices() {
+  const [text, setText] = useState<string | null>(null), [error, setError] = useState('');
+  return <details onToggle={event => {
+    if (event.currentTarget.open && text === null) void import('./assets/THIRD_PARTY_NOTICES.txt?raw')
+      .then(value => setText(value.default)).catch(() => setError('授权说明读取失败，请检查安装包资源'));
+  }}><summary>版本与开源授权</summary><p className="small muted">AgentGit 0.1.0 · Windows x64</p><Notice>{error}</Notice>
+    {text === null ? <p role="status">正在读取包内授权说明…</p> : <pre className="code license-text" tabIndex={0}>{text}</pre>}
+  </details>;
 }

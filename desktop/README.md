@@ -61,6 +61,10 @@ npm start
 
 本地 Inter、EB Garamond、JetBrains Mono 随资源构建；中文使用 Windows 字体回退。OFL 与固定上游提交/文件摘要在 `src/renderer/public/licenses/`，构建后复制进 `.build/renderer/licenses/`。没有 CDN 或运行期字体下载。
 
+renderer 构建前会从已锁定且已安装的声明依赖生成 26 项授权原文/清单，不联网、不执行依赖代码；包括声明依赖闭包中的类型包，不声称这些包全部进入运行时 JS。连接面板的“版本与开源授权”按需加载包内原文。Electron/Chromium 的授权另由程序目录的 LICENSE 与 LICENSES.chromium.html 随包提供。
+
+`node scripts/audit-package.cjs out/AgentGit-win32-x64 <输出 JSON 路径>` 只读核验 app.asar：构建文件逐字节一致、字体/OFL 对应上游摘要、授权清单存在、开发源码/测试/配置未混入，并记录生产依赖与归档摘要。工具来自已锁定 Forge 依赖，不额外安装审计框架。
+
 `npm test` 检查主进程客户端、参数/项目/来源验证、二进制导出与偏好；`test:electron` 启动真实 Electron，使用受控 HTTP fixture 检查四页、渲染隔离、注入文本、拒绝导航/额外窗口 IPC、双击提交和窗口宽度。fixture 不冒充真实后端执行，详见 [初版证据](../doc/acceptance/S6-desktop-progress.md)。
 
 `test:electron:real` 另外要求已准备 PostgreSQL 测试库、Docker Linux 与固定镜像。它使用独立测试 Schema 和独立 Worker，真实执行五工具、分支/Replay/Diff，并核验来源不变、容器清理和原字节导出。缺设施即失败，不 skip；产品 Python 源码在测试期间应冻结。详见 [真实联调](../doc/acceptance/S6-desktop-real.md)。保存测试替换原生对话框返回值，不算原生对话框交互已验收。
