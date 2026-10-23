@@ -1,11 +1,11 @@
 # S6 独立 Windows 用户验收清单
 
-状态：待执行，不是已通过记录。新候选为源基线 `b649bf3`、AgentGit 0.1.0、Windows x64；包内容和当前用户的便携流程见[新候选证据](acceptance/S6-model-packages.md)。本清单将实施方案 S6-T01/T10/T12 的剩余要求落到实际操作，不降低独立用户、安装/升级/卸载或原生保存要求。
+状态：待执行，不是已通过记录。新候选为源基线 `7083499`、AgentGit 0.1.1、Windows x64；包内容和当前用户的便携流程见[最新安装与候选证据](acceptance/S6-install-lifecycle.md)。本清单将实施方案 S6-T01/T10/T12 的剩余要求落到实际操作，不降低独立用户、安装/升级/卸载或原生保存要求。
 
 ## 已准备的输入
 
-- 安装程序 `desktop/out/make/squirrel.windows/x64/AgentGitSetup.exe`，以及同目录 `AgentGit-0.1.0-full.nupkg` / `RELEASES`。
-- 便携包 `desktop/out/make/zip/win32/x64/AgentGit-win32-x64-0.1.0.zip`。安装程序和 ZIP 的摘要见新候选记录，均未签名；不将本机可运行等同于分发信任验证。
+- 安装程序 `desktop/out/make/squirrel.windows/x64/AgentGitSetup.exe`，以及同目录 `AgentGit-0.1.1-full.nupkg` / `RELEASES`。
+- 便携包 `desktop/out/make/zip/win32/x64/AgentGit-win32-x64-0.1.1.zip`。安装程序和 ZIP 的摘要见新候选记录，均未签名；不将本机可运行等同于分发信任验证。
 - 真实后端由独立操作者按 [DEVELOPMENT.md](DEVELOPMENT.md) 准备 PostgreSQL、已迁移的数据根、API、Worker 和固定 Docker 镜像。前端用户可连接同机回环 API，Worker 继续使用已准备的身份与数据目录；不会要求桌面自行安装后端。
 - 测试只需离线 Mock，不配置真实供应商密钥。桌面预置与 API 匹配的身份令牌，禁止把它放入命令行、截图、清单或归档。
 
@@ -13,7 +13,7 @@
 
 需要另一个 Windows x64 用户会话或专用 Windows x64 虚拟机。该会话没有项目源码和前端构建用 Node/npm/Vite，可复制交付包；后端服务与业务数据独立于应用安装目录，禁用外网后仍可完成离线流程。禁止以修改当前用户的 profile 目录冒充独立 Windows 用户。
 
-当前自动化进程未提升管理员权限，未取得另一个用户会话，也未发现可直接使用的测试 VM；不自动创建账户、修改系统权限或索取明文凭据。待环境可用后，记录系统版本、用户隔离方式、包摘要、后端版本/迁移和字体离线可用性，继续执行以下步骤。
+当前自动化进程未提升管理员权限，未取得另一个用户会话，也未发现可直接使用的测试 VM；本机真实安装/升级/卸载已在 Codex MSIX 的 LocalCache 重定向上下文通过，并不等同于这个独立用户条件。不自动创建账户、修改系统权限或索取明文凭据。待环境可用后，记录系统版本、用户隔离方式、包摘要、后端版本/迁移和字体离线可用性，继续执行以下步骤。
 
 ## 执行与保存证据
 

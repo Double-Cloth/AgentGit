@@ -23,6 +23,7 @@
     "test": "tsc -p tsconfig.test.json && node --test .test-build/tests/*.test.js",
     "test:electron": "npm run build && playwright test",
     "test:electron:real": "npm run build && playwright test --config playwright.real.config.ts",
+    "test:electron:install": "playwright test --config playwright.install.config.ts",
     "package": "npm run build && electron-forge package --platform=win32 --arch=x64",
     "make": "npm run build && electron-forge make --platform=win32 --arch=x64"
   },

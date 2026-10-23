@@ -1,53 +1,12 @@
 import { test, expect, _electron as electron, type Page } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { createInterface } from 'node:readline';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import type { BinaryChunk, JsonObject, Reply } from '../../src/shared/bridge';
+import type { BinaryChunk, JsonObject } from '../../src/shared/bridge';
+import { TOKEN, completed, data, objects, readRun, startBackend } from '../support/real-client';
 
-const TOKEN = 'fixture-real-desktop-token-000000000000000000000';
-function data<T>(reply: Reply<T>): T { if (!reply.ok) throw new Error(`${reply.error.code}: ${reply.error.message}`); return reply.data; }
-function objects(value: unknown): JsonObject[] { return Array.isArray(value) ? value as JsonObject[] : []; }
-async function startBackend() {
-  const child = spawn('uv', ['run', '--locked', 'python', 'desktop/tests/support/real_backend.py'], {
-    cwd: resolve('..'), windowsHide: true, env: { ...process.env, AGENTGIT_API_TOKEN: TOKEN, PYTHONIOENCODING: 'utf-8' },
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
-  let logs = '', sequence = 0;
-  const diagnostics = () => logs.replace(/^.*"event": "http.request".*\r?\n/gm, '');
-  child.stderr.on('data', bytes => { logs = (logs + String(bytes)).slice(-64000); });
-  const pending = new Map<number, { resolve: (value: JsonObject) => void; reject: (error: Error) => void }>();
-  let readyResolve: (value: { url: string; schema: string }) => void, readyReject: (error: Error) => void;
-  const ready = new Promise<{ url: string; schema: string }>((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
-  const finished = new Promise<number | null>(resolve => child.once('exit', resolve));
-  createInterface({ input: child.stdout }).on('line', line => {
-    try { const message = JSON.parse(line); if (message.ready) readyResolve(message);
-      else if (pending.has(message.id)) { pending.get(message.id)!.resolve(message.result); pending.delete(message.id); }
-    } catch { readyReject(new Error('联调进程输出无效')); }
-  });
-  child.once('error', error => readyReject(error));
-  child.once('exit', code => { const error = new Error(`联调进程结束 ${code}\n${diagnostics()}`); readyReject(error); for (const value of pending.values()) value.reject(error); });
-  const address = await ready;
-  return { ...address,
-    command: (command: string, args: JsonObject = {}) => new Promise<JsonObject>((resolve, reject) => {
-      const id = ++sequence; pending.set(id, { resolve, reject }); child.stdin.write(JSON.stringify({ id, command, ...args }) + '\n');
-    }),
-    stop: async () => { child.stdin.end(JSON.stringify({ command: 'stop' }) + '\n'); expect(await finished, diagnostics()).toBe(0); },
-  };
-}
-async function readRun(page: Page, runId: string) { return data(await page.evaluate(id => window.agentgit.getRun({ runId: id }), runId)); }
-async function completed(page: Page, runId: string) {
-  const deadline = Date.now() + 90000;
-  while (Date.now() < deadline) {
-    const state = await readRun(page, runId);
-    if (state.status === 'completed') return state;
-    if (['failed', 'cancelled', 'budget_exhausted', 'outcome_unknown'].includes(String(state.status))) throw new Error(`Run 非成功终态：${JSON.stringify(state)}`);
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
-  throw new Error('真实后端运行未在期限内完成');
-}
 async function sourceBranch(page: Page, sourceRun: string) {
   await page.getByRole('button', { name: '运行', exact: true }).click();
   await page.getByLabel('标识', { exact: true }).fill(sourceRun);
@@ -202,7 +161,8 @@ test('真实设施：桌面五工具 → 历史/Fork → 零执行 Recorded → 
   try {
     const page = await desktop.firstWindow();
     currentPage = page;
-    const runtime = await desktop.evaluate(() => ({ versions: process.versions, platform: process.platform, arch: process.arch }));
+    const runtime = await desktop.evaluate(({ app }) => ({ desktop: app.getVersion(), versions: process.versions, platform: process.platform, arch: process.arch }));
+    await expect(page.locator('footer')).toContainText(`AgentGit ${runtime.desktop}`);
     const windowInfo = await page.evaluate(() => ({ devicePixelRatio, width: innerWidth, height: innerHeight }));
     if (executable) {
       expect(await desktop.evaluate(({ app }) => app.isPackaged)).toBe(true);

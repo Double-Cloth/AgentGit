@@ -314,6 +314,7 @@ def main():
                     "ready": True,
                     "url": f"http://127.0.0.1:{opened.getsockname()[1]}",
                     "schema": schema,
+                    "root": str(root),
                 }
             ),
             flush=True,
@@ -329,6 +330,32 @@ def main():
                 else:
                     (root / "recorded-guard").unlink(missing_ok=True)
                 result = {"guard": request["enabled"]}
+            elif name == "storage_audit":
+                digest = hashlib.sha256()
+                count = 0
+                size = 0
+                for path in sorted((root / "objects").rglob("*")):
+                    if path.is_file():
+                        data = path.read_bytes()
+                        digest.update(path.relative_to(root / "objects").as_posix().encode())
+                        digest.update(b"\0")
+                        digest.update(hashlib.sha256(data).digest())
+                        count += 1
+                        size += len(data)
+                with engine.connect() as connection:
+                    migration = connection.execute(
+                        sa.text("SELECT version_num FROM alembic_version")
+                    ).scalar_one()
+                result = {
+                    "cas_digest": digest.hexdigest(),
+                    "cas_files": count,
+                    "cas_bytes": size,
+                    "schema": migration,
+                    "worker_alive": worker.poll() is None,
+                    "source_fingerprint": source_fingerprint(
+                        history, UUID(request["repository"]), UUID(request["source_run"])
+                    ),
+                }
             elif name == "traffic":
                 result = {"posts": [item for item in traffic if item.startswith("POST ")]}
             elif name in {"worker_gate", "api_gate"}:

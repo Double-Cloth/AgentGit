@@ -1,6 +1,6 @@
 # AgentGit 桌面开发
 
-当前为 S6 实施版。四页与受限 IPC 已实现，真实 Electron 与 ZIP 便携程序的五工具/Fork/Recorded/Live/Diff 联调通过，Windows x64 开发候选安装/ZIP 已构建。模型 Adapter 与桌面选择/计量已接通；原生保存、独立用户安装/升级/卸载和剩余验收尚未完成，阶段退出条件仍以根项目实施方案为准。
+当前为 S6 实施版。四页与受限 IPC 已实现，真实 Electron 与 ZIP 便携程序的五工具/Fork/Recorded/Live/Diff 联调通过，Windows x64 开发候选安装/ZIP 已构建。桌面候选已到 0.1.1，模型 Adapter 与选择/计量已接通；Codex MSIX 上下文安装/升级/卸载及数据保留已实测，原生保存、独立用户安装和剩余验收尚未完成，阶段退出条件仍以根项目实施方案为准。
 
 ## 固定构建环境
 
@@ -39,7 +39,7 @@ npm run package
 npm run make
 ```
 
-输出在 `out/`，包含 Windows x64 Squirrel 安装程序与 ZIP。新模型版本的候选摘要、未签名状态、授权/字节核验、便携运行和生命周期证据见 [新候选记录](../doc/acceptance/S6-model-packages.md)；[初次候选记录](../doc/acceptance/S6-desktop-packages.md)保留原构建基线。独立用户安装/升级/卸载尚待完成，不把 make 成功等同于完成 S6。
+输出在 `out/`，包含 Windows x64 Squirrel 安装程序与 ZIP。0.1.1 候选摘要、MSIX 上下文的安装/升级/卸载、数据保留和包运行证据见 [最新安装记录](../doc/acceptance/S6-install-lifecycle.md)；0.1.0 模型版候选见 [此前候选记录](../doc/acceptance/S6-model-packages.md)；[初次候选记录](../doc/acceptance/S6-desktop-packages.md)保留原构建基线。独立用户安装/升级/卸载尚待完成，不把 make 成功等同于完成 S6。
 
 ## 连接已有后端
 
@@ -74,3 +74,7 @@ renderer 构建前会从已锁定且已安装的声明依赖生成 26 项授权�
 当前 Vite 构建提示 React Flow 的 `use client` directive；应用完全是 Electron 客户端，不使用 RSC/SSR，真实渲染已验证，保留该提示供后续升级核对。官方参考：[Electron 安全](https://www.electronjs.org/docs/latest/tutorial/security)、[Forge Windows maker](https://www.electronforge.io/config/makers/squirrel.windows)、[Playwright Electron](https://playwright.dev/docs/api/class-electron)。
 
 如需实际原生保存复验，显式设置 `AGENTGIT_NATIVE_SAVE=1` 并只运行 `--grep 真实设施`。测试写入 `.agentgit/evidence/S6-native-save-request.json`，由操作者在真实保存框选择其中的新临时路径；取消或内容不符会失败。无人值守默认流程不设置该开关。独立 Windows 用户的安装/升级/卸载步骤见 [待验收清单](../doc/S6-windows-acceptance.md)。
+
+安装回归单独使用 `npm run test:electron:install`，不会混入默认 `npm test` / `test:electron:real`。它真实覆盖安装目录并卸载，**只能在本次测试拥有、已准备 0.1.0 基线且没有已有 preferences.json 的环境**运行。必须显式提供 `AGENTGIT_INSTALL_TEST=1`、`AGENTGIT_INSTALL_SETUP` 的绝对路径与其已核验的 `AGENTGIT_INSTALL_SETUP_SHA256`。存在 MSIX 重定向时，还必须明确填写已经检查的 `AGENTGIT_INSTALL_PHYSICAL_ROOT`；脚本固定比较 realpath，不自动接受重定向。不能把当前 MSIX 上下文当作独立 Windows 用户或无构建 Node 的环境。
+
+桌面版本号由 Vite 在构建时读取 package.json，页脚与授权面板和 Electron app.getVersion 一致；后端能力协议仍固定 0.1.0，不随桌面 patch 版本隐式升级。

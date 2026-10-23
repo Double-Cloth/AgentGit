@@ -1,6 +1,6 @@
 # S6 单供应商模型适配实施清单
 
-状态：协议、计量与固定 HTTPS 基础层已实现；配置、Worker、运行时预算、恢复、Recorded 与 Live 接线已通过新增 14 项 PostgreSQL 验证和全部 322 项单元回归，分批回归去重 701 项通过，见[基础记录](acceptance/S6-model-foundation.md)及[运行时记录](acceptance/S6-model-runtime.md)。桌面选择/计量呈现已接通并通过真实 Electron 与独立后端的确定性模型联调，见[桌面接线记录](acceptance/S6-model-desktop.md)；新候选包及生命周期/缩放已[单列复验](acceptance/S6-model-packages.md)，真实供应商冒烟尚未开启。继续使用 `codex/s6-desktop`，不改变 S6-T01–T12 或后续 S7–S12 的退出条件。
+状态：协议、计量与固定 HTTPS 基础层已实现；配置、Worker、运行时预算、恢复、Recorded 与 Live 接线已通过新增 14 项 PostgreSQL 验证和全部 322 项单元回归，分批回归去重 701 项通过，见[基础记录](acceptance/S6-model-foundation.md)及[运行时记录](acceptance/S6-model-runtime.md)。桌面选择/计量呈现已接通并通过真实 Electron 与独立后端的确定性模型联调，见[桌面接线记录](acceptance/S6-model-desktop.md)；0.1.1 候选及安装/生命周期/缩放已[单列复验](acceptance/S6-install-lifecycle.md)，真实供应商冒烟尚未开启。继续使用 `codex/s6-desktop`，不改变 S6-T01–T12 或后续 S7–S12 的退出条件。
 
 ## 已选范围与资料
 
