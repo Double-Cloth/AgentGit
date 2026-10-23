@@ -12,8 +12,10 @@ from agentgit.core.experiments import ExperimentManifest, NewExperiment
 from agentgit.core.jobs import TERMINAL_RUNS
 from agentgit.core.models import EnvironmentManifest, parse_contract
 from agentgit.core.research import AgentConfig, AgentState, evolve
+from agentgit.core.snapshots import StateSnapshot
 from agentgit.core.versions import LiveOverrides, LiveReplay, RecordedRange
 from agentgit.experiments.validation import frozen_inputs
+from agentgit.services.interventions import InterventionService
 from agentgit.services.jobs import JobService
 from agentgit.services.replays import ReplayService
 from agentgit.services.research import ResearchService
@@ -29,6 +31,7 @@ class ExperimentService:
         self.replays = ReplayService(research)
         self.validators = ValidatorService(self.history)
         self.jobs = JobService(research)
+        self.interventions = InterventionService(self.history)
 
     def submit(
         self,
@@ -105,6 +108,22 @@ class ExperimentService:
             changed_config = (
                 evolve(config, prompt=group.prompt) if group.prompt is not None else None
             )
+            plan = group.plan
+            if group.interventions:
+                applied = self.interventions.apply(
+                    repository_id,
+                    group.interventions,
+                    source_run_id=request.source_run_id,
+                    base_commit=request.from_commit,
+                    validator_ref=request.validator_ref,
+                    config=config,
+                    snapshot=parse_contract(encode(view["snapshot"]), StateSnapshot),
+                )
+                if applied.replacements:
+                    raise AgentGitError(
+                        ErrorCode.FORBIDDEN, "工具观测干预需要完整 Hybrid 执行上下文"
+                    )
+                changed_config, plan = applied.config, applied.plan
             for index in range(request.repeats):
                 branch_name = f"exp-{experiment_id.hex}-{group.key}-{index}"
                 submitted = self.replays.submit(
@@ -114,7 +133,7 @@ class ExperimentService:
                         from_commit=request.from_commit,
                         branch_name=branch_name,
                         budget=request.budget,
-                        overrides=LiveOverrides(config=changed_config, plan=group.plan),
+                        overrides=LiveOverrides(config=changed_config, plan=plan),
                     ),
                     actor=actor,
                     key=f"experiment:{experiment_id}:{group.key}:{index}",

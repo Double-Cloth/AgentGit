@@ -21,6 +21,7 @@ from agentgit.config import Settings
 from agentgit.core.canonical import decode, encode
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.experiments import FreezeValidator, NewExperiment
+from agentgit.core.interventions import NewIntervention
 from agentgit.core.management import (
     ControlRun,
     DecideApproval,
@@ -178,6 +179,44 @@ def task(
             NewTask,
         )
         emit(service.create_task(repository_id, payload, key))
+
+
+@app.command("intervention-context")
+def intervention_context(
+    repository_id: UUID,
+    source_run: Annotated[UUID, typer.Option()],
+    from_commit: Annotated[str, typer.Option()],
+    validator_ref: Annotated[str, typer.Option()],
+    target_event_id: Annotated[int, typer.Option(min=1)],
+    testing: bool = False,
+) -> None:
+    """读取源事件、检查点和原配置，生成可核对的干预前置条件。"""
+    with management(testing) as service:
+        emit(
+            service.intervention_context(
+                repository_id, source_run, from_commit, target_event_id, validator_ref
+            )
+        )
+
+
+@app.command("intervention")
+def intervention(
+    repository_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """验证目标事件与前置条件，创建不可变干预；不执行试验。"""
+    with management(testing) as service:
+        with file.open("rb") as stream:
+            payload = stream.read(1_048_577)
+        if len(payload) > 1_048_576:
+            raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "干预文件超过上限")
+        emit(
+            service.create_intervention(
+                repository_id, parse_contract(payload, NewIntervention), key
+            )
+        )
 
 
 @app.command("freeze-validator")

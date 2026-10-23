@@ -1,6 +1,6 @@
 # 本地服务与 CLI（S4–S7）
 
-当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0013_branch_experiments`；桌面不会自动迁移后端。
+当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0014_frozen_interventions`；桌面不会自动迁移后端。
 
 ## CLI 离线流程
 
@@ -188,7 +188,7 @@ uv run --locked agentgit worker --once
 
 ## S7 冻结验收与 A/B Live 实验
 
-当前增量提供冻结验收器、Prompt/计划条件比较、原子排队和真实 trial 状态；Hybrid、工具响应替换、完整干预 DSL、聚合统计和桌面实验列表尚未完成，S7 未整体验收。
+当前增量提供冻结验收器、类型化 Prompt/计划干预、原子排队和真实 trial 状态。工具响应干预可以冻结定义，Hybrid 匹配器已有单元验证；两者的完整 Worker/观测账本/计量接线、聚合统计和桌面实验列表尚未完成，S7 未整体验收。
 
 | HTTP | 行为 |
 |---|---|
@@ -196,8 +196,11 @@ uv run --locked agentgit worker --once
 | `GET /validators/{validator_ref}` | 项目限定的只读 manifest，不能凭其他项目的 hash 读取 |
 | `POST /experiments` | 严格 `NewExperiment`：来源 Run、共同起点、validator_ref、A/B 两组、repeats 和完整预算；202 返回一个实验及所有初始 Job/Run |
 | `GET /experiments/{experiment_id}` | manifest、初始/当前 Run、Job 状态、独立验收结果、实际/逻辑用量及限制说明 |
+| `GET /intervention-context` | 按 source_run_id/from_commit/target_event_id/validator_ref 读取同项目完整目标调用、原配置和前置条件 |
+| `POST /interventions` | 固定三类 NewIntervention；验证目标、payload、前置条件和证据，201 返回不可变干预 ID，不执行 trial |
+| `GET /interventions/{intervention_id}` | 项目内读取干预定义、payload 与来源 |
 
-沿用现有认证、项目和幂等请求头。分组按 A、B 顺序，每组只能提供 `key/label/prompt/plan`，不能提供 validator、split、模型、权限或新预算。默认各 5 次，显式次数范围 1–10。`prompt` 是原固定 Prompt 的完整替换；`plan` 不能改写已完成节点，且须通过 DAG 和工具权限检查。预算对每个 trial 相同，不得超过来源配置上限。
+沿用现有认证、项目和幂等请求头。分组按 A、B 顺序，每组只能提供 `key/label/prompt/plan/interventions`，不能提供 validator、split、模型、权限或新预算。默认各 5 次，显式次数范围 1–10。`prompt` 是原固定 Prompt 的完整替换；`plan` 不能改写已完成节点，且须通过 DAG 和工具权限检查。`interventions` 为最多八个有序 UUID，不能与直接 prompt/plan 混用，重复字段/目标补丁拒绝。预算对每个 trial 相同，不得超过来源配置上限。
 
 先从历史中选择目标决策前的安全 checkpoint，冻结其真实输入；不支持凭 API 上传自定义“总是通过”规则。自定义语料须可从来源的冻结持久 Job 复核；同步运行仅保留摘要却无法恢复自定义语料时明确拒绝，不能悄悄换成默认语料。`fixture_split` 为冻结标签，不能将更换标签当作已具备独立保留样本。
 
@@ -225,6 +228,33 @@ uv run --locked agentgit worker
 取消/暂停/恢复继续对 trial 当前 `run_id` 使用原控制接口及版本；中断接管创建新 Run 时，最初幂等响应不变，通过同一 `job_id` 与实验查询取得当前 Run。未完成、暂停、取消、预算耗尽和未知状态不能计为通过；completed 还须通过固定验收器检查真实产物。查询时状态发生变化会有界重读，持续变化可返回 409，刷新即可，不重发创建动作。
 
 每个 trial 的 `replay.budget_baseline/logical_usage/new_usage/actual` 保留既有含义；Mock 字节用量、供应商 Token、价格表估计和未知结果不得混淆。当前未提供总体方差统计，也不依据相同 Mock/seed 的重复结果推断真实模型随机性或严格因果。
+
+### 类型化干预
+
+先从已有事件列表选择模型决策前的 `llm.requested` 事件 ID，再读取只读上下文；`target_commit_id` 与该事件的源意图必须对应，Prompt/计划干预要求其等于共同起点。上下文并非授权票据，创建时仍重新验证所有关系。
+
+```powershell
+$context = uv run --locked agentgit intervention-context $repo.repository_id --source-run $job.run_id --from-commit $fromCommit --target-event-id $targetEventId --validator-ref $validator.validator_ref | ConvertFrom-Json
+$patchRequest = @{
+    schema_version = 1
+    source_run_id = $context.source_run_id
+    base_commit = $context.base_commit
+    target_commit_id = $context.target_commit_id
+    target_event_id = $context.target_event_id
+    operator = 'PROMPT_PATCH'
+    payload = @{ kind = 'PROMPT_PATCH'; prompt = ($context.config.prompt + '核验所有引用。') }
+    precondition = $context.precondition
+    effect_policy = 'sandbox_or_approval'
+    provenance = @{ rationale = '对照增加引用核验提醒'; evidence = @(@{ run_id = $context.source_run_id; seq = $context.target_event_seq }) }
+}
+[System.IO.File]::WriteAllText((Join-Path (Get-Location) 'patch.json'), ($patchRequest | ConvertTo-Json -Depth 20), [System.Text.UTF8Encoding]::new($false))
+$patch = uv run --locked agentgit intervention $repo.repository_id --file patch.json --key prompt-patch-001 | ConvertFrom-Json
+$experimentRequest.groups[1] = @{ schema_version = 1; key = 'B'; label = '类型化引用核验'; interventions = @($patch.intervention_id) }
+```
+
+用新幂等键重新提交保存后的实验 JSON；不要把改变后的请求复用原键。`PLAN_PATCH` 的 payload 为 `kind/plan`，仍须包含完整合法计划。`TOOL_RESPONSE_PATCH` 的 payload 为 `kind/replacement_call_id/test_only=true`，效果策略必须为 `test_only`；响应只能来自同项目完整、同参同签名的受控只读录制，不接受直接上传 response/URL，也不能跨冻结 split 借用实验观测。当前只冻结这类定义，缺 Hybrid 运行上下文时实验排队会明确拒绝。
+
+创建与读取干预使用现有认证、项目/幂等约束及 1 MiB 请求/CLI 文件上限。Schema 不允许任意 JSON Patch 路径、validator 规则、模型、执行策略、权限或 split 变更；证据事件也须属于该项目。各定义不可修改；改变内容需新动作和新 ID。
 
 错误含 error.code、message、evidence_refs（无证据时为空）、correlation_id，另有 X-Correlation-ID，不反射输入/URL/堆栈/令牌。validation=422、权限=403、不可访问=404、冲突=409、输出上限=413、配置/设施不可用=503、未预期错误=500。响应不缓存；JSON 日志写 stderr，仅含关联编号、方法、路由模板、状态、整数耗时，不含正文/认证头/查询/幂等键。
 

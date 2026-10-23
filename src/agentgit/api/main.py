@@ -22,6 +22,7 @@ from agentgit.config import Settings
 from agentgit.core.canonical import encode
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.experiments import FreezeValidator, NewExperiment
+from agentgit.core.interventions import NewIntervention
 from agentgit.core.management import (
     ControlRun,
     DecideApproval,
@@ -176,6 +177,36 @@ def create_app(
         service: Annotated[ManagementService, Depends(get_manager)],
     ) -> dict[str, Any]:
         return service.create_branch(repo, parse_contract(encode(body), NewBranch), key)
+
+    @app.get("/intervention-context")
+    def intervention_context(
+        source_run_id: UUID,
+        from_commit: str,
+        validator_ref: str,
+        target_event_id: Annotated[int, Query(ge=1)],
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.intervention_context(
+            repo, source_run_id, from_commit, target_event_id, validator_ref
+        )
+
+    @app.post("/interventions", status_code=201)
+    def intervention(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_intervention(repo, parse_contract(encode(body), NewIntervention), key)
+
+    @app.get("/interventions/{intervention_id}")
+    def intervention_view(
+        intervention_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.intervention(repo, intervention_id)
 
     @app.post("/validators", status_code=201)
     def freeze_validator(

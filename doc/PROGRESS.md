@@ -11,7 +11,7 @@
 | S4 | 已验收（本机） | [S4.md](acceptance/S4.md)：T01–T20 逐项核对；当前 392 项分批覆盖，真实 CLI 五工具/产物 hash 通过；清理后新 attempt、预算与恢复控制完成，doctor 实测就绪 |
 | S5 | 已验收（本机） | [S5.md](acceptance/S5.md)：T01–T09 核对；599 项由三个不重叠组全部覆盖，无失败/跳过；实际 CLI 五工具→Recorded→复合 Recorded→A/B Live→Diff 通过；来源不变，4 个容器独立且清理确认 |
 | S6 | 实施中，未验收 | [当前 0.1.3 与 T01–T12 核对](acceptance/S6-keyboard-and-gates.md)：20 项桌面单元、2 条打包 Electron 边界、4 条解压包真实后端流程、MSIX 安装/升级/卸载/重装通过；关系图键盘选择与焦点已修正，[D1 操作指南](D1-desktop-demo.md)齐备。此前[模型接线](acceptance/S6-model-desktop.md)的分批后端回归去重 701 项。原生保存、独立用户/原生 DPI/禁止外网及真实依赖缺失交叉复核待完成；真实供应商冒烟单列未运行 |
-| S7 | 实施中，未验收 | [冻结验收器](acceptance/S7-frozen-validator.md)及[实验调度/API/CLI 增量](acceptance/S7-experiments.md)已实现；当前 372 单元 + 90 PostgreSQL 集成 + 1 独立 API/CLI 进程用例共 463 项通过，实测 A/B 各五个独立 Run。完整干预 DSL、Hybrid、统计与 UI 待继续；S6/D1 剩余证据按用户授权延后补验，见实施方案第 1.2 节 |
+| S7 | 实施中，未验收 | [冻结验收器](acceptance/S7-frozen-validator.md)、[实验调度/API/CLI](acceptance/S7-experiments.md)及[类型化干预/匹配内核](acceptance/S7-interventions.md)已实现。最新 397 单元 + 60 PostgreSQL 集成共 457 项通过；此前独立进程实测 A/B 各五个独立 Run 保留历史证据，不重复相加。Hybrid Worker/耐久观测/计量、统计与 UI 待继续；S6/D1 剩余证据按用户授权延后补验 |
 | S8–S10 | 未开始 | S7 后进入定位、修复搜索与 D2；不能提前算作已交付 |
 | S11 | 必选，未开始 | D2 后完成三方产物/结构化状态合并、桌面 Merge Review 及验收，再进入 S12 |
 | S12-A/B/C/D | 必选，未开始 | S11 及四项适配全部验收、最终桌面包验证后才达到 D3 |

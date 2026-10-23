@@ -16,6 +16,7 @@ from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.effects import ToolPolicy
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.experiments import FreezeValidator, NewExperiment
+from agentgit.core.interventions import NewIntervention
 from agentgit.core.management import (
     ControlRun,
     DecideApproval,
@@ -77,6 +78,39 @@ class ManagementService:
             lambda connection: self.experiments.submit(
                 repository_id, payload, actor=self.actor, connection=connection
             ),
+        )
+
+    def create_intervention(
+        self, repository_id: UUID, payload: NewIntervention, key: str
+    ) -> dict[str, Any]:
+        return self._mutate(
+            "POST /interventions",
+            key,
+            repository_id,
+            payload.model_dump(mode="json"),
+            lambda connection: self.experiments.interventions.create(
+                repository_id, payload, actor=self.actor, connection=connection
+            ),
+        )
+
+    def intervention(self, repository_id: UUID, intervention_id: UUID) -> dict[str, Any]:
+        definition, payload = self.experiments.interventions.get(repository_id, intervention_id)
+        return {
+            "intervention_id": str(intervention_id),
+            "definition": definition.model_dump(mode="json"),
+            "payload": payload.model_dump(mode="json"),
+        }
+
+    def intervention_context(
+        self,
+        repository_id: UUID,
+        source_run_id: UUID,
+        from_commit: str,
+        target_event_id: int,
+        validator_ref: str,
+    ) -> dict[str, Any]:
+        return self.experiments.interventions.context(
+            repository_id, source_run_id, from_commit, target_event_id, validator_ref
         )
 
     def freeze_validator(

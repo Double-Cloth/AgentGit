@@ -32,3 +32,9 @@
 默认 A/B 各 5 次，可显式设置各 1–10 次，所有 trial 采用同一明确预算。当前本地 seed 固定为 0，如实披露 Mock 的确定性与供应商的不确定性，不伪造不同种子已传给供应商。报告直接投影 Job/Run，读取期间状态变化时有界重读；只有真实 completed 且独立冻结验收通过才计入通过。
 
 API/CLI 创建只排队，不在请求线程执行模型或容器；同一幂等动作覆盖整个实验，任意 trial 排队失败回滚全部可见数据。示例及边界见 [API.md](API.md) 的 S7 小节。当前没有扩大桌面 IPC 白名单，也没有替换 S6 桌面包。
+
+## 类型化干预增量
+
+`0014_frozen_interventions` 保存干预及目标事件、完整调用、安全检查点、payload/precondition/provenance 的不可变归属。Prompt/计划干预可通过分组 `interventions` 有序引用并在 Live 中应用；创建入口拒绝陈旧状态/配置、不同 validator、权限扩大、已完成计划修改及跨项目证据。工具响应仅接受同参、同签名、已录制的只读响应，禁止跨冻结 split 借用 trial 观测；缺 Hybrid 执行上下文时不排队。
+
+项目限定的 `intervention-context` 只读入口提供可核对的原配置和前置条件，调用方无须猜测 config_ref。Hybrid 纯选择器已实现精确匹配、stop/fixture miss、synthetic 来源和可变输入隔离，其 Worker、耐久观测、Recorded/计量接线继续按 [Hybrid 运行待办](S7-hybrid-runtime-plan.md)实施。当前不能把选择器单元测试计为 Hybrid 全流程通过。

@@ -38,7 +38,7 @@ web
 - 主进程 API 客户端只有固定回环端点、路由、方法和有界请求/响应；IPC 有业务白名单、sender/frame/参数/项目验证。渲染进程启用隔离、sandbox、CSP 和导航限制。
 - 外部资料、Markdown、HTML、代码和日志均是不可信数据。产物仅按 ID 下载，由主进程的原生保存对话框确定导出目标，渲染进程不能传入任意宿主路径。
 - 无外部模型密钥、无外网时离线 Demo 和确定性测试必须可用。S6 已接入固定 OpenAI Responses 模型，Runs/Live 显式选择并输入 USD 上限，Timeline 区分价格表估计、预留、历史逻辑和本次实际用量。密钥只在独立 Worker；真实供应商冒烟需明确开启、单列实际结果，不成为离线隐含条件。
-- S7 后端已提供冻结验收器、A/B Live 实验、持久 Job/Run 和 API/CLI。真实进程中完成各五次独立运行，API 退出和重启不丢队列或重复创建 trial；完整干预 DSL、Hybrid、统计与桌面接线仍待完成，见[当前增量证据](doc/acceptance/S7-experiments.md)。
+- S7 后端已提供冻结验收器、A/B Live 实验、持久 Job/Run 和 API/CLI。真实进程中完成各五次独立运行，API 退出和重启不丢队列或重复创建 trial；随后接通[类型化 Prompt/计划干预与只读上下文](doc/acceptance/S7-interventions.md)。工具响应定义可冻结，Hybrid 匹配内核已有单元验证；其完整 Worker/耐久观测/计量、统计与桌面接线仍待完成。
 
 ## Brand Commitments
 

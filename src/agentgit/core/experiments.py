@@ -71,6 +71,17 @@ class ExperimentGroup(Contract):
     label: Annotated[str, Field(min_length=1, max_length=200)]
     prompt: Annotated[str | None, Field(min_length=1, max_length=16000)] = None
     plan: Plan | None = None
+    interventions: Annotated[tuple[Identifier, ...], Field(max_length=8)] = Field(
+        default=(), exclude_if=lambda value: not value
+    )
+
+    @model_validator(mode="after")
+    def unambiguous_patches(self) -> "ExperimentGroup":
+        if len(set(self.interventions)) != len(self.interventions):
+            raise ValueError("有序干预不能包含重复 ID")
+        if self.interventions and (self.prompt is not None or self.plan is not None):
+            raise ValueError("类型化干预不能与分组直接 Prompt/计划条件混用")
+        return self
 
 
 class FreezeValidator(Contract):
