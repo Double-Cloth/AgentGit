@@ -78,4 +78,4 @@ Browser plugin not available，使用项目 Playwright Electron，无 Vite。页
 | S6-native-012-failed.xml | `305c5f304ad2eb3a5cb6cff47db80e43f7509a54dcbfe31c4148cecf62ae3636` |
 | S6-install-013-cleanup.json | `29f1259af08cf2532fbcf1843cf04de767285bb9cea559520ae0cbbb4c002b72` |
 
-完整目标仍包含 S7–S11 与 S12-A/B/C/D。S6 前置条件未满足时不能以文档或其他测试替代验收继续下一阶段；当前下一步需要原生窗口控制恢复或人工真实保存证据，以及用户稍后提供的独立 Windows 环境。
+完整目标仍包含 S7–S11 与 S12-A/B/C/D。2026-10-23 用户明确授权“可以暂时跳过这一步”：按[实施方案第 1.2 节](../AgentGit_实施方案_v1.0.0.md)暂缓当前环境/原生专项，先进入 S7 开发与测试。上述未通过项仍须补验，S6/D1 不记为已验收；其他测试或文档不能替代这些证据。
