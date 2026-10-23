@@ -1,0 +1,455 @@
+{
+  "schema_version": 1,
+  "kind": "diagnosis-benchmark/v1",
+  "status": "frozen",
+  "test_only": true,
+  "evaluation_time": "2026-10-20T00:00:00Z",
+  "random_seed": 0,
+  "limits": {
+    "schema_version": 1,
+    "max_replans": 0
+  },
+  "partition_policy": "D01–D12 用于开发；D13–D20 仅在排序规则冻结后评估，不按保留集结果调参。",
+  "cases": [
+    {
+      "schema_version": 1,
+      "id": "D01",
+      "split": "train",
+      "family": "empty_response",
+      "title": "搜索返回空字节",
+      "operation": "search_empty",
+      "target": "corpus_search",
+      "expected_error": "tool_empty",
+      "evaluation_error_prefix": null,
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "tool:search",
+        "first_visible": "tool:search",
+        "repairable_decisions": [
+          "model:search"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D02",
+      "split": "train",
+      "family": "retrieval",
+      "title": "搜索结果包含不存在的来源",
+      "operation": "search_unknown",
+      "target": "corpus_search",
+      "expected_error": "not_found",
+      "evaluation_error_prefix": null,
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "tool:search",
+        "first_visible": "tool:search",
+        "repairable_decisions": [
+          "model:search"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D03",
+      "split": "train",
+      "family": "retrieval",
+      "title": "搜索来源 ID 重复",
+      "operation": "search_duplicates",
+      "target": "corpus_search",
+      "expected_error": "tool_empty",
+      "evaluation_error_prefix": null,
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "tool:search",
+        "first_visible": "tool:search",
+        "repairable_decisions": [
+          "model:search"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D04",
+      "split": "train",
+      "family": "stale_source",
+      "title": "过期资料未经验证写入报告",
+      "operation": "corpus_expired",
+      "target": "aster-overview",
+      "expected_error": "validation_failed",
+      "evaluation_error_prefix": "source_expired:",
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "corpus:aster-overview",
+        "first_visible": "tool:read-0",
+        "repairable_decisions": [
+          "model:write-report"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D05",
+      "split": "train",
+      "family": "schema",
+      "title": "来源响应封装升级为未知版本",
+      "operation": "source_schema",
+      "target": "aster-overview",
+      "expected_error": "validation",
+      "evaluation_error_prefix": null,
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "tool:read-0",
+        "first_visible": "tool:read-0",
+        "repairable_decisions": [
+          "model:read-0"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D06",
+      "split": "train",
+      "family": "timeout",
+      "title": "来源读取的确定性超时替身",
+      "operation": "tool_timeout",
+      "target": "aster-overview",
+      "expected_error": "tool_error",
+      "evaluation_error_prefix": null,
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "tool:read-0",
+        "first_visible": "tool:read-0",
+        "repairable_decisions": [
+          "model:read-0"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D07",
+      "split": "train",
+      "family": "plan_omission",
+      "title": "计划遗漏结构化来源产物",
+      "operation": "omit_sources",
+      "target": "write-sources",
+      "expected_error": "validation_failed",
+      "evaluation_error_prefix": "missing_artifacts",
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "model:plan",
+        "first_visible": "model:plan",
+        "repairable_decisions": [
+          "model:plan"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D08",
+      "split": "train",
+      "family": "memory_conflict",
+      "title": "工具观测中的事实与冻结语料冲突",
+      "operation": "conflicting_fact",
+      "target": "aster-overview",
+      "expected_error": "validation_failed",
+      "evaluation_error_prefix": "evidence_mismatch:",
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "tool:read-0",
+        "first_visible": "tool:read-0",
+        "repairable_decisions": [
+          "model:write-report"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D09",
+      "split": "train",
+      "family": "model_protocol",
+      "title": "模型计划返回截断 JSON",
+      "operation": "model_malformed",
+      "target": "plan",
+      "expected_error": "plan_invalid",
+      "evaluation_error_prefix": null,
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "model:plan",
+        "first_visible": "model:plan",
+        "repairable_decisions": [
+          "model:plan"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D10",
+      "split": "train",
+      "family": "empty_response",
+      "title": "模型规划返回空字节",
+      "operation": "model_empty",
+      "target": "plan",
+      "expected_error": "model_empty",
+      "evaluation_error_prefix": null,
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "model:plan",
+        "first_visible": "model:plan",
+        "repairable_decisions": [
+          "model:plan"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D11",
+      "split": "train",
+      "family": "report",
+      "title": "报告文本与可核验结构化结论不一致",
+      "operation": "markdown_false",
+      "target": "report.md",
+      "expected_error": "validation_failed",
+      "evaluation_error_prefix": "report_structure_or_claim_mismatch",
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "model:write-report",
+        "first_visible": "model:write-report",
+        "repairable_decisions": [
+          "model:write-report"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D12",
+      "split": "train",
+      "family": "report",
+      "title": "结构化结论的值没有来源支持",
+      "operation": "claim_value",
+      "target": "sources.json",
+      "expected_error": "validation_failed",
+      "evaluation_error_prefix": "claim_without_evidence:",
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "model:write-sources",
+        "first_visible": "model:write-sources",
+        "repairable_decisions": [
+          "model:write-sources"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D13",
+      "split": "heldout",
+      "family": "retrieval",
+      "title": "检索仅覆盖两个框架",
+      "operation": "search_subset",
+      "target": "corpus_search",
+      "expected_error": "tool_empty",
+      "evaluation_error_prefix": null,
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "tool:search",
+        "first_visible": "tool:search",
+        "repairable_decisions": [
+          "model:search"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D14",
+      "split": "heldout",
+      "family": "schema",
+      "title": "来源响应的身份与请求不一致",
+      "operation": "source_identity",
+      "target": "aster-scope",
+      "expected_error": "validation",
+      "evaluation_error_prefix": null,
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "tool:read-1",
+        "first_visible": "tool:read-1",
+        "repairable_decisions": [
+          "model:read-1"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D15",
+      "split": "heldout",
+      "family": "stale_source",
+      "title": "未来采集的来源被写入当前报告",
+      "operation": "corpus_future",
+      "target": "cedar-overview",
+      "expected_error": "validation_failed",
+      "evaluation_error_prefix": "source_future:",
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "corpus:cedar-overview",
+        "first_visible": "tool:read-4",
+        "repairable_decisions": [
+          "model:write-report"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D16",
+      "split": "heldout",
+      "family": "timeout",
+      "title": "后段来源读取的确定性超时替身",
+      "operation": "tool_timeout",
+      "target": "cedar-scope",
+      "expected_error": "tool_error",
+      "evaluation_error_prefix": null,
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "tool:read-5",
+        "first_visible": "tool:read-5",
+        "repairable_decisions": [
+          "model:read-5"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D17",
+      "split": "heldout",
+      "family": "plan_omission",
+      "title": "计划依赖包含循环",
+      "operation": "plan_cycle",
+      "target": "plan",
+      "expected_error": "plan_invalid",
+      "evaluation_error_prefix": null,
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "model:plan",
+        "first_visible": "model:plan",
+        "repairable_decisions": [
+          "model:plan"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D18",
+      "split": "heldout",
+      "family": "model_protocol",
+      "title": "尚未执行计划即宣告结束",
+      "operation": "early_final",
+      "target": "search",
+      "expected_error": "plan_invalid",
+      "evaluation_error_prefix": null,
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "model:search",
+        "first_visible": "model:search",
+        "repairable_decisions": [
+          "model:search"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D19",
+      "split": "heldout",
+      "family": "schema",
+      "title": "结构化来源产物使用未知版本",
+      "operation": "report_schema",
+      "target": "sources.json",
+      "expected_error": "validation_failed",
+      "evaluation_error_prefix": "report_schema",
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "model:write-sources",
+        "first_visible": "model:write-sources",
+        "repairable_decisions": [
+          "model:write-sources"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    },
+    {
+      "schema_version": 1,
+      "id": "D20",
+      "split": "heldout",
+      "family": "report",
+      "title": "报告引用并不存在的原文",
+      "operation": "claim_quote",
+      "target": "sources.json",
+      "expected_error": "validation_failed",
+      "evaluation_error_prefix": "claim_without_evidence:",
+      "annotation": {
+        "schema_version": 1,
+        "origin": "agent_proposed",
+        "review_status": "pending_human",
+        "injection": "model:write-sources",
+        "first_visible": "model:write-sources",
+        "repairable_decisions": [
+          "model:write-sources"
+        ],
+        "rationale": "注入位置与首个可见异常独立记录；候选决策是否适合修复仍需人工核对及受控干预，不能据此断言因果。"
+      }
+    }
+  ]
+}
