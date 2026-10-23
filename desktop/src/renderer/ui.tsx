@@ -13,12 +13,16 @@ export async function call<T>(request: Promise<Reply<T>>): Promise<T> {
   if (!reply.ok) throw new Error(`${reply.error.message}（${reply.error.code}）`);
   return reply.data;
 }
-export function useRead<T>(read: () => Promise<T>, deps: React.DependencyList, interval = 0) {
+export function useRead<T>(read: () => Promise<T>, deps: React.DependencyList, interval = 0, retainScope?: string) {
   const [data, setData] = useState<T | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
+  const previousScope = useRef<string | undefined>(undefined);
   useEffect(() => {
     let active = true, timer: ReturnType<typeof setTimeout> | undefined;
-    setData(null); setError(''); setLoading(true);
+    // 同一 Run 内刷新列表保留已确认数据，避免重建详情区而丢失用户选择。
+    if (retainScope === undefined || previousScope.current !== retainScope) setData(null);
+    previousScope.current = retainScope;
+    setError(''); setLoading(true);
     async function load() {
       try { const next = await read(); if (active) { setData(next); setError(''); } }
       catch (failure) { if (active) setError(err(failure)); }
@@ -26,7 +30,7 @@ export function useRead<T>(read: () => Promise<T>, deps: React.DependencyList, i
     }
     void load();
     return () => { active = false; clearTimeout(timer); };
-  }, [...deps, revision]);
+  }, [...deps, revision, retainScope]);
   return { data, error, loading, refresh: useCallback(() => setRevision(value => value + 1), []) };
 }
 export function useAction() {

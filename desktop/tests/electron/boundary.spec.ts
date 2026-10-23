@@ -12,6 +12,7 @@ const COMMIT = 'a'.repeat(64);
 
 test('真实 Electron：本地资源、隔离桥接、四页查询及受控提交', async () => {
   const requests: IncomingMessage[] = [], bodies: Record<string, unknown>[] = [];
+  let runState = 'running';
   const config = { schema_version: 1, kind: 'offline_research_agent', model: 'mock-research/v1', tools: ['corpus_search', 'source_read', 'artifact_write'], limits: { schema_version: 1, max_steps: 32, max_model_calls: 32, max_tool_calls: 16 } };
   const server = createServer((request, response) => {
     requests.push(request); const path = new URL(request.url!, 'http://localhost').pathname;
@@ -21,7 +22,12 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
       request.on('end', () => { bodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>);
         response.end(JSON.stringify(path === '/agents' ? { config_id: REPO, version: 1 } : path === '/tasks' ? { task_id: REPO } : { run_id: RUN, job_id: REPO })); }); return;
     }
-    const run = { id: RUN, repository_id: REPO, branch_name: 'main', mode: 'standard', status: 'completed', state_version: 2, checkpoint_commit_id: COMMIT, goal: { text: 'Electron 边界测试运行' }, created_at: '2026-10-22T00:00:00Z' };
+    if (path.endsWith('/content/code') || path.endsWith('/content/stdout')) {
+      const content = Buffer.from(path.endsWith('/code') ? 'claims_per_framework' : 'statistics written');
+      response.setHeader('ETag', `"${COMMIT}"`); response.setHeader('X-Content-Bytes', String(content.length));
+      response.setHeader('X-Content-Offset', '0'); response.setHeader('X-Next-Offset', ''); response.end(content); return;
+    }
+    const run = { id: RUN, repository_id: REPO, branch_name: 'main', mode: 'standard', status: runState, state_version: 2, checkpoint_commit_id: COMMIT, goal: { text: 'Electron 边界测试运行' }, created_at: '2026-10-22T00:00:00Z' };
     if (path === '/diff') {
       const query = new URL(request.url!, 'http://localhost').searchParams;
       if (!query.has('left_commit') || !query.has('right_commit')) {
@@ -35,6 +41,8 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
       : path.endsWith('/commits') ? { items: [{ commit_id: COMMIT, parents: [], created_at: '2026-10-22T00:00:00Z' }], has_more: false }
       : path === `/commits/${COMMIT}` ? { commit_id: COMMIT, manifest: {}, snapshot: { data: { status: 'completed', injected: '<img src=x onerror="window.injected=true">' } }, environment: {} }
       : path.endsWith('/runs') ? { items: [run], next_after_id: null }
+      : path.endsWith('/executions') ? { items: [{ id: REPO, run_id: RUN, provider: 'tool:code_exec/v1', logical_step_id: 'code_exec', attempt: 1 }], next_after_id: null }
+      : path.endsWith(`/executions/${REPO}`) ? { run_id: RUN, physical_run_id: RUN, physical_call_id: REPO, execution_status: 'complete', cleanup_confirmed: true, wall_ms: 12, resources: ['code', 'stdout'], result: { schema_version: 1, exit_code: 0 } }
       : path === `/runs/${RUN}` ? run
       : path === '/diff' ? { items: [{ path: '/state/value', operation: 'replace', before: '旧值', after: '新值' }], total_changes: 1, common_ancestor: COMMIT, has_more: false, next_after: 1 }
       : { items: [], next_after_seq: 0, next_after_id: null };
@@ -75,6 +83,14 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
     await page.getByRole('button', { name: '查看时间线 →' }).click();
     await expect(page.getByRole('heading', { name: '时间线', exact: true })).toBeVisible();
     await expect(page.getByLabel('检查点关系图')).toBeVisible();
+    await expect(page.getByText('statistics written', { exact: true })).toBeVisible();
+    await page.getByLabel('原始证据').selectOption('code');
+    await expect(page.getByText('claims_per_framework', { exact: true })).toBeVisible();
+    const reads = requests.filter(request => request.url === `/runs/${RUN}`).length;
+    runState = 'completed';
+    await expect.poll(() => requests.filter(request => request.url === `/runs/${RUN}`).length).toBeGreaterThanOrEqual(reads + 2);
+    await expect(page.getByLabel('原始证据')).toHaveValue('code');
+    await expect(page.getByText('claims_per_framework', { exact: true })).toBeVisible();
     await page.getByRole('tab', { name: '逻辑状态' }).click();
     await expect(page.getByText('window.injected=true', { exact: false })).toBeVisible();
     expect(await page.evaluate(() => (window as unknown as { injected?: boolean }).injected)).toBeUndefined();

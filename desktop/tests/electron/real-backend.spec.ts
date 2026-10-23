@@ -59,13 +59,25 @@ async function sourceBranch(page: Page, sourceRun: string) {
 test('真实设施：桌面五工具 → 历史/Fork → 零执行 Recorded → A/B Live → Diff/导出', async () => {
   const backend = await startBackend();
   const profile = await mkdtemp(join(tmpdir(), 'agentgit-real-profile-'));
-  const desktop = await electron.launch({ args: ['.'], cwd: resolve('.'), env: { ...process.env,
-    AGENTGIT_API_TOKEN: TOKEN, AGENTGIT_API_URL: backend.url, AGENTGIT_DESKTOP_PROFILE_DIR: profile } });
+  const executable = process.env.AGENTGIT_DESKTOP_EXECUTABLE;
+  const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
+    AGENTGIT_API_TOKEN: TOKEN, AGENTGIT_API_URL: backend.url, AGENTGIT_DESKTOP_PROFILE_DIR: profile };
+  if (executable) {
+    // 打包程序从独立目录启动；子进程 PATH 不包含构建用 Node/uv/npm。
+    for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key];
+    env.PATH = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32');
+  }
+  const desktop = await electron.launch({ ...(executable ? { executablePath: resolve(executable), args: [], cwd: profile }
+    : { args: ['.'], cwd: resolve('.') }), env }).catch(async error => { await backend.stop(); throw error; });
   await desktop.context().tracing.start({ screenshots: true, snapshots: true });
   let currentPage: Page | undefined;
   try {
     const page = await desktop.firstWindow();
     currentPage = page;
+    if (executable) {
+      expect(await desktop.evaluate(({ app }) => app.isPackaged)).toBe(true);
+      expect(await desktop.evaluate(() => process.env.PATH)).toBe(env.PATH);
+    }
     await expect(page.getByText('API 与数据库可用；Worker')).toBeVisible();
     await page.getByLabel('新项目名称').fill('S6 真实桌面五工具与隔离分支');
     await page.getByRole('button', { name: '创建并选择', exact: true }).click();
@@ -159,7 +171,8 @@ test('真实设施：桌面五工具 → 历史/Fork → 零执行 Recorded → 
     expect(executions).toHaveLength(4); expect(new Set(executions.map(item => item.container_name)).size).toBe(4);
     expect(executions.every(item => item.cleanup_confirmed)).toBe(true);
     await writeFile('../.agentgit/evidence/S6-real-desktop-audit.json', JSON.stringify({ repository: repo, sourceRun,
-      sourceHead: end, recorded: verified.replay, lives, final, export: { bytes: 'A', dialog: '测试替换原生对话框返回值，真实主进程写入' } }, null, 2));
+      sourceHead: end, recorded: verified.replay, lives, final, package: executable ?? null,
+      export: { bytes: 'A', dialog: '测试替换原生对话框返回值，真实主进程写入' } }, null, 2));
   } catch (error) {
     if (currentPage && !currentPage.isClosed()) {
       await currentPage.screenshot({ path: '../.agentgit/evidence/S6-real-failure.png', fullPage: true });

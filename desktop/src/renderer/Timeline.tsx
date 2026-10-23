@@ -13,7 +13,7 @@ export default function Timeline(props: PageProps) {
   const history = useRead(() => call(window.agentgit.listCommits({ branchName, ...(afterCommit ? { afterCommit } : {}), limit: 50 })), [branchName, afterCommit, run.data?.checkpoint_commit_id]);
   const commitId = props.selectedCommit || str(run.data?.checkpoint_commit_id);
   const commit = useRead(() => commitId ? call(window.agentgit.getCommit({ commitId })) : Promise.resolve({} as JsonObject), [commitId]);
-  const calls = useRead(() => props.runId ? call(window.agentgit.listExecutions({ runId: props.runId, limit: 100 })) : Promise.resolve({} as JsonObject), [props.runId, run.data?.status, run.data?.checkpoint_commit_id]);
+  const calls = useRead(() => props.runId ? call(window.agentgit.listExecutions({ runId: props.runId, limit: 100 })) : Promise.resolve({} as JsonObject), [props.runId, run.data?.status, run.data?.checkpoint_commit_id], 0, props.runId);
   const events = useEvents(props.runId);
   const control = useAction(), keys = useRef(new Map<string, string>());
   useEffect(() => { props.setSelectedCommit(''); setCallId(''); setAfterCommit(undefined); setBranch(''); }, [props.runId]);

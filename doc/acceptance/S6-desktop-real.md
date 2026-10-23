@@ -34,8 +34,8 @@ Browser plugin / browser skill 在当前会话不可用；此外普通浏览器�
 
 | 文件 | SHA256 |
 |---|---|
-| S6-electron-real.xml | `b4fc0cd98e1f192e39beb6cb8f297a142b6226aafa5d75ed366eeb3400a70dd3` |
-| S6-real-desktop-audit.json | `0fe92b20fb20e7035b0fd4410fbfe7521cc4861182883c728c0740790dc9cfb8` |
+| S6-electron-real-dev.xml | `b4fc0cd98e1f192e39beb6cb8f297a142b6226aafa5d75ed366eeb3400a70dd3` |
+| S6-real-desktop-dev-audit.json | `0fe92b20fb20e7035b0fd4410fbfe7521cc4861182883c728c0740790dc9cfb8` |
 
 另有 S6-real-source.png、S6-real-diff.png 与 S6-real-electron-trace.zip，均已检查实际页面。历史失败截图保留为排查记录，不算通过证据。
 
@@ -44,6 +44,7 @@ Browser plugin / browser skill 在当前会话不可用；此外普通浏览器�
 1. 桌面 `base/head` 字段应映射 HTTP 的 `left_commit/right_commit`；初版 fixture 接受了错误查询名，真实 API 正确返回 validation。已修正主进程映射、增加路由断言，并让 fixture 校验真实字段，未给后端增加宽松别名。
 2. 切页取消 GET 会误取消并行连接探测，从而把取消解释为断连并丢失页面。新增针对性测试先复现失败，再把主进程连接探测与业务读取取消分开；配置切换/窗口关闭仍取消全部 GET，POST 不受影响。当前 **15 项桌面单元通过**。
 3. 产物列表摘要字段使用真实 API 的 `object_id`，不是快照 ArtifactEntry 的 `object_ref`。
+4. 后续打包程序联调发现：完成状态到达时，执行列表重新查询会短暂清空并重建详情组件，将用户已选 code 重置为 stdout。已只在同一 Run 内保留已确认的执行列表；切换 Run/项目仍清空旧范围并丢弃迟到回复。增加真实 Electron 的 running→completed 跨两轮轮询选择保持检查，综合测试通过（9.5s）。
 
 测试设施中的 Windows multiprocessing 启动、产物索引作用域、Docker JSON 对象读取等准备问题也已修正，未放宽产品约束。联调现在使用独立 subprocess Worker 并等待明确就绪，异常会失败，不静默跳过。
 
