@@ -1,11 +1,11 @@
 # S6 独立 Windows 用户验收清单
 
-状态：待执行，不是已通过记录。当前候选为 AgentGit 0.1.1 / Windows x64，已修正分发包收进测试结果的问题；必须使用[分发修正与新候选](acceptance/S6-package-hygiene.md)中的新摘要，不再使用此前 7083499 包的摘要。本清单将实施方案 S6-T01/T10/T12 的剩余要求落到实际操作，不降低独立用户、安装/升级/卸载或原生保存要求。2026-10-23 用户明确环境稍后提供，先继续其他验收。
+状态：待执行，不是已通过记录。当前候选为 AgentGit 0.1.2 / Windows x64，必须使用[当前候选](acceptance/S6-execution-environment.md)中的摘要；此前 0.1.1 记录保留历史事实。本清单将实施方案 S6-T01/T10/T11/T12 的剩余要求落到实际操作，不降低独立用户、安装/升级/卸载或原生保存要求。2026-10-23 用户明确环境稍后提供，先继续其他验收。
 
 ## 已准备的输入
 
-- 安装程序 `desktop/out/make/squirrel.windows/x64/AgentGitSetup.exe`，以及同目录 `AgentGit-0.1.1-full.nupkg` / `RELEASES`。
-- 便携包 `desktop/out/make/zip/win32/x64/AgentGit-win32-x64-0.1.1.zip`。安装程序和 ZIP 的摘要见新候选记录，均未签名；不将本机可运行等同于分发信任验证。
+- 安装程序 `desktop/out/make/squirrel.windows/x64/AgentGitSetup.exe`，以及同目录 `AgentGit-0.1.2-full.nupkg` / `RELEASES`。
+- 便携包 `desktop/out/make/zip/win32/x64/AgentGit-win32-x64-0.1.2.zip`。安装程序和 ZIP 的摘要见新候选记录，均未签名；不将本机可运行等同于分发信任验证。
 - 真实后端由独立操作者按 [DEVELOPMENT.md](DEVELOPMENT.md) 准备 PostgreSQL、已迁移的数据根、API、Worker 和固定 Docker 镜像。前端用户可连接同机回环 API，Worker 继续使用已准备的身份与数据目录；不会要求桌面自行安装后端。
 - 测试只需离线 Mock，不配置真实供应商密钥。桌面预置与 API 匹配的身份令牌，禁止把它放入命令行、截图、清单或归档。
 
@@ -16,6 +16,8 @@
 当前自动化进程未提升管理员权限，未取得另一个用户会话，也未发现可直接使用的测试 VM；本机真实安装/升级/卸载已在 Codex MSIX 的 LocalCache 重定向上下文通过，并不等同于这个独立用户条件。不自动创建账户、修改系统权限或索取明文凭据。待环境可用后，记录系统版本、用户隔离方式、包摘要、后端版本/迁移和字体离线可用性，继续执行以下步骤。
 
 ## 执行与保存证据
+
+补充 S6-T11 交叉复核：在独立测试环境准备依赖的过程中，保留 API 未启动、数据库未就绪、Worker 实际停止、Docker 不可达和固定镜像尚未导入时的 UI/任务结果。只对测试自有依赖安排这些场景，不删除共享镜像；记录真实状态，不能把本机故障注入的镜像 404 直接填为独立环境实测。
 
 1. 在独立用户中安装 Setup。记录退出结果、安装位置、开始菜单/快捷方式及应用版本，确认无需 Node 或开发服务器；不绕过系统信任拦截，把实际阻断单列。
 2. 连接已准备的本机 API，创建离线五工具任务并完成；在 Timeline 查看 Python/Shell 命令、日志、退出码、清理和文件。记录 Run/Job/Commit 和产物摘要。

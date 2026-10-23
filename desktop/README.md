@@ -39,7 +39,7 @@ npm run package
 npm run make
 ```
 
-输出在 `out/`，包含 Windows x64 Squirrel 安装程序与 ZIP。0.1.1 当前候选摘要和 MSIX 安装生命周期见[分发修正与新候选](../doc/acceptance/S6-package-hygiene.md)；此前包曾混入测试结果，已替换，不能仅按版本名混用摘要。[此前安装记录](../doc/acceptance/S6-install-lifecycle.md)、[模型版候选](../doc/acceptance/S6-model-packages.md)及[初次候选](../doc/acceptance/S6-desktop-packages.md)保留历史事实。独立用户安装/升级/卸载尚待完成，不把 make 成功等同于完成 S6。
+输出在 `out/`，包含 Windows x64 Squirrel 安装程序与 ZIP。当前版本 0.1.2，摘要、执行环境异常、便携四条真实流程和 MSIX 安装生命周期见[当前候选](../doc/acceptance/S6-execution-environment.md)。[0.1.1 分发修正](../doc/acceptance/S6-package-hygiene.md)、[此前安装记录](../doc/acceptance/S6-install-lifecycle.md)、[模型版候选](../doc/acceptance/S6-model-packages.md)及[初次候选](../doc/acceptance/S6-desktop-packages.md)保留历史事实。独立用户安装/升级/卸载尚待完成，不把 make 成功等同于完成 S6。
 
 ## 连接已有后端
 
@@ -52,6 +52,8 @@ npm start
 ```
 
 默认地址为 `http://127.0.0.1:8000`，也可在窗口内显式改为其他回环 HTTP 根端点。首次选择已有项目 UUID，或受控创建项目。API 存活、数据库、身份、能力版本分别检查，Worker/容器保持未知，任务实际结果才提供执行证据。无令牌时可以查看公开探测状态，不能调用业务接口。
+
+任务排队时提示尚无执行进展，持续等待可按[后端开发说明](../doc/DEVELOPMENT.md)检查 Worker。执行详情收到 sandbox_unavailable 时提示运行 `agentgit doctor --sandbox`，核验 Docker Linux 和固定镜像；该通用错误不能断定具体缺少哪项，也不自动修复环境。环境异常回归单独选择 real 配置的 `--grep 执行环境异常`；只停止自己的测试 Worker、使用私有 Docker context 和镜像查询故障注入，不停止外部 Docker 或删除固定镜像。
 
 主进程读取令牌后在创建渲染子进程前删除环境副本，只在 API 客户端闭包保留；不下发 IPC、不落前端存储或偏好。renderer 无 Node/fs/Shell/Docker 接口、任意 URL 代理或原始 ipcRenderer。项目由主进程固定加头，后端继续强制归属检查。桌面也移除继承的 OPENAI_API_KEY；供应商密钥只在独立 Worker 预置。Runs 选择外部模型和 Live 继承/切换外部模型时必须另填 USD 上限，见 [模型与费用](../doc/MODEL_ADAPTER.md)。
 
