@@ -27,6 +27,8 @@ const build = files(path.join(desktop, '.build')).map(file => {
   assert.ok(expected.equals(actual), `包内构建文件不一致：${relative}`);
   return { file: relative, bytes: actual.length, sha256: hash(actual) };
 });
+const packagedBuild = entries.filter(name => name.startsWith('/.build/') && !asar.statFile(archive, path.normalize(name.slice(1)), false).files).map(name => name.slice(1));
+assert.deepEqual(packagedBuild.sort(), build.map(item => item.file).sort(), '包内构建文件集合与本地构建不一致');
 const fontManifest = JSON.parse(fs.readFileSync(path.join(desktop, 'src/renderer/public/licenses/manifest.json'), 'utf8'));
 for (const file of fontManifest.files) {
   const location = file.file.endsWith('.ttf')
@@ -36,6 +38,9 @@ for (const file of fontManifest.files) {
   assert.equal(location[0].sha256, file.sha256, `上游字体/授权字节不一致：${file.file}`);
 }
 const manifest = JSON.parse(asar.extractFile(archive, 'package.json').toString('utf8'));
+const sourceManifest = JSON.parse(fs.readFileSync(path.join(desktop, 'package.json'), 'utf8'));
+assert.equal(manifest.name, sourceManifest.name, '包内产品身份不一致');
+assert.equal(manifest.version, sourceManifest.version, '包内版本与待验收源码不一致');
 const notices = JSON.parse(asar.extractFile(archive, path.normalize('.build/renderer/licenses/npm-dependencies.json')).toString('utf8'));
 assert.ok(notices.packages.length >= 4, '缺少声明依赖授权清单');
 assert.equal(manifest.main, '.build/main/index.js');

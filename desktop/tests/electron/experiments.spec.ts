@@ -1,20 +1,21 @@
-import { test, expect, _electron as electron, type Page } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import type { JsonObject } from '../../src/shared/bridge';
 import { TOKEN, completed, data, objects, startBackend } from '../support/real-client';
+import { desktopIdentity, EVIDENCE, launchDesktop } from '../support/desktop-runtime';
 
 test('真实 Electron/API/Worker：十 trial、原键重试、当前版本控制、Hybrid 合成来源与重开只读', async () => {
   const backend = await startBackend(), evidence = await mkdtemp(join(tmpdir(), 'agentgit-s7-desktop-'));
   const profile = join(evidence, 'profile'), errors: string[] = [];
-  const launch = () => electron.launch({ args: ['.'], cwd: resolve('.'), env: { ...process.env, AGENTGIT_DESKTOP_EXECUTABLE: '', AGENTGIT_API_TOKEN: TOKEN, AGENTGIT_API_URL: backend.url, AGENTGIT_DESKTOP_PROFILE_DIR: profile } });
+  const launch = () => launchDesktop(profile, backend.url, TOKEN);
   let desktop = await launch().catch(async error => { await backend.stop(); throw error; });
   let latestId = '';
   function observe(page: Page) { page.on('pageerror', error => errors.push(error.message)); page.on('console', entry => { if (entry.type() === 'error') errors.push(entry.text()); }); }
   try {
     let page = await desktop.firstWindow(); observe(page);
-    await expect(page).toHaveTitle('AgentGit'); expect(page.url()).toBe('agentgit://app/index.html');
+    const runtime = await desktopIdentity(desktop, page);
     await page.getByLabel('新项目名称').fill('S7 桌面实验真实联调'); await page.getByRole('button', { name: '创建并选择', exact: true }).click();
     await page.getByRole('button', { name: '收起', exact: true }).click(); await page.getByRole('button', { name: '新建运行', exact: true }).click();
     await page.getByRole('button', { name: '提交运行', exact: true }).click();
@@ -77,11 +78,12 @@ test('真实 Electron/API/Worker：十 trial、原键重试、当前版本控制
       const path = join(evidence, `experiments-${width}.png`); await page.screenshot({ path, fullPage: true }); screenshots.push(path);
     }
     const before = await backend.command('traffic'); await desktop.close(); desktop = await launch(); page = await desktop.firstWindow(); observe(page);
+    await desktopIdentity(desktop, page);
     await page.getByRole('button', { name: '分支实验', exact: true }).click(); await page.getByRole('button', { name: '受控 A/B 实验', exact: true }).click();
     await page.getByLabel('Experiment UUID', { exact: true }).fill(hybridId); await page.getByRole('button', { name: '只读查询实验', exact: true }).click(); await expect(page.getByRole('heading', { name: '独立试验', exact: true })).toBeVisible();
     expect(await backend.command('traffic')).toEqual(before); expect(errors).toEqual([]);
     const final = await backend.command('audit', { repository: repo, source_run: source }); expect(final.source_fingerprint).toBe(baseline.source_fingerprint); expect(final.remaining_execution_containers).toEqual([]);
-    await writeFile('../.agentgit/evidence/S7-desktop-real.json', JSON.stringify({ evidence, source, repo, liveId, hybridId, baseline, final, live, hybrid, errors, screenshots, mutations: await backend.command('mutation_audit'), reopenedWithoutPosts: true }, null, 2));
+    await writeFile(`../.agentgit/evidence/${EVIDENCE}-real.json`, JSON.stringify({ evidence, schema: backend.schema, runtime, source, repo, liveId, hybridId, baseline, final, live, hybrid, errors, screenshots, mutations: await backend.command('mutation_audit'), responses: await backend.command('response_audit'), reopenedWithoutPosts: true }, null, 2));
   } finally {
     try { const page = await desktop.firstWindow(); await writeFile(join(evidence, 'diagnostics.json'), JSON.stringify({ errors, text: await page.locator('body').innerText(), connection: await page.evaluate(() => window.agentgit.getConnection()), latestId, report: latestId ? await page.evaluate(experimentId => window.agentgit.getExperiment({ experimentId }), latestId) : null, mutations: await backend.command('mutation_audit') }, null, 2)); }
     finally { try { await desktop.close(); } finally { await backend.stop(); } }

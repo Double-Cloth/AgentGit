@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { BinaryChunk, JsonObject } from '../../src/shared/bridge';
 import { TOKEN, completed, data, objects, readRun, startBackend } from '../support/real-client';
+const EVIDENCE = process.env.AGENTGIT_ELECTRON_EVIDENCE_PREFIX ?? 'S6';
+if (!/^[a-zA-Z0-9_-]{1,80}$/.test(EVIDENCE)) throw new Error('测试证据前缀无效');
 
 async function sourceBranch(page: Page, sourceRun: string) {
   await page.getByRole('button', { name: '运行', exact: true }).click();
@@ -87,7 +89,7 @@ test('执行环境异常：Worker 实际停止与恢复、独立不可达 Docker
     const image = cases.at(-1)!.audit as JsonObject;
     expect(objects(image.missing_image_responses).some(item => item.status === 404)).toBe(true);
     expect(errors).toEqual([]);
-    await writeFile('../.agentgit/evidence/S6-environment-qa.json', JSON.stringify({ evidence, executable: executable ?? null, cases, errors,
+    await writeFile(`../.agentgit/evidence/${EVIDENCE}-environment-qa.json`, JSON.stringify({ evidence, executable: executable ?? null, cases, errors,
       scope: '自有 Worker 实际退出；私有 Docker context 的实际不可达管道；镜像查询映射到不存在摘要后接收真实 Docker 404，未移除共享固定镜像' }, null, 2));
   } finally { try { await desktop.close(); } finally { await backend.stop(); } }
 });
@@ -220,7 +222,7 @@ test('生命周期与 DPI：关闭、重开、重复启动、崩溃与断连只�
       expect(errors).toEqual([]); expect(await backend.command('traffic')).toEqual(submitted);
       await desktop.close(); desktop = undefined;
     }
-    await writeFile('../.agentgit/evidence/S6-lifecycle-dpi-qa.json', JSON.stringify({ source, repository: repo, package: executable ?? null, evidence, matrix,
+    await writeFile(`../.agentgit/evidence/${EVIDENCE}-lifecycle-dpi-qa.json`, JSON.stringify({ source, repository: repo, package: executable ?? null, evidence, matrix,
       posts: submitted.posts, rendererCrash: '真实渲染进程崩溃；测试替换恢复提示返回值，验证重新加载查询',
       apiInterruption: 'fixture 返回 503 后恢复；不是宿主服务停止', scale: '启动参数强制 Chromium device scale factor；未修改 Windows 显示设置' }, null, 2));
   } finally { try { if (desktop) await desktop.close(); } finally { await backend.stop(); } }
@@ -287,7 +289,7 @@ test('真实设施：桌面五工具 → 历史/Fork → 零执行 Recorded → 
     await expect(page.getByRole('button', { name: 'results/statistics.json', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'results/statistics.json', exact: true }).click();
     await expect(page.getByText(/"claims":\s*9/)).toBeVisible();
-    await page.screenshot({ path: '../.agentgit/evidence/S6-real-source.png', fullPage: true });
+    await page.screenshot({ path: `../.agentgit/evidence/${EVIDENCE}-real-source.png`, fullPage: true });
     await sourceBranch(page, sourceRun);
     await page.getByRole('radio', { name: /Fork/ }).check();
     await page.getByLabel('安全起点 Commit').fill(terminal); await page.getByLabel('新分支名称').fill('desktop-fork');
@@ -336,10 +338,10 @@ test('真实设施：桌面五工具 → 历史/Fork → 零执行 Recorded → 
     await page.getByRole('button', { name: /artifacts\/results~1desktop-same.txt/ }).click();
     await expect(page.getByText(`"${lives[0]!.objectId}"`, { exact: true })).toBeVisible();
     await expect(page.getByText(`"${lives[1]!.objectId}"`, { exact: true })).toBeVisible();
-    await page.screenshot({ path: '../.agentgit/evidence/S6-real-diff.png', fullPage: true });
+    await page.screenshot({ path: `../.agentgit/evidence/${EVIDENCE}-real-diff.png`, fullPage: true });
     const exportPath = join(profile, 'export-A.bin');
     const nativeSave = process.env.AGENTGIT_NATIVE_SAVE === '1';
-    if (nativeSave) await writeFile('../.agentgit/evidence/S6-native-save-request.json', JSON.stringify({ exportPath, profile, package: executable ?? null }));
+    if (nativeSave) await writeFile(`../.agentgit/evidence/${EVIDENCE}-native-save-request.json`, JSON.stringify({ exportPath, profile, package: executable ?? null }));
     else await desktop.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }); }, exportPath);
     const exported = data(await page.evaluate(artifactId => window.agentgit.exportArtifact({ artifactId }), lives[0]!.artifactId));
     expect(exported).toMatchObject({ saved: true, cancelled: false }); expect(await readFile(exportPath, 'utf8')).toBe('A');
@@ -348,17 +350,17 @@ test('真实设施：桌面五工具 → 历史/Fork → 零执行 Recorded → 
     const executions = objects(final.executions);
     expect(executions).toHaveLength(4); expect(new Set(executions.map(item => item.container_name)).size).toBe(4);
     expect(executions.every(item => item.cleanup_confirmed)).toBe(true);
-    await writeFile('../.agentgit/evidence/S6-real-desktop-audit.json', JSON.stringify({ repository: repo, sourceRun,
+    await writeFile(`../.agentgit/evidence/${EVIDENCE}-real-desktop-audit.json`, JSON.stringify({ repository: repo, sourceRun,
       sourceHead: end, recorded: verified.replay, lives, final, package: executable ?? null, runtime, windowInfo,
       export: { bytes: 'A', dialog: nativeSave ? '实际 Windows 原生保存对话框交互，主进程原样写入' : '测试替换原生对话框返回值，真实主进程写入' } }, null, 2));
   } catch (error) {
     if (currentPage && !currentPage.isClosed()) {
-      await currentPage.screenshot({ path: '../.agentgit/evidence/S6-real-failure.png', fullPage: true });
-      await writeFile('../.agentgit/evidence/S6-real-failure.txt', await currentPage.locator('body').innerText());
+      await currentPage.screenshot({ path: `../.agentgit/evidence/${EVIDENCE}-real-failure.png`, fullPage: true });
+      await writeFile(`../.agentgit/evidence/${EVIDENCE}-real-failure.txt`, await currentPage.locator('body').innerText());
     }
     throw error;
   } finally {
-    try { await desktop.context().tracing.stop({ path: '../.agentgit/evidence/S6-real-electron-trace.zip' }); }
+    try { await desktop.context().tracing.stop({ path: `../.agentgit/evidence/${EVIDENCE}-real-electron-trace.zip` }); }
     finally { try { await desktop.close(); } finally { await backend.stop(); } }
   }
 });
@@ -470,14 +472,14 @@ test('真实模型接线：桌面显式选型与费用 → 独立 Worker → Rec
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: join(evidence, 'model-unknown-360.png'), fullPage: true });
     expect(errors).toEqual([]);
-    await writeFile('../.agentgit/evidence/S6-model-desktop-qa.json', JSON.stringify({ evidence, source, missing, unknown,
+    await writeFile(`../.agentgit/evidence/${EVIDENCE}-model-desktop-qa.json`, JSON.stringify({ evidence, source, missing, unknown,
       sourceMeter: (result.budget as JsonObject).usage, live: (liveState.budget as JsonObject).new_usage,
       provider: await backend.command('provider_audit'), widths: [1440, 768, 360], consoleErrors: errors,
       transport: '独立真实 Worker 使用确定性 HTTP 替身；未访问供应商或产生真实计费' }, null, 2));
   } catch (error) {
     if (page && !page.isClosed()) { await page.screenshot({ path: join(evidence, 'failure.png'), fullPage: true });
       await writeFile(join(evidence, 'failure.txt'), await page.locator('body').innerText()); }
-    await writeFile('../.agentgit/evidence/S6-model-desktop-failure-path.txt', evidence);
+    await writeFile(`../.agentgit/evidence/${EVIDENCE}-model-desktop-failure-path.txt`, evidence);
     throw error;
   } finally {
     try { await desktop.context().tracing.stop({ path: join(evidence, 'trace.zip') }); }

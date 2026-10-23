@@ -1,9 +1,10 @@
-import { test, expect, _electron as electron } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
+import { desktopIdentity, EVIDENCE, launchDesktop } from '../support/desktop-runtime';
 
 const REPO = '00000000-0000-4000-8000-000000000001', RUN = '00000000-0000-4000-8000-000000000002';
 const EXP = '00000000-0000-4000-8000-000000000003', JOB = '00000000-0000-4000-8000-000000000004', BASE = 'a'.repeat(64), REF = 'b'.repeat(64);
@@ -44,10 +45,11 @@ test('HTTP fixture：费用未知、旧验收器、断连保留与控制原键�
     response.end(JSON.stringify(result));
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening'); const address = server.address(); if (!address || typeof address === 'string') throw new Error('测试端点不可用');
-  const profile = await mkdtemp(join(tmpdir(), 'agentgit-s7-boundary-'));
-  const desktop = await electron.launch({ args: ['.'], cwd: resolve('.'), env: { ...process.env, AGENTGIT_API_TOKEN: 'fixture-boundary-token-00000000000000000000', AGENTGIT_API_URL: `http://127.0.0.1:${address.port}`, AGENTGIT_DESKTOP_PROFILE_DIR: profile } });
+  const evidence = await mkdtemp(join(tmpdir(), 'agentgit-s7-boundary-')), profile = join(evidence, 'profile');
+  const desktop = await launchDesktop(profile, `http://127.0.0.1:${address.port}`, 'fixture-boundary-token-00000000000000000000');
   try {
     const page = await desktop.firstWindow(), errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    const runtime = await desktopIdentity(desktop, page);
     await page.getByLabel('已有项目 ID').fill(REPO); await page.getByRole('button', { name: '选择项目', exact: true }).click(); await page.getByRole('button', { name: '收起', exact: true }).click();
     await page.getByRole('button', { name: '分支实验', exact: true }).click(); await page.getByRole('button', { name: '受控 A/B 实验', exact: true }).press('Enter');
     await page.getByLabel('实验来源 Run', { exact: true }).fill(RUN); await page.getByLabel('实验安全起点 Commit').fill(BASE);
@@ -68,10 +70,11 @@ test('HTTP fixture：费用未知、旧验收器、断连保留与控制原键�
     for (const width of [1440, 1024, 768, 360]) {
       await page.setViewportSize({ width, height: 1000 }); await page.evaluate(() => window.scrollTo(0, 0));
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-      await page.screenshot({ path: `../.agentgit/evidence/S7-desktop-form-${width}.png` });
+      await page.screenshot({ path: `../.agentgit/evidence/${EVIDENCE}-form-${width}.png` });
       await page.getByRole('heading', { name: '独立试验', exact: true }).scrollIntoViewIfNeeded();
-      await page.screenshot({ path: `../.agentgit/evidence/S7-desktop-unknown-${width}.png` });
+      await page.screenshot({ path: `../.agentgit/evidence/${EVIDENCE}-unknown-${width}.png` });
     }
     expect(posts.filter(path => path === '/experiments')).toHaveLength(1); expect(errors).toEqual([]);
+    await writeFile(`../.agentgit/evidence/${EVIDENCE}-boundary.json`, JSON.stringify({ runtime, controls, posts, errors, profile }, null, 2));
   } finally { try { await desktop.close(); } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); } }
 });
