@@ -7,6 +7,7 @@ from time import monotonic_ns
 
 import pytest
 from diagnosis_dataset import load_dataset, run_case
+from diagnosis_evidence import pack_repository_evidence
 
 pytestmark = pytest.mark.integration
 DATASET = load_dataset()
@@ -26,6 +27,10 @@ def test_fault_recipe_produces_recorded_failure_and_resolvable_proposed_labels(
             Path.cwd() / ".agentgit/evidence"
         )
         path.mkdir(parents=True, exist_ok=True)
+        bundle = pack_repository_evidence(history, result)
+        (path / f"{case.id}-evidence.json").write_text(
+            json.dumps(bundle, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n"
+        )
         (path / f"{case.id}.json").write_text(
             json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )

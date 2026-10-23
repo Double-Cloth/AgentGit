@@ -1,6 +1,7 @@
 """冻结协议及标签隔离的负例，不执行定位排序或使用保留集调参。"""
 
 import hashlib
+from copy import deepcopy
 
 import pytest
 from diagnosis_dataset import (
@@ -11,8 +12,9 @@ from diagnosis_dataset import (
     load_dataset,
     verify_release,
 )
+from diagnosis_evidence import verify_repository_evidence
 
-from agentgit.core.canonical import decode, encode
+from agentgit.core.canonical import ObjectType, decode, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.models import RunStatus, parse_contract
 from agentgit.core.research import AgentState, ModelRequest, ResearchGoal, evolve
@@ -84,3 +86,33 @@ def test_expected_labels_and_split_do_not_change_injected_model_response():
         ).model_dump(mode="json")
     )
     assert Faults(case, True).model(payload) == Faults(alternative, True).model(payload)
+
+
+@pytest.mark.parametrize("mutation", ["none", "digest", "foreign_project"])
+def test_offline_evidence_checks_original_bytes_and_project_boundary(mutation):
+    identity = object_digest(ObjectType.BLOB, b"")
+    result = {
+        "repository_id": "local-fixture",
+        "graph": {"nodes": []},
+        "reference_graph": {"nodes": []},
+    }
+    bundle = {
+        "test_only": True,
+        "repository_id": "local-fixture",
+        "raw_bytes": 0,
+        "objects": {identity: {"object_type": "blob", "byte_length": 0, "base64": ""}},
+        "indexes": {
+            "events": [],
+            "object_refs": [{"repository_id": "local-fixture", "object_id": identity}],
+        },
+    }
+    verify_repository_evidence(bundle, result)
+    changed = deepcopy(bundle)
+    if mutation == "digest":
+        changed["objects"][identity]["base64"] = "YQ=="
+    elif mutation == "foreign_project":
+        changed["indexes"]["object_refs"][0]["repository_id"] = "other-fixture"
+    else:
+        return
+    with pytest.raises(AssertionError):
+        verify_repository_evidence(changed, result)
