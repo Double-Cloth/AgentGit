@@ -3,10 +3,8 @@ module.exports = {
     asar: true,
     executableName: 'AgentGit',
     appBundleId: 'local.agentgit.desktop',
-    ignore: [
-      /^\/(?:src|tests|scripts|\.test-build|out|node_modules\/\.cache)(?:\/|$)/,
-      /^\/(?:tsconfig.*\.json|vite\.config\.mts|playwright(?:\.real)?\.config\.ts|\.node-version)$/,
-    ],
+    // 只分发运行所需内容，避免新增验收配置或失败轨迹进入程序包。
+    ignore: [/^\/(?!\.build(?:\/|$)|node_modules(?:\/|$)|package\.json$)/, /^\/node_modules\/\.cache(?:\/|$)/],
   },
   makers: [
     { name: '@electron-forge/maker-squirrel', config: { name: 'AgentGit', setupExe: 'AgentGitSetup.exe' } },

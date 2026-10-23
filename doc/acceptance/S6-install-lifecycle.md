@@ -1,5 +1,7 @@
 # S6 0.1.1 候选与 MSIX 上下文安装生命周期
 
+后续更正：本页保留旧摘要的安装事实；[分发内容修正](S6-package-hygiene.md)发现旧包包含 test-results/.last-run.json 和构建配置，原审计覆盖不足。因此本页的“无测试/配置”表述撤回，交付候选已由该记录中的新摘要替代。旧生命周期事实不等于新包已通过独立用户验收。
+
 状态：0.1.1 新候选、安装目录三条真实后端流程、便携 ZIP 核心闭环，以及真实覆盖升级/卸载/重装的数据保留通过；**S6 / D1 仍未最终验收**。本次进程继承 Codex MSIX 的文件重定向，不等于独立 Windows 用户、无源码/构建 Node 或整机禁止外网的验收。原生保存成功仍缺证据，不能提前进入 S7 或合并 main。
 
 ## 新候选与版本
@@ -62,7 +64,7 @@ ZIP 解压到 `C:\Users\DC\AppData\Local\Temp\agentgit-portable-011-h3frb4t5`，
 | S6-installed-011-model-ui.json | `2544ae3786f07625c6d80dc87d47f5d60ba039e37083512f7bb4d30e9c63f35c` |
 | S6-installed-011-lifecycle.json | `46fac77f2104a9c3a15d394cea1d1111262eeb2fad0dab0bdc3c6dcdd4508170` |
 | S6-install-lifecycle-final.xml | `594e6067b39279502fc19f14321d30ff3bbc5b277834e408c041a352f4f96f8d` |
-| S6-install-lifecycle-qa.json | `06267426e92de422ee1b412165364f2b8218f050249c27dc0e10727ba06672d9` |
+| S6-install-lifecycle-qa-pre-clean.json | `06267426e92de422ee1b412165364f2b8218f050249c27dc0e10727ba06672d9` |
 | S6-install-path-context.json | `87e0faea9f25e67f64cd45718d23b9c91892bec99a9e44d9b2671ea5b509d788` |
 | S6-installed-011-state.json | `b826212f1315777be8dcd6a1c5ed6576456cb8ec6d18bccd4db7eb0c84ef308f` |
 | S6-portable-011-real.xml | `a01d3f20326f71fbbde9205351245854a0f755fc505611026c9ff761cb025782` |

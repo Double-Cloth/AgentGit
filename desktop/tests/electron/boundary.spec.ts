@@ -1,7 +1,7 @@
 import { test, expect, _electron as electron } from '@playwright/test';
 import { createServer, type IncomingMessage } from 'node:http';
 import { once } from 'node:events';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -9,6 +9,60 @@ const TOKEN = 'fixture-electron-token-00000000000000000000';
 const REPO = '00000000-0000-4000-8000-000000000001';
 const RUN = '00000000-0000-4000-8000-000000000002';
 const COMMIT = 'a'.repeat(64);
+
+test('连接降级：API 未监听、数据库 503、版本不兼容、身份拒绝及恢复', async () => {
+  let mode = 'healthy';
+  const methods: string[] = [];
+  const server = createServer((request, response) => {
+    methods.push(request.method!);
+    response.setHeader('Content-Type', 'application/json');
+    if (request.url === '/health') response.end(JSON.stringify({ status: 'ok', version: mode === 'version' ? '0.2.0' : '0.1.0' }));
+    else if (request.url === '/ready') {
+      if (mode === 'database') { response.writeHead(503); response.end(JSON.stringify({ error: { code: 'database_unavailable', message: '数据库不可用' } })); }
+      else response.end(JSON.stringify({ status: 'ready' }));
+    } else if (request.url === '/capabilities' && mode !== 'identity') {
+      response.end(JSON.stringify({ schema_version: 1, version: '0.1.0', features: ['run_pagination', 'historical_artifacts', 'execution_evidence', 'recorded', 'live', 'structural_diff'] }));
+    } else { response.writeHead(401); response.end(JSON.stringify({ error: { code: 'unauthorized', message: '本地身份验证失败，请核对预置令牌' } })); }
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address(); if (!address || typeof address === 'string') throw new Error('连接测试端点不可用');
+  await new Promise<void>(resolve => server.close(() => resolve()));
+  const evidence = await mkdtemp(join(tmpdir(), 'agentgit-connection-qa-'));
+  const executable = process.env.AGENTGIT_DESKTOP_EXECUTABLE;
+  const desktop = await electron.launch({ ...(executable ? { executablePath: resolve(executable), args: [], cwd: evidence } : { args: ['.'], cwd: resolve('.') }),
+    env: { ...process.env, AGENTGIT_API_TOKEN: TOKEN, AGENTGIT_API_URL: `http://127.0.0.1:${address.port}`, AGENTGIT_DESKTOP_PROFILE_DIR: join(evidence, 'profile') } });
+  try {
+    const page = await desktop.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', entry => { if (entry.type() === 'error') errors.push(entry.text()); });
+    await expect(page).toHaveTitle('AgentGit'); expect(page.url()).toBe('agentgit://app/index.html');
+    const message = page.locator('.connection-message');
+    await expect(message).toContainText('无法连接本地 API，请检查服务地址与启动状态');
+    await page.getByLabel('新项目名称').fill('连接恢复测试'); await page.getByLabel('已有项目 ID').fill(REPO);
+    const create = page.getByRole('button', { name: '创建并选择', exact: true }), select = page.getByRole('button', { name: '选择项目', exact: true });
+    await expect(create).toBeDisabled(); await expect(select).toBeDisabled();
+    await page.screenshot({ path: join(evidence, 'api-unavailable.png'), fullPage: true });
+    server.listen(address.port, '127.0.0.1'); await once(server, 'listening');
+    for (const [state, text] of [['database', 'API 已连接，数据库尚未就绪'], ['version', '后端版本不兼容'], ['identity', '本地身份验证失败']]) {
+      mode = state!; await page.getByRole('button', { name: '重新检查', exact: true }).click();
+      await expect(message).toContainText(text!); await expect(create).toBeDisabled(); await expect(select).toBeDisabled();
+      await expect(page.getByText('未知 / 未探测', { exact: true })).toBeVisible();
+      await page.screenshot({ path: join(evidence, `${state}.png`), fullPage: true });
+    }
+    mode = 'healthy'; await page.getByRole('button', { name: '重新检查', exact: true }).click();
+    await expect(message).toContainText('API 与数据库可用；Worker 和执行环境仍须以实际任务结果确认');
+    await expect(create).toBeEnabled(); await expect(select).toBeEnabled();
+    await expect(page.getByText('未知 / 未探测', { exact: true })).toBeVisible();
+    await page.screenshot({ path: join(evidence, 'recovered.png'), fullPage: true });
+    expect(methods.every(method => method === 'GET')).toBe(true); expect(errors).toEqual([]);
+    await writeFile('../.agentgit/evidence/S6-connection-qa.json', JSON.stringify({ evidence, executable: executable ?? null, methods, errors,
+      cases: ['实际未监听端口', 'HTTP fixture 数据库 503', 'HTTP fixture 版本不兼容', 'HTTP fixture 401', '恢复且无修改请求'],
+      workerAndDocker: '始终未知；未在本测试停机、移除镜像或声称已就绪' }, null, 2));
+  } finally {
+    try { await desktop.close(); }
+    finally { server.closeAllConnections(); if (server.listening) await new Promise<void>(resolve => server.close(() => resolve())); }
+  }
+});
 
 test('真实 Electron：本地资源、隔离桥接、四页查询及受控提交', async () => {
   const requests: IncomingMessage[] = [], bodies: Record<string, unknown>[] = [];

@@ -10,6 +10,8 @@ const packaged = path.resolve(process.argv[2] || path.join(desktop, 'out/AgentGi
 const archive = path.join(packaged, 'resources/app.asar');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const entries = asar.listPackage(archive).map(name => name.replaceAll('\\', '/'));
+const unexpectedRoots = entries.filter(name => !/^\/(?:\.build|node_modules)(?:\/|$)/.test(name) && name !== '/package.json');
+assert.deepEqual(unexpectedRoots, [], '包内含有运行根目录白名单之外的内容');
 const forbidden = entries.filter(name => /^\/(?:src|tests|scripts|\.agentgit|\.env(?:\.[^/]*)?|playwright.*\.config\.ts|tsconfig.*\.json)(?:\/|$)/.test(name));
 assert.deepEqual(forbidden, [], '包内包含开发源码、测试或配置');
 
@@ -48,7 +50,7 @@ if (knownToken) for (const file of build) {
 }
 const result = { schema_version: 1, product: manifest.name, version: manifest.version, platform: 'win32', arch: 'x64',
   archive: { bytes: fs.statSync(archive).size, sha256: hash(fs.readFileSync(archive)), entries: entries.length },
-  forbidden, build, dependencies, notices: { packages: notices.packages, verified: true }, fonts: { upstream_commit: fontManifest.commit, verified: true },
+  unexpected_roots: unexpectedRoots, forbidden, build, dependencies, notices: { packages: notices.packages, verified: true }, fonts: { upstream_commit: fontManifest.commit, verified: true },
   credential_scan: knownToken ? '当前进程凭据未命中' : '无当前凭据，仅执行包内容白名单与字节一致性检查' };
 if (process.argv[3]) fs.writeFileSync(path.resolve(process.argv[3]), JSON.stringify(result, null, 2));
 console.log(JSON.stringify({ product: result.product, version: result.version, entries: entries.length,
