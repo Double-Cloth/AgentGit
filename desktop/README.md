@@ -1,6 +1,6 @@
 # AgentGit 桌面开发
 
-当前为 S6 实施版。四页与受限 IPC 已实现，真实 Electron 与 ZIP 便携程序的五工具/Fork/Recorded/Live/Diff 联调通过，Windows x64 开发候选安装/ZIP 已构建。桌面候选已到 0.1.1，模型 Adapter 与选择/计量已接通；Codex MSIX 上下文安装/升级/卸载及数据保留已实测，原生保存、独立用户安装和剩余验收尚未完成，阶段退出条件仍以根项目实施方案为准。
+当前为 S6 实施版，候选版本 0.1.3。四页、受限 IPC、模型选择/计量、真实五工具/Fork/Recorded/Live/Diff 和当前用户安装生命周期已验证；关系图键盘选择已修复。原生保存和独立 Windows 环境仍待验收，阶段退出条件不变。操作步骤见 [D1 桌面离线指南](../doc/D1-desktop-demo.md)，逐项证据见[当前验收记录](../doc/acceptance/S6-keyboard-and-gates.md)。
 
 ## 固定构建环境
 
@@ -39,7 +39,7 @@ npm run package
 npm run make
 ```
 
-输出在 `out/`，包含 Windows x64 Squirrel 安装程序与 ZIP。当前版本 0.1.2，摘要、执行环境异常、便携四条真实流程和 MSIX 安装生命周期见[当前候选](../doc/acceptance/S6-execution-environment.md)。[0.1.1 分发修正](../doc/acceptance/S6-package-hygiene.md)、[此前安装记录](../doc/acceptance/S6-install-lifecycle.md)、[模型版候选](../doc/acceptance/S6-model-packages.md)及[初次候选](../doc/acceptance/S6-desktop-packages.md)保留历史事实。独立用户安装/升级/卸载尚待完成，不把 make 成功等同于完成 S6。
+输出在 `out/`，包含 Windows x64 Squirrel 安装程序与 ZIP。当前版本 0.1.3，摘要、键盘修正和完整证据矩阵见[当前候选](../doc/acceptance/S6-keyboard-and-gates.md)。[0.1.2 环境异常](../doc/acceptance/S6-execution-environment.md)、[0.1.1 分发修正](../doc/acceptance/S6-package-hygiene.md)及更早安装记录保留历史事实。独立用户安装/升级/卸载尚待完成，不把 make 成功等同于完成 S6。
 
 ## 连接已有后端
 
@@ -71,7 +71,7 @@ renderer 构建前会从已锁定且已安装的声明依赖生成 26 项授权�
 
 `npm test` 检查主进程客户端、参数/项目/来源验证、二进制导出与偏好；`test:electron` 启动真实 Electron，使用受控 HTTP fixture 检查四页、渲染隔离、注入文本、拒绝导航/额外窗口 IPC、双击提交和窗口宽度。fixture 不冒充真实后端执行，详见 [初版证据](../doc/acceptance/S6-desktop-progress.md)。
 
-`test:electron:real` 另外要求已准备 PostgreSQL 测试库、Docker Linux 与固定镜像。它使用独立测试 Schema 和独立 Worker，真实执行五工具、分支/Replay/Diff，并核验来源不变、容器清理和原字节导出。缺设施即失败，不 skip；产品 Python 源码在测试期间应冻结。详见 [真实联调](../doc/acceptance/S6-desktop-real.md)。默认保存测试替换原生对话框返回值，不算原生对话框交互已验收。第三条用独立 Worker 的测试门控证明关窗后任务继续，检查重开/单实例/渲染崩溃与 503 恢复不新增 POST，并以 Chromium device scale factor 1/1.5/2 验证四页窗口/键盘/长内容；不是修改 Windows 显示设置。
+`test:electron:real` 另外要求已准备 PostgreSQL 测试库、Docker Linux 与固定镜像。它使用独立测试 Schema 和独立 Worker，真实执行五工具、分支/Replay/Diff，并核验来源不变、容器清理和原字节导出。缺设施即失败，不 skip；产品 Python 源码在测试期间应冻结。详见 [真实联调](../doc/acceptance/S6-desktop-real.md)。默认保存测试替换原生对话框返回值，不算原生对话框交互已验收。生命周期用例通过独立 Worker 门控证明关窗后任务继续，检查重开/单实例/渲染崩溃与 503 恢复不新增 POST，并以 Chromium device scale factor 1/1.5/2 验证四页、图节点键盘选择和长内容；不是修改 Windows 显示设置。四个配置分别使用 test-results 的 boundary/real/install/native 子目录，避免跨配置并发清理轨迹；同一配置的运行仍应串行。
 
 复验打包/解压程序时先正常构建，然后设置 `AGENTGIT_DESKTOP_EXECUTABLE` 为该目录的 AgentGit.exe 绝对路径，运行 `npm exec playwright test -- --config playwright.real.config.ts`。测试会将应用工作目录放到新临时目录，清除应用子进程的构建 PATH / NODE_PATH / NODE_OPTIONS，并确认 app.isPackaged；不据此声称已切换 Windows 账户。
 
