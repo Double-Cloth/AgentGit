@@ -54,6 +54,9 @@ class RepairSpace(Contract):
     source_reason: Annotated[str, Field(min_length=1, max_length=2000)]
     patches: Annotated[tuple[RepairPatch, ...], Field(max_length=8)]
     excluded_patch_refs: Annotated[tuple[Digest, ...], Field(max_length=1024)] = ()
+    template_skips: Annotated[
+        tuple[Annotated[str, Field(max_length=500)], ...], Field(max_length=32)
+    ] = ()
     max_depth: Annotated[int, Field(ge=1, le=2)] = 2
 
     @model_validator(mode="after")
@@ -119,6 +122,38 @@ class RepairBudget(Contract):
             raise ValueError("非零费用必须且仅其需要冻结价格表版本")
         if self.trial.max_cost_micro_usd > self.max_cost_micro_usd:
             raise ValueError("单试验费用不能超过总费用")
+        return self
+
+
+class RepairTemplateTarget(Contract):
+    event_id: Annotated[int, Field(ge=1)]
+    replacement_call_ids: Annotated[tuple[Identifier, ...], Field(max_length=8)] = ()
+
+    @model_validator(mode="after")
+    def distinct_recordings(self) -> "RepairTemplateTarget":
+        if len(set(self.replacement_call_ids)) != len(self.replacement_call_ids):
+            raise ValueError("候选录制不能重复")
+        return self
+
+
+class NewRepairSearch(Contract):
+    kind: Literal["template_repair_search/v1"] = "template_repair_search/v1"
+    failed_run_id: Identifier
+    base_commit: Digest
+    validator_ref: Digest
+    targets: Annotated[tuple[RepairTemplateTarget, ...], Field(min_length=1, max_length=8)]
+    max_atoms: Annotated[int, Field(ge=1, le=8)] = 8
+    max_depth: Annotated[int, Field(ge=1, le=2)] = 2
+    source_reason: Annotated[str, Field(min_length=1, max_length=2000)] = (
+        "定位尚未达标；使用给定共同起点与目标的完整有限模板候选，明确记录上限排除项。"
+    )
+    budget: RepairBudget | None = None
+    hybrid: HybridPolicy | None = None
+
+    @model_validator(mode="after")
+    def distinct_targets(self) -> "NewRepairSearch":
+        if len({target.event_id for target in self.targets}) != len(self.targets):
+            raise ValueError("搜索目标事件不能重复")
         return self
 
 
@@ -297,4 +332,68 @@ class RepairTrialResult(Contract):
             and (self.assessment is None or self.assessment.verdict != self.verdict)
         ):
             raise ValueError("确定的任务结论必须与独立冻结验收一致")
+        return self
+
+
+class RepairSearchDecision(Contract):
+    kind: Literal["bounded_repair_decision/v1"] = "bounded_repair_decision/v1"
+    search_id: Identifier
+    manifest_ref: Digest
+    policy_version: Annotated[str, Field(min_length=1, max_length=100)]
+    status: Literal[
+        "needs_confirmation",
+        "budget_exhausted",
+        "no_solution_in_space",
+        "not_found",
+        "needs_attention",
+        "cancelled",
+    ]
+    reason: Annotated[str, Field(min_length=1, max_length=200)]
+    total_proposals: NonNegative
+    explored_proposals: NonNegative
+    unexplored_proposals: NonNegative
+    passed_proposals: NonNegative
+    determinate_failures: NonNegative
+    excluded_atoms: NonNegative
+    result_refs: Annotated[tuple[Digest, ...], Field(max_length=65)]
+    selected_proposal_id: Identifier | None = None
+    selected_proposal_key: Digest | None = None
+    selected_result_ref: Digest | None = None
+    selected_change_bytes: NonNegative | None = None
+    change_metric: Literal["canonical-change-span/v1"] = "canonical-change-span/v1"
+    usage: RepairConsumption
+    confirmation: Literal["not_run"] = "not_run"
+    minimality: Literal["not_tested"] = "not_tested"
+    global_optimum: Literal[False] = False
+    uncertainties: Annotated[tuple[str, ...], Field(max_length=32)] = ()
+    test_only: Literal[True] = True
+
+    @model_validator(mode="after")
+    def scoped_conclusion(self) -> "RepairSearchDecision":
+        if self.total_proposals != self.explored_proposals + self.unexplored_proposals:
+            raise ValueError("停止报告必须完整解释声明空间")
+        if self.passed_proposals + self.determinate_failures > self.explored_proposals:
+            raise ValueError("通过或确定失败不能超过已探索候选")
+        selected = (
+            self.selected_proposal_id,
+            self.selected_proposal_key,
+            self.selected_result_ref,
+            self.selected_change_bytes,
+        )
+        if any(value is not None for value in selected) != all(
+            value is not None for value in selected
+        ):
+            raise ValueError("最终候选必须完整绑定提案、结果和变更幅度")
+        if self.status == "needs_confirmation" and self.selected_proposal_id is None:
+            raise ValueError("待确认必须有筛选通过候选")
+        if self.selected_proposal_id is not None and not self.passed_proposals:
+            raise ValueError("不能选择未通过筛选的候选")
+        if self.status == "no_solution_in_space" and (
+            not self.total_proposals
+            or self.unexplored_proposals
+            or self.passed_proposals
+            or self.determinate_failures != self.total_proposals
+            or self.selected_proposal_id is not None
+        ):
+            raise ValueError("只有声明空间全部确定失败才能称该空间内无解")
         return self

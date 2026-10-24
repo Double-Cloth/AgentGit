@@ -28,6 +28,7 @@ from agentgit.core.management import (
 )
 from agentgit.core.model_usage import OpenAIOptions, price_micro_usd
 from agentgit.core.models import CallIntent, parse_contract
+from agentgit.core.repair import NewRepairSearch
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage
 from agentgit.core.versions import LiveReplay, NewBranch, RecordedRange, RecordedReplay
 from agentgit.runtime.model_budget import call_budget
@@ -40,6 +41,9 @@ from agentgit.services.experiments import ExperimentService
 from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.inspection import InspectionService
 from agentgit.services.jobs import JobService
+from agentgit.services.repair_jobs import RepairJobService
+from agentgit.services.repair_searches import RepairSearchService
+from agentgit.services.repair_templates import prepare_templates
 from agentgit.services.replays import ReplayService
 from agentgit.services.research import ResearchService
 from agentgit.services.versions import VersionService
@@ -74,6 +78,73 @@ class ManagementService:
         self.experiments = ExperimentService(research)
         self.debug_experiments = DebugExperimentService(self.debug_reports, self.experiments)
 
+    def create_repair_search(
+        self,
+        repository_id: UUID,
+        payload: NewRepairSearch,
+        key: str,
+    ) -> dict[str, Any]:
+        body = payload.model_dump(mode="json")
+        # 原始请求身份先查缓存：进程在搜索提交后、返回前退出也不会重新生成模板。
+        self._mutation_digest(key, repository_id, body)
+        request = {"repository_id": str(repository_id), "template_request": body}
+        digest = object_digest(ObjectType.BLOB, encode(request))
+        searches = RepairSearchService(self.history)
+        with self.history.engine.connect() as connection:
+            cached = searches._cached(connection, self.actor, key, digest)
+        if cached is not None:
+            return cached
+        plan = prepare_templates(self.history, repository_id, payload)
+        identities = tuple(
+            self.create_intervention(
+                repository_id,
+                patch.intervention,
+                "repair-template:"
+                + object_digest(ObjectType.BLOB, encode([self.actor, key, digest, index])),
+            )["intervention_id"]
+            for index, patch in enumerate(plan.space.patches)
+        )
+        return searches.submit(
+            plan.space,
+            plan.budget,
+            identities,
+            actor=self.actor,
+            key=key,
+            hybrid=payload.hybrid,
+            _request_identity=request,
+        )
+
+    def repair_search(self, repository_id: UUID, search_id: UUID) -> dict[str, Any]:
+        return RepairJobService(self.history).view(repository_id, search_id)
+
+    def repair_searches(
+        self,
+        repository_id: UUID,
+        *,
+        after_id: UUID | None = None,
+        limit: int = 30,
+    ) -> dict[str, Any]:
+        return RepairJobService(self.history).listing(repository_id, after_id=after_id, limit=limit)
+
+    def cancel_repair_search(
+        self,
+        repository_id: UUID,
+        search_id: UUID,
+        key: str,
+    ) -> dict[str, Any]:
+        return self._mutate(
+            f"POST /repair-searches/{search_id}/cancel",
+            key,
+            repository_id,
+            {"search_id": str(search_id)},
+            lambda connection: RepairJobService(self.history).cancel(
+                repository_id,
+                search_id,
+                actor=self.actor,
+                connection=connection,
+            ),
+        )
+
     def create_experiment(
         self, repository_id: UUID, payload: NewExperiment, key: str
     ) -> dict[str, Any]:
@@ -90,13 +161,21 @@ class ManagementService:
     def create_intervention(
         self, repository_id: UUID, payload: NewIntervention, key: str
     ) -> dict[str, Any]:
+        route = "POST /interventions"
+        body = payload.model_dump(mode="json")
+        digest = self._mutation_digest(key, repository_id, body)
+        with self.history.engine.connect() as connection:
+            cached = self._cached_response(connection, route, key, repository_id, digest)
+        if cached is not None:
+            return cached
+        prepared = self.experiments.interventions.prepare(repository_id, payload, actor=self.actor)
         return self._mutate(
-            "POST /interventions",
+            route,
             key,
             repository_id,
-            payload.model_dump(mode="json"),
-            lambda connection: self.experiments.interventions.create(
-                repository_id, payload, actor=self.actor, connection=connection
+            body,
+            lambda connection: self.experiments.interventions.publish(
+                prepared, connection=connection
             ),
         )
 

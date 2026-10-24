@@ -13,6 +13,7 @@ from agentgit.core.repair import (
     PhaseQuotas,
     RepairConsumption,
     RepairLease,
+    RepairSearchDecision,
     RepairSearchManifest,
     RepairTrialIntent,
     RepairTrialResult,
@@ -21,6 +22,7 @@ from agentgit.repair.budget import admission
 from agentgit.repair.space import trial_key
 from agentgit.services.environment import source_revision
 from agentgit.services.history import HistoryService
+from agentgit.storage.database import transaction
 from agentgit.storage.schema import build_metadata
 from agentgit.storage.schema_s9 import TERMINAL_SEARCHES
 
@@ -316,7 +318,13 @@ class RepairJobService:
             "intent": intent.model_dump(mode="json"),
         }
 
-    def reserve(self, lease: RepairLease, proposal_id: UUID | None = None) -> dict[str, Any]:
+    def reserve(
+        self,
+        lease: RepairLease,
+        proposal_id: UUID | None = None,
+        *,
+        finalize_denial: bool = True,
+    ) -> dict[str, Any]:
         with self.history.engine.begin() as connection:
             job = self._leased(connection, lease)
             if job["cancel_requested"]:
@@ -375,7 +383,7 @@ class RepairJobService:
             decision = admission(manifest.budget, usage, "screen")
             if not decision.allowed:
                 values: dict[str, Any] = {"stop_reason": decision.reason}
-                if decision.reason != "concurrency" and usage.active == 0:
+                if finalize_denial and decision.reason != "concurrency" and usage.active == 0:
                     values.update(
                         status="budget_exhausted",
                         lease_token=None,
@@ -432,10 +440,17 @@ class RepairJobService:
             )
             return {"admitted": True, "reused": False, **self._intent(values)}
 
-    def cancel(self, repository: UUID, search: UUID, *, actor: str) -> dict[str, Any]:
+    def cancel(
+        self,
+        repository: UUID,
+        search: UUID,
+        *,
+        actor: str,
+        connection: sa.Connection | None = None,
+    ) -> dict[str, Any]:
         if not actor or len(actor) > 200:
             raise AgentGitError(ErrorCode.VALIDATION, "取消必须记录有效操作者")
-        with self.history.engine.begin() as connection:
+        with transaction(self.history.engine, connection) as connection:
             root = self._root(connection, repository, search)
             job = self._job(connection, repository, search)
             if (job["status"] in TERMINAL_SEARCHES and job["status"] != "needs_attention") or job[
@@ -644,6 +659,78 @@ class RepairJobService:
                     for row in proposal_rows
                 ],
             }
+            events = TABLES["repair_events"]
+            stopped = connection.execute(
+                sa.select(events.c.payload_ref)
+                .where(
+                    events.c.repository_id == repository,
+                    events.c.search_id == search,
+                    events.c.action == "search_stopped",
+                )
+                .order_by(events.c.revision.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            if stopped is not None:
+                decision = parse_contract(
+                    self.history.objects.get(stopped, ObjectType.BLOB), RepairSearchDecision
+                )
+                if (
+                    decision.search_id != str(search)
+                    or decision.manifest_ref != root["manifest_ref"]
+                ):
+                    raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "停止报告与冻结搜索不符")
+                response["decision"] = {**decision.model_dump(mode="json"), "decision_ref": stopped}
             if len(encode(response)) > 8 * 1024 * 1024:
                 raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "搜索查询超过有界大小，不能截断证据")
             return response
+
+    def listing(
+        self,
+        repository: UUID,
+        *,
+        after_id: UUID | None = None,
+        limit: int = 30,
+    ) -> dict[str, Any]:
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise AgentGitError(ErrorCode.VALIDATION, "搜索列表上限必须为一至一百")
+        roots, jobs, repos = (
+            TABLES[name] for name in ("repair_searches", "repair_jobs", "repositories")
+        )
+        with self.history.engine.connect() as connection:
+            if (
+                connection.execute(sa.select(repos.c.id).where(repos.c.id == repository)).first()
+                is None
+            ):
+                raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+            query = (
+                sa.select(
+                    roots.c.id,
+                    roots.c.failed_run_id,
+                    roots.c.manifest_ref,
+                    roots.c.proposal_count,
+                    jobs.c.status,
+                    jobs.c.stop_reason,
+                )
+                .join(
+                    jobs,
+                    sa.and_(jobs.c.search_id == roots.c.id, jobs.c.repository_id == repository),
+                )
+                .where(roots.c.repository_id == repository)
+            )
+            if after_id is not None:
+                query = query.where(roots.c.id > after_id)
+            rows = connection.execute(query.order_by(roots.c.id).limit(limit + 1)).mappings().all()
+            return {
+                "items": [
+                    {
+                        "search_id": str(row["id"]),
+                        "failed_run_id": str(row["failed_run_id"]),
+                        "manifest_ref": row["manifest_ref"],
+                        "proposal_count": row["proposal_count"],
+                        "status": row["status"],
+                        "stop_reason": row["stop_reason"],
+                    }
+                    for row in rows[:limit]
+                ],
+                "next_after_id": str(rows[limit - 1]["id"]) if len(rows) > limit else None,
+            }

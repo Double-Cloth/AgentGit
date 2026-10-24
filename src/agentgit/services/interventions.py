@@ -32,6 +32,7 @@ from agentgit.experiments.hybrid import validate_observation
 from agentgit.experiments.validation import frozen_inputs
 from agentgit.replay.live import prepare_live
 from agentgit.replay.recorded import Recording
+from agentgit.services.environment import source_revision
 from agentgit.services.history import HistoryService
 from agentgit.services.recordings import RecordingReader
 from agentgit.services.validators import ValidatorService
@@ -46,6 +47,14 @@ class AppliedInterventions:
     config: AgentConfig | None
     plan: Plan | None
     replacements: dict[str, tuple[str, str]]
+
+
+@dataclass(frozen=True)
+class PreparedIntervention:
+    repository: UUID
+    request: NewIntervention
+    definition: Intervention
+    code_revision: str
 
 
 class InterventionService:
@@ -186,6 +195,15 @@ class InterventionService:
     def create(
         self, repository: UUID, request: NewIntervention, *, actor: str, connection: Connection
     ) -> dict[str, Any]:
+        return self.publish(self.prepare(repository, request, actor=actor), connection=connection)
+
+    def prepare(
+        self,
+        repository: UUID,
+        request: NewIntervention,
+        *,
+        actor: str,
+    ) -> PreparedIntervention:
         request = parse_contract(encode(request.model_dump(mode="json")), NewIntervention)
         events, calls = TABLES["events"], TABLES["external_calls"]
         with self.history.engine.connect() as reading:
@@ -298,19 +316,19 @@ class InterventionService:
             replacement = other.saved.response_ref
         # 统一复用安全检查点、已完成计划保护、DAG、权限和工作区界限。
         prepare_live(snapshot, config, overrides, self.history.objects.get)
-        for evidence in request.provenance.evidence:
-            if (
-                connection.execute(
-                    sa.select(events.c.id).where(
-                        events.c.repository_id == repository,
-                        events.c.run_id == UUID(evidence.run_id),
-                        events.c.seq == evidence.seq,
-                    )
-                ).first()
-                is None
-            ):
-                raise AgentGitError(ErrorCode.NOT_FOUND, "干预证据事件不可访问")
-        identity = uuid4()
+        with self.history.engine.connect() as reading:
+            for evidence in request.provenance.evidence:
+                if (
+                    reading.execute(
+                        sa.select(events.c.id).where(
+                            events.c.repository_id == repository,
+                            events.c.run_id == UUID(evidence.run_id),
+                            events.c.seq == evidence.seq,
+                        )
+                    ).first()
+                    is None
+                ):
+                    raise AgentGitError(ErrorCode.NOT_FOUND, "干预证据事件不可访问")
         payload_obj = self.history.objects.put_json(
             ObjectType.BLOB, payload.model_dump(mode="json")
         )
@@ -322,6 +340,22 @@ class InterventionService:
             actor=actor,
             replacement_response_ref=replacement,
         )
+        return PreparedIntervention(repository, request, definition, source_revision())
+
+    def publish(
+        self,
+        prepared: PreparedIntervention,
+        *,
+        connection: Connection,
+    ) -> dict[str, Any]:
+        if prepared.code_revision != source_revision():
+            raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "干预准备与发布的代码版本不同")
+        repository, request, definition = prepared.repository, prepared.request, prepared.definition
+        identity = uuid4()
+        payload_obj = self.history.objects.put_json(
+            ObjectType.BLOB, request.payload.model_dump(mode="json")
+        )
+        replacement = definition.replacement_response_ref
         definition_obj = self.history.objects.put_json(
             ObjectType.BLOB, definition.model_dump(mode="json")
         )
@@ -357,11 +391,11 @@ class InterventionService:
                 id=identity,
                 repository_id=repository,
                 source_run_id=UUID(request.source_run_id),
-                source_call_id=row["id"],
+                source_call_id=UUID(definition.source_call_id),
                 base_commit_id=request.base_commit,
                 target_commit_id=request.target_commit_id,
                 target_event_id=request.target_event_id,
-                target_event_seq=event["seq"],
+                target_event_seq=definition.target_event_seq,
                 definition_ref=definition_obj.id,
                 payload_ref=payload_obj.id,
                 precondition_ref=precondition.id,

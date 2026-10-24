@@ -337,3 +337,38 @@ $experimentRequest.budget = $toolContext.config.limits
 错误含 error.code、message、evidence_refs（无证据时为空）、correlation_id，另有 X-Correlation-ID，不反射输入/URL/堆栈/令牌。validation=422、权限=403、不可访问=404、冲突=409、输出上限=413、配置/设施不可用=503、未预期错误=500。响应不缓存；JSON 日志写 stderr，仅含关联编号、方法、路由模板、状态、整数耗时，不含正文/认证头/查询/幂等键。
 
 Mock 的 usage_kind 为 mock_utf8_bytes；S6 已接入固定供应商与 provider_tokens/mixed_units，计量细节见[模型说明](MODEL_ADAPTER.md)。批准不提升权限，执行仍检查当前策略与租约。可信核对使用后端 Resolver，不提供任意上传成功回执的 HTTP 接口。`doctor --sandbox` 只读核验执行器同一套 Linux/资源/seccomp/固定镜像前提；满足时返回 `execution_ready=true`，失败非零，不创建容器或下载镜像。
+
+## 有界修复搜索（S9）
+
+`POST /repair-searches`（202）、`GET /repair-searches/{search_id}`、`POST /repair-searches/{search_id}/cancel`、`GET /repositories/{repository_id}/repair-searches` 使用既有认证与 `X-Repository-ID`；修改请求需要 `Idempotency-Key`。列表支持 `after_id` 和 1–100 的 `limit`，返回 `next_after_id`。请求/文件仍限 1 MiB，完整搜索查询限 8 MiB，超限明确拒绝，不截断证据。
+
+创建请求为 `template_repair_search/v1`，给定共同起点和有限事件后自动生成固定模板。以下 ID/摘要取自已经失败的 Run、Timeline 和 S7 冻结 screen 验收器；不能使用成功 Run、其他项目事件或 confirm/regression 验收器。
+
+```json
+{
+  "schema_version": 1,
+  "kind": "template_repair_search/v1",
+  "failed_run_id": "<失败 Run UUID>",
+  "base_commit": "<模型决策前的共同检查点摘要>",
+  "validator_ref": "<固定 screen 验收器摘要>",
+  "targets": [{"schema_version": 1, "event_id": 123}],
+  "max_atoms": 8,
+  "max_depth": 2
+}
+```
+
+`targets` 为 1–8 个不重复事件；模型目标必须正好绑定共同 base，工具目标仅支持受控只读观测。工具目标另给最多八个不同的 `replacement_call_ids` 并显式给出 S7 格式的 `hybrid`，响应内容仍由 S7 录制验证，不能上传任意替换响应。入口不接受任意 Patch、validator、工具权限或执行策略修改。
+
+省略 `budget` 时只允许 Mock，生成新版字节预算及其内容摘要身份；真实模型必须显式提供 `RepairBudget`，包含有限 USD 微单位费用与冻结价格表。冻结内容展示来源授权裁剪后的单 trial 上限、所有阶段与预留。不适用原因在 `manifest.space.template_skips`，上限排除项在 `excluded_patch_refs`；这些范围不混入已穷尽结论。
+
+```powershell
+uv run --locked agentgit repair-search $repositoryId --file repair-search.json --key repair-001
+uv run --locked agentgit repair-status $repositoryId $searchId
+uv run --locked agentgit repair-list $repositoryId --limit 30
+uv run --locked agentgit repair-cancel $repositoryId $searchId --key cancel-repair-001
+# 分别在已配置相同数据库和 CAS 的独立终端运行。
+uv run --locked agentgit repair-worker --repository-id $repositoryId
+uv run --locked agentgit worker
+```
+
+`repair-worker --once` 只推进一次编排；`worker --once` 执行一个研究 Job。查询展示 `trials` 的意图、Job/Run 归属、物理用量、未决项、冻结停止 `decision`（如有）及结果引用。Recorded 的 `chain_valid` 不等于任务通过；`needs_confirmation` 不等于 verified。只有非空声明空间每一提案都得到确定硬验收失败才返回 `no_solution_in_space`；预算停止保留剩余数量和未确认原因，执行异常不冒充确定无解。取消后不再扩展，已派发项由原 Worker 结算，未知项不自动重发。完整边界见 [S9 搜索记录](acceptance/S9-search-loop.md)。

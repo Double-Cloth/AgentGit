@@ -22,6 +22,7 @@ from agentgit.core.research import AgentConfig
 from agentgit.core.snapshots import StateSnapshot
 from agentgit.core.versions import RecordedRange
 from agentgit.experiments.validation import frozen_inputs
+from agentgit.repair.policy import validate_policy
 from agentgit.repair.space import enumerate_proposals, patch_ref, proposal_key
 from agentgit.services.debug_reports import DebugReportService
 from agentgit.services.environment import source_revision
@@ -61,8 +62,6 @@ class RepairSearchService:
         RepairSearchSpec(
             space=space, budget=budget, intervention_ids=intervention_ids, hybrid=hybrid
         )
-        if binding.policy_version != "bounded-templates/v1":
-            raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "尚未实现声明的修复策略版本")
         if len(intervention_ids) != len(space.patches):
             raise AgentGitError(ErrorCode.VALIDATION, "每个搜索原子必须绑定一个已发布干预")
         with self.history.engine.connect() as connection:
@@ -100,6 +99,7 @@ class RepairSearchService:
         if not isinstance(frozen, dict) or "config" not in frozen:
             raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "搜索起点缺少冻结配置")
         config = parse_contract(encode(frozen["config"]), AgentConfig)
+        validate_policy(binding.policy_version, budget, config)
         if not budget.trial.within(config.limits):
             raise AgentGitError(ErrorCode.FORBIDDEN, "修复单试验预算不能扩大来源授权")
         if config.openai is None:
@@ -217,18 +217,23 @@ class RepairSearchService:
         actor: str,
         key: str,
         hybrid: HybridPolicy | None = None,
+        _request_identity: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not actor or len(actor) > 200 or not key or len(key) > 200:
             raise AgentGitError(ErrorCode.VALIDATION, "搜索操作者和幂等键必须是有界非空字符串")
         RepairSearchSpec(
             space=space, budget=budget, intervention_ids=intervention_ids, hybrid=hybrid
         )
-        request = {
-            "space": space.model_dump(mode="json"),
-            "budget": budget.model_dump(mode="json"),
-            "intervention_ids": list(intervention_ids),
-            "hybrid": hybrid.model_dump(mode="json") if hybrid else None,
-        }
+        request = (
+            _request_identity
+            if _request_identity is not None
+            else {
+                "space": space.model_dump(mode="json"),
+                "budget": budget.model_dump(mode="json"),
+                "intervention_ids": list(intervention_ids),
+                "hybrid": hybrid.model_dump(mode="json") if hybrid else None,
+            }
+        )
         digest = object_digest(ObjectType.BLOB, encode(request))
         with self.history.engine.connect() as connection:
             requested_at = connection.execute(sa.select(sa.func.clock_timestamp())).scalar_one()

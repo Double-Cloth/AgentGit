@@ -33,6 +33,7 @@ from agentgit.core.management import (
     SubmitRun,
 )
 from agentgit.core.models import parse_contract
+from agentgit.core.repair import NewRepairSearch
 from agentgit.core.versions import NewBranch, parse_replay
 from agentgit.services.execution_views import ExecutionResource
 from agentgit.services.management import ManagementService
@@ -225,6 +226,46 @@ def create_app(
         service: Annotated[ManagementService, Depends(get_manager)],
     ) -> dict[str, Any]:
         return service.validator(repo, validator_ref)
+
+    @app.post("/repair-searches", status_code=202)
+    def repair_search_create(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_repair_search(
+            repo, parse_contract(encode(body), NewRepairSearch), key
+        )
+
+    @app.get("/repair-searches/{search_id}")
+    def repair_search_status(
+        search_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.repair_search(repo, search_id)
+
+    @app.post("/repair-searches/{search_id}/cancel")
+    def repair_search_cancel(
+        search_id: UUID,
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.cancel_repair_search(repo, search_id, key)
+
+    @app.get("/repositories/{repository_id}/repair-searches")
+    def repair_searches_list(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repo != repository_id:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.repair_searches(repo, after_id=after_id, limit=limit)
 
     @app.post("/experiments", status_code=202)
     def experiment(

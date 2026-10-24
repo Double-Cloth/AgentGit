@@ -99,6 +99,7 @@ def freeze_space(
     candidate_source: str = "full_candidates_fallback",
     max_atoms: int = 8,
     max_depth: int = 2,
+    template_skips: tuple[str, ...] = (),
 ) -> RepairSpace:
     if type(max_atoms) is not int or not 1 <= max_atoms <= 8:
         raise AgentGitError(ErrorCode.VALIDATION, "原子补丁上限必须在一至八之间")
@@ -127,6 +128,7 @@ def freeze_space(
             "patches": tuple(selected),
             "excluded_patch_refs": tuple(excluded),
             "max_depth": max_depth,
+            "template_skips": template_skips,
         }
     )
 

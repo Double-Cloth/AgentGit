@@ -32,9 +32,11 @@ from agentgit.core.management import (
     SubmitRun,
 )
 from agentgit.core.models import parse_contract
+from agentgit.core.repair import NewRepairSearch
 from agentgit.core.research import AgentConfig, BudgetLimits, ResearchGoal
 from agentgit.core.versions import NewBranch, parse_replay
 from agentgit.diagnostics import sandbox_prerequisites
+from agentgit.repair.worker import RepairSearchWorker
 from agentgit.services.management import ManagementService
 from agentgit.storage.database import probe_database
 from agentgit.worker import Worker
@@ -243,6 +245,57 @@ def freeze_validator(
             FreezeValidator,
         )
         emit(service.freeze_validator(repository_id, payload, key))
+
+
+@app.command("repair-search")
+def repair_search(
+    repository_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """生成有限模板并排队搜索；不要求手工编写补丁 payload。"""
+    with management(testing) as service:
+        with file.open("rb") as stream:
+            payload = stream.read(1_048_577)
+        if len(payload) > 1_048_576:
+            raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "修复搜索输入文件超过上限")
+        emit(
+            service.create_repair_search(
+                repository_id, parse_contract(payload, NewRepairSearch), key
+            )
+        )
+
+
+@app.command("repair-status")
+def repair_status(repository_id: UUID, search_id: UUID, testing: bool = False) -> None:
+    """读取冻结空间、独立试验、预算与停止报告。"""
+    with management(testing) as service:
+        emit(service.repair_search(repository_id, search_id))
+
+
+@app.command("repair-cancel")
+def repair_cancel(
+    repository_id: UUID,
+    search_id: UUID,
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """停止扩展新候选，并向已派发研究 Job 传递取消。"""
+    with management(testing) as service:
+        emit(service.cancel_repair_search(repository_id, search_id, key))
+
+
+@app.command("repair-list")
+def repair_list(
+    repository_id: UUID,
+    after_id: UUID | None = None,
+    limit: int = typer.Option(30, min=1, max=100),
+    testing: bool = False,
+) -> None:
+    """发现项目内的持久搜索，不依赖先前进程内状态。"""
+    with management(testing) as service:
+        emit(service.repair_searches(repository_id, after_id=after_id, limit=limit))
 
 
 @app.command("experiment")
@@ -621,6 +674,43 @@ def worker(
                     Event().wait(poll_ms / 1000)
         except KeyboardInterrupt:
             emit({"status": "worker_stopped"})
+
+
+@app.command("repair-worker")
+def repair_worker(
+    once: bool = False,
+    repository_id: UUID | None = None,
+    poll_ms: int = typer.Option(1000, min=100, max=60000),
+    testing: bool = False,
+) -> None:
+    """独立推进修复搜索；研究 Job 另由 worker 执行。"""
+    with management(testing) as service:
+        runner = RepairSearchWorker(service.research)
+        previous = None
+        try:
+            while True:
+                result = runner.run_once(repository=repository_id)
+                summary: dict[str, Any] = (
+                    {key: result[key] for key in ("search_id", "status", "stop_reason", "usage")}
+                    if result is not None
+                    else {"status": "idle"}
+                )
+                progress = {
+                    **summary,
+                    "usage": {
+                        key: value
+                        for key, value in summary.get("usage", {}).items()
+                        if key != "elapsed_wall_ms"
+                    },
+                }
+                if once or (result is not None and progress != previous):
+                    emit(summary)
+                previous = progress
+                if once:
+                    return
+                Event().wait(poll_ms / 1000)
+        except KeyboardInterrupt:
+            emit({"status": "repair_worker_stopped"})
 
 
 @app.command("serve")

@@ -42,7 +42,7 @@ web
 
 S8 已提供行为图、依赖对齐、失败硬断言及[不可变静态 Debug Report](doc/acceptance/S8-static-reports.md)，API/CLI 支持创建、读取与发现，未运行干预时保持 static_only。单连接池与并发发布边界已修复、验证。[20 例及 12/8 划分](tests/fixtures/diagnosis/v1/README.md)、排名及评估脚本先后冻结；[暂定全量评估](doc/acceptance/S8-evaluation.md)无漏例，保留集主要注入点 Top-3 为 4/8，未达 6/8，不能用拟修复决策的 8/8 替代主要指标。已增加[候选与 S7 单变量干预的只读关联](doc/acceptance/S8-candidate-experiments.md)，并接入[桌面报告、精确事件跳转与显式干预表单](doc/acceptance/S8-desktop.md)。真实 Mock 示例 A 0/5、B 5/5 通过，桌面可保存单项干预并带入 A/B 表单，静态报告及不确定项保持；该示例不替代全量定位验收。功能已进入 [0.1.5 分发候选并完成包内复验](doc/acceptance/S8-package-015.md)；[人工标签](doc/S8-dataset-review.md)、其余适用故障效果证据和环境/原生前置仍待补，不宣告 S8、D2 验收或定位优势；后续可按方案用完整候选显式降级验证搜索工程。
 
-S9 已提供[有界修复搜索基础](doc/S9-repair-plan.md)、[持久意图及台账](doc/acceptance/S9-ledger.md)，并接通[Recorded/Live/Hybrid 原子派发和物理结算](doc/acceptance/S9-trial-dispatch.md)。新 Job、分支和意图归属原子提交；未知计量保留预留并阻止扩展，取消由原 Worker 应用。当前 537 单元 + 102 真实集成通过，真实晚期产物修复为 3 次 Mock 模型、2 次本地工具、47,109 字节单位，来源不变。使用明确放大的测试预算；默认 4,000 单位不足，后续须冻结新版 Mock 策略，不能算作默认预算验收。候选来源仍为完整列表降级；自动选择循环、repair-worker、对外 API/CLI 和完整 S9 验收继续实施，不提前输出 verified 或最小性结论。
+S9 已提供[基础与台账](doc/S9-repair-plan.md)、[Recorded/Live/Hybrid 原子派发和物理结算](doc/acceptance/S9-trial-dispatch.md)，并接入[自动搜索、repair-worker、模板 API/CLI 和冻结停止报告](doc/acceptance/S9-search-loop.md)。当前 556 单元 + 64 真实集成通过，含 38 项新增检查；单点、联合、限定空间无解、非确定失败、预算、真实进程退出、未知预留和取消均有本机证据。旧 4,000 单位预算保留；新 Mock 字节策略绑定预算摘要，通常单 trial 200,000、总 3,000,000，保护确认/回归额度。原生产 Mock 通过公共默认入口，在两个 Prompt 失败后找到 Plan 修复，总筛选 7 模型/4 工具、99,753 字节，最终试验 47,109 字节，来源不变。候选来源仍为完整有限模板降级，不输出 verified 或最小性结论。继续 S9 逐项退出与安全拒绝证据汇总，随后推进 S10–S12；S6/D1 和 S8 待补项保持，尚无本轮桌面分发包。
 
 ## Brand Commitments
 
