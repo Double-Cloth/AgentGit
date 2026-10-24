@@ -6,6 +6,8 @@ S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命
 
 ## 环境
 
+S9 开发位于 `codex/s9-repair`；[有限模板、顺序枚举及预算契约](S9-repair-plan.md)已经建立。当前仅为 Python 内部基础，未新增迁移、API/CLI 或桌面发布包，也不自动修改用户业务库。真实 Run 执行期间不得修改 `src/agentgit/**/*.py/.json` 与 `uv.lock`，这些字节全部参与冻结环境摘要；先结束所有相关试验再继续源码变更。
+
 S8 的行为图、依赖对齐与静态 Debug Report API/CLI 见 [S8 方案](S8-diagnosis-plan.md)与 [API.md](API.md)。`behavioral-trace/behavioral-diff` 继续只读既有历史；`debug-report` 在 `0016_static_debug_reports` 发布不可变静态候选和硬断言，不启动 Worker 或执行历史动作。完整 20 例定位评估、干预结果及桌面视图尚待完成，源码增量未进入 0.1.4 桌面分发包。
 
 S7 新增 `0013_branch_experiments`、`0014_frozen_interventions` 及 `0015_hybrid_observations`，保存不可变实验/trial、干预归属和 Hybrid 观测账本，运行状态仍由既有 Job/Run 管理。新入口和示例见 [API.md](API.md)；本次自动化验证仅迁移独立测试 schema，没有自动迁移用户的业务库或重建桌面包。历史迁移保持冻结。
