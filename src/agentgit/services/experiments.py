@@ -264,7 +264,9 @@ class ExperimentService:
             return job, replay
         raise AgentGitError(ErrorCode.VERSION_CONFLICT, "trial 正在推进，请刷新实验状态")
 
-    def report(self, repository_id: UUID, experiment_id: UUID) -> dict[str, Any]:
+    def report(
+        self, repository_id: UUID, experiment_id: UUID, *, persist_assessments: bool = True
+    ) -> dict[str, Any]:
         manifest = self.manifest(repository_id, experiment_id)
         config = parse_contract(
             self.history.objects.get(manifest.source_config_ref, ObjectType.BLOB), AgentConfig
@@ -305,6 +307,7 @@ class ExperimentService:
                     manifest.request.validator_ref,
                     job["run_id"],
                     job["checkpoint_commit_id"],
+                    persist=persist_assessments,
                 )
                 if assessment.verdict == "passed" and job["status"] != "completed":
                     raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "Job 终态与验收检查点不一致")

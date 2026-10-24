@@ -32,6 +32,7 @@ from agentgit.core.research import AgentConfig, AgentState, BudgetUsage
 from agentgit.core.versions import LiveReplay, NewBranch, RecordedRange, RecordedReplay
 from agentgit.runtime.model_budget import call_budget
 from agentgit.services.approvals import ApprovalService
+from agentgit.services.debug_experiments import DebugExperimentService
 from agentgit.services.debug_reports import DebugReportService
 from agentgit.services.diagnosis import BehaviorService
 from agentgit.services.execution_views import ExecutionResource, ExecutionViewService
@@ -71,6 +72,7 @@ class ManagementService:
         self.debug_reports = DebugReportService(self.history)
         self.execution_views = ExecutionViewService(self.history)
         self.experiments = ExperimentService(research)
+        self.debug_experiments = DebugExperimentService(self.debug_reports, self.experiments)
 
     def create_experiment(
         self, repository_id: UUID, payload: NewExperiment, key: str
@@ -348,6 +350,20 @@ class ManagementService:
 
     def debug_report(self, repository_id: UUID, identity: UUID) -> dict[str, Any]:
         return self.debug_reports.get(repository_id, identity)
+
+    def debug_candidate_context(
+        self, repository_id: UUID, identity: UUID, candidate_event_id: int, validator_ref: str
+    ) -> dict[str, Any]:
+        return self.debug_experiments.context(
+            repository_id, identity, candidate_event_id, validator_ref
+        )
+
+    def debug_candidate_experiment(
+        self, repository_id: UUID, identity: UUID, candidate_event_id: int, experiment_id: UUID
+    ) -> dict[str, Any]:
+        return self.debug_experiments.report(
+            repository_id, identity, candidate_event_id, experiment_id
+        )
 
     def debug_reports_list(
         self, repository_id: UUID, *, after_id: UUID | None = None, limit: int = 30

@@ -87,6 +87,8 @@ class ValidatorService:
         validator_ref: str,
         run_id: UUID,
         commit_id: str,
+        *,
+        persist: bool = True,
     ) -> FrozenAssessment:
         manifest = self.manifest(repository_id, validator_ref)
         links, commits = TABLES["run_commits"], TABLES["commits"]
@@ -125,9 +127,10 @@ class ValidatorService:
             verdict=verdict,
             evaluation=evaluation,
         )
-        obj = self.history.objects.put_json(ObjectType.BLOB, result.model_dump(mode="json"))
-        with self.history.engine.begin() as connection:
-            self.history._ref(
-                connection, repository_id, obj, "validator_assessment", obj.id, "assessment"
-            )
+        if persist:
+            obj = self.history.objects.put_json(ObjectType.BLOB, result.model_dump(mode="json"))
+            with self.history.engine.begin() as connection:
+                self.history._ref(
+                    connection, repository_id, obj, "validator_assessment", obj.id, "assessment"
+                )
         return result

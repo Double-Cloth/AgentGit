@@ -419,6 +419,40 @@ def debug_report_status(repository_id: UUID, report_id: UUID, testing: bool = Fa
         emit(service.debug_report(repository_id, report_id))
 
 
+@app.command("debug-candidate-context")
+def debug_candidate_context(
+    repository_id: UUID,
+    report_id: UUID,
+    candidate_event_id: Annotated[int, typer.Option(min=1)],
+    validator_ref: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """只读解析候选对应的模型调用、安全检查点和 S7 前置条件。"""
+    with management(testing) as service:
+        emit(
+            service.debug_candidate_context(
+                repository_id, report_id, candidate_event_id, validator_ref
+            )
+        )
+
+
+@app.command("debug-candidate-experiment")
+def debug_candidate_experiment(
+    repository_id: UUID,
+    report_id: UUID,
+    candidate_event_id: Annotated[int, typer.Option(min=1)],
+    experiment_id: Annotated[UUID, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """核验既有单变量实验与候选的关系，展示真实 trial 和未知项。"""
+    with management(testing) as service:
+        emit(
+            service.debug_candidate_experiment(
+                repository_id, report_id, candidate_event_id, experiment_id
+            )
+        )
+
+
 @app.command("run")
 def run(
     repository_id: UUID,

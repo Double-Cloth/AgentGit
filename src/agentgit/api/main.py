@@ -360,6 +360,28 @@ def create_app(
     ) -> dict[str, Any]:
         return service.debug_report(repo, report_id)
 
+    @app.get("/debug-reports/{report_id}/candidate-context")
+    def debug_candidate_context(
+        report_id: UUID,
+        validator_ref: Annotated[str, Query(pattern=r"^[a-f0-9]{64}$")],
+        candidate_event_id: Annotated[int, Query(ge=1, le=9_007_199_254_740_991)],
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.debug_candidate_context(repo, report_id, candidate_event_id, validator_ref)
+
+    @app.get("/debug-reports/{report_id}/candidate-experiment")
+    def debug_candidate_experiment(
+        report_id: UUID,
+        experiment_id: UUID,
+        candidate_event_id: Annotated[int, Query(ge=1, le=9_007_199_254_740_991)],
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.debug_candidate_experiment(
+            repo, report_id, candidate_event_id, experiment_id
+        )
+
     @app.get("/repositories/{repository_id}/debug-reports")
     def debug_reports_list(
         repository_id: UUID,
