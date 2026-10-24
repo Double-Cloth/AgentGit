@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { Json, JsonObject, Reply } from '../shared/bridge';
+import type { CandidateExperimentPreset, EvidenceTarget } from '../shared/diagnosis';
 
 export function object(value: Json | undefined): JsonObject { return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; }
 export function rows(value: Json | undefined): JsonObject[] { return Array.isArray(value) ? value.map(object) : []; }
@@ -53,4 +54,5 @@ export function Status({ value }: { value: Json | undefined }) {
 export function Notice({ children }: { children?: React.ReactNode }) { return children ? <div className="notice" role="alert">{children}</div> : null; }
 export function Empty({ title, children }: { title: string; children?: React.ReactNode }) { return <div className="empty"><h2>{title}</h2><p>{children}</p></div>; }
 export function JsonView({ value }: { value: Json | undefined }) { return <pre className="code" tabIndex={0}>{pretty(value)}</pre>; }
-export type PageProps = { runId: string; setRunId: (value: string) => void; openTimeline: (id: string) => void; openBranch: (id: string, commit: string) => void; selectedCommit: string; setSelectedCommit: (id: string) => void };
+export type { EvidenceTarget } from '../shared/diagnosis';
+export type PageProps = { runId: string; setRunId: (value: string) => void; openTimeline: (id: string) => void; openBranch: (id: string, commit: string) => void; selectedCommit: string; setSelectedCommit: (id: string) => void; openDiagnosis: (id: string) => void; eventFocus: EvidenceTarget | null; experimentPreset: CandidateExperimentPreset | null };

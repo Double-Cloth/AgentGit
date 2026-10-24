@@ -1,7 +1,8 @@
 import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import type { BinaryChunk, ExecutionResource, JsonObject } from '../shared/bridge';
+import { matchesEvidence } from '../shared/diagnosis';
 import BudgetSummary from './BudgetSummary';
-import { call, date, Empty, err, JsonView, Notice, object, rows, short, Status, str, useAction, useRead, type PageProps } from './ui';
+import { call, date, Empty, err, JsonView, Notice, object, rows, short, Status, str, useAction, useRead, type EvidenceTarget, type PageProps } from './ui';
 const HistoryGraph = lazy(() => import('./HistoryGraph'));
 
 export default function Timeline(props: PageProps) {
@@ -29,6 +30,8 @@ export default function Timeline(props: PageProps) {
   });
   return <><div className="page-heading"><div><span className="eyebrow">TIMELINE</span><h1>时间线</h1><p><code>{props.runId}</code> <Status value={run.data?.status} /></p></div><button disabled={!commitId} onClick={() => props.openBranch(props.runId, commitId)}>从所选检查点分支 →</button></div>
     <Notice>{run.error || history.error || calls.error || control.error}</Notice>
+    <div className="button-group"><button onClick={() => props.openDiagnosis(props.runId)}>查看故障报告</button></div>
+    {props.eventFocus?.runId === props.runId && <FocusedEvent key={`${props.eventFocus.runId}:${props.eventFocus.seq}:${props.eventFocus.eventId}`} target={props.eventFocus} />}
     {run.data?.status === 'queued' && <p className="muted" role="status">任务尚在排队，未取得执行进展。API 可用不代表 Worker 已就绪；若持续等待，请在后端检查 Worker 的启动状态。</p>}
     {run.data && <><div className="run-summary"><span>模式 <strong>{str(run.data.mode) || 'standard'}</strong></span><span>分支 <code>{str(run.data.branch_name)}</code></span><span>控制请求 <code>{str(run.data.control_request) || '无'}</code> / <code>{str(run.data.control_status) || '无'}</code></span><div className="button-group"><button disabled={control.busy || !['queued', 'running', 'waiting_approval'].includes(str(run.data.status))} onClick={() => doControl('pause')}>请求暂停</button><button disabled={control.busy || run.data.status !== 'paused'} onClick={() => doControl('resume')}>恢复</button><button disabled={control.busy || !['queued', 'running', 'paused', 'waiting_approval', 'outcome_unknown'].includes(str(run.data.status))} onClick={() => doControl('cancel')}>请求取消</button></div></div>
     {run.data.mode === 'recorded' && <div className="explanation"><strong>Recorded · 历史验证与任务成功分别判断</strong><p>本 Run 不启动执行容器。逻辑状态、历史用量、实际零调用与逐检查点证明见下方 Replay 报告。查看原执行证据须明确打开来源 Run。</p><JsonView value={run.data.replay} />{object(run.data.replay).source_run_id && <button onClick={() => props.openTimeline(str(object(run.data?.replay).source_run_id))}>打开来源运行</button>}</div>}
@@ -40,6 +43,18 @@ export default function Timeline(props: PageProps) {
       {tab === 'state' ? <><Notice>{commit.error}</Notice>{commit.loading ? <p role="status">读取所选检查点…</p> : <><h3>所选版本状态</h3><JsonView value={snapshot.data} /><details><summary>Commit / 环境原文</summary><JsonView value={{ manifest: commit.data?.manifest ?? null, environment: commit.data?.environment ?? null }} /></details></>}</> : tab === 'files' ? <Artifacts key={commitId} commitId={commitId} /> : <><p className="muted small">以下是本 Run 的实际执行账本，与左侧所选历史状态分别展示；恢复复用明确保留物理来源。</p>{!rows(calls.data?.items).length ? <Empty title="本 Run 暂无执行调用">这里仅列终端与 Python 执行调用；模型计量见上方。未发布的执行证据不会补成成功结果。</Empty> : <><label>执行调用<select value={selectedCall} onChange={event => setCallId(event.target.value)}>{rows(calls.data?.items).map(item => <option value={str(item.id)} key={str(item.id)}>{str(item.provider)} · {str(item.logical_step_id)} · attempt {String(item.attempt)}</option>)}</select></label><Execution key={props.runId + selectedCall} runId={props.runId} callId={selectedCall} /><p className="small muted">每次最多显示 100 个执行调用。</p></>}</>}
       <Approvals runId={props.runId} version={run.data?.state_version} />
     </section></div></>;
+}
+
+function FocusedEvent({ target }: { target: EvidenceTarget }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  const event = useRead(async () => {
+    const result = await call(window.agentgit.getEvents({ runId: target.runId, afterSeq: target.seq - 1, limit: 1 }));
+    const row = rows(result.items)[0];
+    if (!row || !matchesEvidence(row, target)) throw new Error('报告引用的精确事件不存在或身份不符；请核对项目及证据完整性');
+    return row;
+  }, [target.runId, target.seq, target.eventId]);
+  useEffect(() => { if (!event.loading) heading.current?.focus(); }, [event.loading]);
+  return <section className="focused-event" aria-labelledby="focused-event-title"><h2 ref={heading} tabIndex={-1} id="focused-event-title">定位证据 · 事件 {target.seq}</h2><p className="small muted">Run <code>{target.runId}</code> · ID {target.eventId}。独立按精确引用读取，不受最近 2000 条事件窗口限制。</p><Notice>{event.error}</Notice>{event.loading ? <p role="status">读取目标事件…</p> : event.data && <JsonView value={event.data} />}</section>;
 }
 
 function useEvents(runId: string) {

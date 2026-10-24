@@ -8,7 +8,7 @@ import { call, Empty, JsonView, Notice, object, rows, short, str, useAction, use
 type Mode = 'recorded' | 'live' | 'fork';
 const Experiments = lazy(() => import('./Experiments'));
 export default function Branch(props: PageProps) {
-  const [view, setView] = useState('single'), [opened, setOpened] = useState(false);
+  const [view, setView] = useState(props.experimentPreset ? 'experiment' : 'single'), [opened, setOpened] = useState(Boolean(props.experimentPreset));
   const capabilities = useRead(() => call(window.agentgit.capabilities()), [], 5000);
   const supported = hasFeature(capabilities.data, 'controlled_experiments') && hasFeature(capabilities.data, 'experiment_statistics');
   return <><div className="page-heading"><div><span className="eyebrow">BRANCH EXPERIMENT</span><h1>分支实验</h1><p>选择安全检查点，明确历史验证与独立重执行的边界。</p></div></div>

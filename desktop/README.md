@@ -109,3 +109,9 @@ npx.cmd playwright test --config playwright.experiments.config.ts
 复验 ZIP 时，把 `AGENTGIT_DESKTOP_EXECUTABLE` 设为新解压目录下 AgentGit.exe 的绝对路径，并设独立的 `AGENTGIT_ELECTRON_EVIDENCE_PREFIX`（仅 1–80 个字母、数字、下划线或连字符）。打包模式验证真实程序路径、版本/页脚和仅 System32 的应用 PATH；省略 executable 则测试源码构建。实验配置和旧 real 流程均支持证据前缀，避免覆盖已归档的默认文件。每次测试使用独立临时用户数据目录，不用它冒充独立 Windows 账户。
 
 该专项包含明确标注的 HTTP fixture 边界与独立 PostgreSQL/API/Worker、固定容器真实流程，不替代独立 Windows 安装、原生保存和 DPI 验收。真实联调须先具备仓库测试配置、PostgreSQL 和已冻结镜像，使用自己的测试 Schema 和 Worker；不会操作外部服务或调用付费模型。
+
+## S8 故障报告与候选干预
+
+“差异 → 故障定位”可创建/发现/读取冻结报告，查看并列候选、断言、依赖对齐、歧义及缺口。事件按钮按 Run/seq/数据库 ID 在 Timeline 精确核对；缺证据不跳到相邻事件。核对候选上下文后可显式保存单项 Prompt/计划干预，带入既有 A/B 表单；交接不启动 Job，仍须显式提交预算和试验。已有实验可在报告内核对效果，未完成时改善未知。
+
+先 `npm run typecheck`、`npm run build`、`npm test`，再设置新的 `AGENTGIT_ELECTRON_EVIDENCE_PREFIX` 并运行 `npx playwright test --config playwright.diagnosis.config.ts`。两项分别为 HTTP 边界和真实独立 PostgreSQL/API/Worker 联调，使用免费 Mock；源码/uv.lock 在真实运行中须保持不变。详见 [S8 桌面工程验收](../doc/acceptance/S8-desktop.md)。当前仅开发构建，新分发包、标签人工审阅及独立 Windows/原生验收仍待补。

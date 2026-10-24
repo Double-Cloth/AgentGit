@@ -16,10 +16,11 @@ function GroupFields({ name, value, change, disabled }: { name: string; value: G
 }
 
 export default function Experiments(props: PageProps & { active: boolean; capabilities: JsonObject | null }) {
-  const [source, setSource] = useState(props.runId), [from, setFrom] = useState(props.selectedCommit), [split, setSplit] = useState<ExperimentScope['fixtureSplit']>('screen');
-  const [scope, setScope] = useState<ExperimentScope | null>(null), [validatorRef, setValidatorRef] = useState(''), [freezeSettled, setFreezeSettled] = useState(false);
+  const preset = props.experimentPreset;
+  const [source, setSource] = useState(props.runId), [from, setFrom] = useState(props.selectedCommit), [split, setSplit] = useState<ExperimentScope['fixtureSplit']>(preset?.fixtureSplit ?? 'screen');
+  const [scope, setScope] = useState<ExperimentScope | null>(preset ? { sourceRunId: preset.sourceRunId, fromCommit: preset.fromCommit, fixtureSplit: preset.fixtureSplit } : null), [validatorRef, setValidatorRef] = useState(preset?.validatorRef ?? ''), [freezeSettled, setFreezeSettled] = useState(Boolean(preset));
   const freezeAttempt = useRef<Inputs['freezeValidator'] | null>(null), freeze = useAction();
-  const [groups, setGroups] = useState<[GroupDraft, GroupDraft]>([draft('来源条件'), draft('对照条件')]);
+  const [groups, setGroups] = useState<[GroupDraft, GroupDraft]>([draft('来源条件'), preset ? { ...draft('候选单项干预'), kind: 'interventions', ids: preset.interventionId } : draft('对照条件')]);
   const [repeats, setRepeats] = useState('5'), [budget, setBudget] = useState(''), [money, setMoney] = useState('');
   const [mode, setMode] = useState<'live' | 'hybrid'>('live'), [until, setUntil] = useState(''), [calls, setCalls] = useState(''), [miss, setMiss] = useState<'stop' | 'fixture'>('stop');
   const submission = useRef<Inputs['createExperiment'] | null>(null), submit = useAction();

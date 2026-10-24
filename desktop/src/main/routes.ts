@@ -281,6 +281,21 @@ export class BusinessController {
       case 'getDiff': input = fields(raw, ['base', 'head'], ['after', 'limit']); return get(query('/diff',
         { left_commit: digest(input.base), right_commit: digest(input.head), after: number(input.after, 0, Number.MAX_SAFE_INTEGER), limit: number(input.limit, 100, 1000, 1) }));
       case 'createRepository': input = fields(raw, ['name', 'key']); return post('/repositories', { name: text(input.name), expected_version: 0 });
+      case 'getBehavioralDiff': input = fields(raw, ['leftRunId', 'rightRunId']); return get(query('/behavioral-diff', { left_run_id: id(input.leftRunId), right_run_id: id(input.rightRunId) }));
+      case 'listDebugReports': input = fields(raw, [], ['afterId', 'limit']); return page(`/repositories/${this.state.repositoryId ?? ''}/debug-reports`);
+      case 'createDebugReport': {
+        input = fields(raw, ['failedRunId', 'key'], ['referenceRunId']);
+        return post('/debug-reports', { failed_run_id: id(input.failedRunId), ...(input.referenceRunId === undefined ? {} : { reference_run_id: id(input.referenceRunId) }) });
+      }
+      case 'getDebugReport': input = fields(raw, ['reportId']); return get(`/debug-reports/${id(input.reportId)}`, 9437184);
+      case 'getDebugCandidateContext': case 'getDebugCandidateExperiment': {
+        input = fields(raw, ['reportId', 'candidateEventId', operation === 'getDebugCandidateContext' ? 'validatorRef' : 'experimentId']);
+        if (typeof input.candidateEventId !== 'number') throw new DesktopError('validation', '候选事件 ID 必须是正整数');
+        return get(query(`/debug-reports/${id(input.reportId)}/${operation === 'getDebugCandidateContext' ? 'candidate-context' : 'candidate-experiment'}`, {
+          candidate_event_id: number(input.candidateEventId, 0, Number.MAX_SAFE_INTEGER, 1),
+          ...(operation === 'getDebugCandidateContext' ? { validator_ref: digest(input.validatorRef) } : { experiment_id: id(input.experimentId) }),
+        }));
+      }
       case 'createAgent': input = fields(raw, ['config', 'expectedVersion', 'key']); return post('/agents',
         { config: jsonObject(input.config), expected_version: number(input.expectedVersion, 0, Number.MAX_SAFE_INTEGER) });
       case 'createTask': input = fields(raw, ['configId', 'configVersion', 'goal', 'key']); return post('/tasks',

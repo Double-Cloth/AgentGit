@@ -60,6 +60,12 @@ export interface Inputs {
   createIntervention: { request: JsonObject; key: string };
   getIntervention: { interventionId: string };
   getDiff: { base: string; head: string; after?: number; limit?: number };
+  getBehavioralDiff: { leftRunId: string; rightRunId: string };
+  listDebugReports: Page;
+  createDebugReport: { failedRunId: string; referenceRunId?: string; key: string };
+  getDebugReport: { reportId: string };
+  getDebugCandidateContext: { reportId: string; candidateEventId: number; validatorRef: string };
+  getDebugCandidateExperiment: { reportId: string; candidateEventId: number; experimentId: string };
   controlRun: { runId: string; action: 'pause' | 'resume' | 'cancel'; expectedVersion: number; key: string };
   decideApproval: { approvalId: string; decision: 'approve' | 'reject'; expectedVersion: number; key: string };
 }

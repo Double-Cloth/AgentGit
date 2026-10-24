@@ -22,6 +22,9 @@ const api: DesktopApi = {
   listExperiments: method('listExperiments'),
   getInterventionContext: method('getInterventionContext'), createIntervention: method('createIntervention'), getIntervention: method('getIntervention'),
   getDiff: method('getDiff'), controlRun: method('controlRun'), decideApproval: method('decideApproval'),
+  getBehavioralDiff: method('getBehavioralDiff'), listDebugReports: method('listDebugReports'),
+  createDebugReport: method('createDebugReport'), getDebugReport: method('getDebugReport'),
+  getDebugCandidateContext: method('getDebugCandidateContext'), getDebugCandidateExperiment: method('getDebugCandidateExperiment'),
   cancelReads: () => ipcRenderer.send('agentgit:cancel-reads'),
 };
 contextBridge.exposeInMainWorld('agentgit', Object.freeze(api));

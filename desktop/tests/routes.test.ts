@@ -38,6 +38,27 @@ async function fixture(options: {
     controller.cancelReads(); server.closeAllConnections(); server.close(() => resolve());
   }) };
 }
+
+test('S8 固定报告路由绑定当前项目，候选 ID 与精确运行参数分别验证', async () => {
+  const f = await fixture();
+  try {
+    await connect(f.controller);
+    await f.controller.handle('getDebugReport', { reportId: OTHER });
+    assert.equal(f.requests.at(-1)!.url, `/debug-reports/${OTHER}`);
+    await f.controller.handle('listDebugReports', { afterId: OTHER, limit: 10 });
+    assert.equal(f.requests.at(-1)!.url, `/repositories/${REPO}/debug-reports?after_id=${OTHER}&limit=10`);
+    await f.controller.handle('getDebugCandidateContext', { reportId: OTHER, candidateEventId: 9001, validatorRef: 'b'.repeat(64) });
+    assert.equal(f.requests.at(-1)!.url, `/debug-reports/${OTHER}/candidate-context?candidate_event_id=9001&validator_ref=${'b'.repeat(64)}`);
+    await f.controller.handle('getDebugCandidateExperiment', { reportId: OTHER, candidateEventId: 9001, experimentId: REPO });
+    assert.equal(f.requests.at(-1)!.url, `/debug-reports/${OTHER}/candidate-experiment?candidate_event_id=9001&experiment_id=${REPO}`);
+    await f.controller.handle('getBehavioralDiff', { leftRunId: REPO, rightRunId: OTHER });
+    assert.equal(f.requests.at(-1)!.url, `/behavioral-diff?left_run_id=${REPO}&right_run_id=${OTHER}`);
+    await f.controller.handle('createDebugReport', { failedRunId: OTHER, key: 'same-report' });
+    assert.equal(f.requests.at(-1)!.method, 'POST');
+    assert.equal(f.requests.at(-1)!.headers['idempotency-key'], 'same-report');
+    assert.equal(f.requests.at(-1)!.headers['x-repository-id'], REPO);
+  } finally { await f.close(); }
+});
 async function connect(controller: BusinessController) {
   await controller.handle('getConnection', undefined);
   await controller.handle('selectRepository', { repositoryId: REPO });
@@ -77,6 +98,11 @@ test('业务白名单、参数和项目归属在请求前验证，POST 保持原
       ...[0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, OTHER, undefined].map(targetEventId => ['getInterventionContext', { sourceRunId: REPO, fromCommit: 'a'.repeat(64), targetEventId, validatorRef: 'b'.repeat(64) }]),
       ['getIntervention', { interventionId: OTHER, repositoryId: OTHER }],
       ['getInterventionContext', { sourceRunId: REPO, fromCommit: 'a'.repeat(64), targetEventId: OTHER, validatorRef: 'b'.repeat(64), url: 'http://localhost:9999' }],
+      ['getDebugReport', { reportId: '../private' }], ['listDebugReports', { repositoryId: OTHER }],
+      ['createDebugReport', { failedRunId: REPO, referenceRunId: '../private', key: 'report' }],
+      ['getBehavioralDiff', { leftRunId: REPO, rightRunId: '../private' }],
+      ...[0, -1, true, '2', undefined, Number.MAX_SAFE_INTEGER + 1].map(candidateEventId => ['getDebugCandidateContext', { reportId: OTHER, candidateEventId, validatorRef: 'b'.repeat(64) }]),
+      ['getDebugCandidateExperiment', { reportId: OTHER, candidateEventId: 2, experimentId: REPO, path: '/private' }],
       ['freezeValidator', { sourceRunId: REPO, fromCommit: 'a'.repeat(64), fixtureSplit: 'everything', key: 'freeze' }],
       ['createExperiment', { request: [], key: 'experiment' }],
       ['createIntervention', { request: {}, key: 'patch', path: '/private' }],

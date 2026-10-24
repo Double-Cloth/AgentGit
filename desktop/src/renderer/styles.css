@@ -3,6 +3,26 @@
 @font-face { font-family: 'JetBrains Mono'; src: url('./assets/fonts/JetBrainsMono.ttf') format('truetype'); font-weight: 100 800; font-display: swap; }
 :root { font-family: Inter, 'Microsoft YaHei', 'Segoe UI', sans-serif; color: #3d3d3a; background: #faf9f5; font-size: 14px; line-height: 1.55; color-scheme: light;
   --canvas: #faf9f5; --ink: #141413; --body: #3d3d3a; --muted: #6c6a64; --line: #e6dfd8; --soft: #f5f0e8; --card: #efe9de; --active: #a9583e; --dark: #181715; --teal: #5db8a6; }
+.debug-reports { padding-block: 24px; }
+.debug-create { display: grid; grid-template-columns: 1fr 1fr auto; align-items: end; gap: 16px; margin-block: 24px; }
+.debug-create > *, .debug-layout > * { min-width: 0; }
+.debug-create > label, .debug-history .inline-form > label, .debug-experiment .inline-form > label { margin-bottom: 0; }
+.debug-history { padding-block: 24px; border-block: 1px solid var(--line); }
+.debug-report-list { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 16px; }
+.debug-report-list button { display: grid; text-align: left; gap: 4px; }
+.debug-report-list .selected, .debug-outline .selected { background: var(--card); border-color: var(--active); }
+.debug-detail { padding-block: 32px; }
+.debug-layout { display: grid; grid-template-columns: minmax(200px, 280px) minmax(0, 1fr); gap: 32px; border-block: 1px solid var(--line); margin-top: 24px; padding-block: 24px; }
+.debug-outline { display: grid; grid-auto-rows: max-content; align-content: start; gap: 8px; max-height: 640px; overflow: auto; }
+.debug-outline button { display: grid; gap: 8px; text-align: left; overflow-wrap: anywhere; }
+.debug-candidate > h3:first-child { margin-top: 0; }
+.debug-experiment { margin-top: 32px; padding-top: 8px; border-top: 1px solid var(--line); }
+.debug-experiment form + form { margin-top: 24px; }
+.debug-detail li { margin-bottom: 8px; overflow-wrap: anywhere; }
+.event-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.event-link { text-align: left; overflow-wrap: anywhere; }
+.focused-event { border-block: 1px solid var(--line); margin-block: 24px; padding-block: 24px; }
+@media (max-width: 1024px) { .debug-create { grid-template-columns: 1fr; } .debug-layout { grid-template-columns: 1fr; } .debug-outline { max-height: 320px; } }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
 ::selection { background: #e8e0d2; color: var(--ink); }
