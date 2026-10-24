@@ -114,4 +114,4 @@ npx.cmd playwright test --config playwright.experiments.config.ts
 
 “差异 → 故障定位”可创建/发现/读取冻结报告，查看并列候选、断言、依赖对齐、歧义及缺口。事件按钮按 Run/seq/数据库 ID 在 Timeline 精确核对；缺证据不跳到相邻事件。核对候选上下文后可显式保存单项 Prompt/计划干预，带入既有 A/B 表单；交接不启动 Job，仍须显式提交预算和试验。已有实验可在报告内核对效果，未完成时改善未知。
 
-先 `npm run typecheck`、`npm run build`、`npm test`，再设置新的 `AGENTGIT_ELECTRON_EVIDENCE_PREFIX` 并运行 `npx playwright test --config playwright.diagnosis.config.ts`。两项分别为 HTTP 边界和真实独立 PostgreSQL/API/Worker 联调，使用免费 Mock；源码/uv.lock 在真实运行中须保持不变。详见 [S8 桌面工程验收](../doc/acceptance/S8-desktop.md)。当前仅开发构建，新分发包、标签人工审阅及独立 Windows/原生验收仍待补。
+先 `npm run typecheck`、`npm run build`、`npm test`，再设置新的 `AGENTGIT_ELECTRON_EVIDENCE_PREFIX` 并运行 `npx playwright test --config playwright.diagnosis.config.ts`。两项分别为 HTTP 边界和真实独立 PostgreSQL/API/Worker 联调，使用免费 Mock；源码/uv.lock 在真实运行中须保持不变。详见 [S8 桌面工程验收](../doc/acceptance/S8-desktop.md)。已生成 [0.1.5 Windows 候选并完成包内复验](../doc/acceptance/S8-package-015.md)，标签人工审阅及独立 Windows/原生验收仍待补。
