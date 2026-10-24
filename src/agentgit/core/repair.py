@@ -335,6 +335,45 @@ class RepairTrialResult(Contract):
         return self
 
 
+class RepairCandidateComparison(Contract):
+    proposal_id: Identifier
+    proposal_key: Digest
+    trial_id: Identifier
+    result_ref: Digest
+    ordinal: Annotated[int, Field(ge=0, le=63)]
+    verdict: Literal["passed", "failed"]
+    category: Literal["oracle", "execution", "budget", "cancelled", "safety"]
+    determinate: bool
+    safety_violations: Annotated[tuple[str, ...], Field(max_length=32)] = ()
+    patch_count: Annotated[int, Field(ge=1, le=2)]
+    change_bytes: NonNegative
+    usage: RepairTrialUsage
+    wall_ms: NonNegative | None
+
+    def rank_key(self) -> tuple[int, ...]:
+        return (
+            int(bool(self.safety_violations)),
+            0 if self.verdict == "passed" else 1 if self.determinate else 2,
+            self.patch_count,
+            self.change_bytes,
+            self.usage.tokens,
+            self.usage.cost_micro_usd,
+            int(self.wall_ms is None),
+            self.wall_ms or 0,
+            self.ordinal,
+        )
+
+    @model_validator(mode="after")
+    def comparable_evidence(self) -> "RepairCandidateComparison":
+        if self.verdict == "passed" and (
+            not self.determinate or self.category != "oracle" or self.safety_violations
+        ):
+            raise ValueError("候选排序不能把不确定或不安全结果列为通过")
+        if self.determinate and self.category != "oracle":
+            raise ValueError("只有固定硬验收结果可列为确定结论")
+        return self
+
+
 class RepairSearchDecision(Contract):
     kind: Literal["bounded_repair_decision/v1"] = "bounded_repair_decision/v1"
     search_id: Identifier
@@ -356,6 +395,7 @@ class RepairSearchDecision(Contract):
     determinate_failures: NonNegative
     excluded_atoms: NonNegative
     result_refs: Annotated[tuple[Digest, ...], Field(max_length=65)]
+    comparison: Annotated[tuple[RepairCandidateComparison, ...], Field(max_length=64)] | None = None
     selected_proposal_id: Identifier | None = None
     selected_proposal_key: Digest | None = None
     selected_result_ref: Digest | None = None
@@ -370,6 +410,8 @@ class RepairSearchDecision(Contract):
 
     @model_validator(mode="after")
     def scoped_conclusion(self) -> "RepairSearchDecision":
+        if self.usage.active or len(set(self.result_refs)) != len(self.result_refs):
+            raise ValueError("停止决定必须已经排空在途项且不能重复计算结果")
         if self.total_proposals != self.explored_proposals + self.unexplored_proposals:
             raise ValueError("停止报告必须完整解释声明空间")
         if self.passed_proposals + self.determinate_failures > self.explored_proposals:
@@ -396,4 +438,32 @@ class RepairSearchDecision(Contract):
             or self.selected_proposal_id is not None
         ):
             raise ValueError("只有声明空间全部确定失败才能称该空间内无解")
+        if self.comparison is not None:
+            rows = self.comparison
+            if (
+                len(rows) != self.explored_proposals
+                or len({row.proposal_id for row in rows}) != len(rows)
+                or len({row.proposal_key for row in rows}) != len(rows)
+                or len({row.trial_id for row in rows}) != len(rows)
+                or len({row.result_ref for row in rows}) != len(rows)
+                or len({row.ordinal for row in rows}) != len(rows)
+                or any(row.result_ref not in self.result_refs for row in rows)
+                or tuple(sorted(rows, key=lambda row: row.rank_key())) != rows
+                or sum(row.verdict == "passed" for row in rows) != self.passed_proposals
+                or sum(row.verdict == "failed" and row.determinate for row in rows)
+                != self.determinate_failures
+                or any(
+                    sum(getattr(row.usage, name) for row in rows) != getattr(self.usage, name)
+                    for name in ("model_calls", "tool_calls", "tokens", "cost_micro_usd")
+                )
+            ):
+                raise ValueError("排序必须完整绑定已探索结果、计数与冻结字典序")
+            best = next((row for row in rows if row.verdict == "passed"), None)
+            if best is not None and selected != (
+                best.proposal_id,
+                best.proposal_key,
+                best.result_ref,
+                best.change_bytes,
+            ):
+                raise ValueError("选中候选必须是冻结排序中的首个通过项")
         return self

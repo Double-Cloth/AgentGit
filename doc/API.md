@@ -372,3 +372,5 @@ uv run --locked agentgit worker
 ```
 
 `repair-worker --once` 只推进一次编排；`worker --once` 执行一个研究 Job。查询展示 `trials` 的意图、Job/Run 归属、物理用量、未决项、冻结停止 `decision`（如有）及结果引用。Recorded 的 `chain_valid` 不等于任务通过；`needs_confirmation` 不等于 verified。只有非空声明空间每一提案都得到确定硬验收失败才返回 `no_solution_in_space`；预算停止保留剩余数量和未确认原因，执行异常不冒充确定无解。取消后不再扩展，已派发项由原 Worker 结算，未知项不自动重发。完整边界见 [S9 搜索记录](acceptance/S9-search-loop.md)。
+
+当前停止报告的 `decision.comparison` 冻结全部已探索候选的 trial/结果身份、安全和验收、补丁数、变更字节、实际计量与墙钟，按规定字典序排列；选中项必须是首个通过候选。旧报告没有比较表时返回 `null`，不补造历史结果。终态 `usage.elapsed_wall_ms` 取冻结决定或对应控制审计时刻，之后只读查询不再增长；活动任务仍按数据库时钟计入排队/重启/等待。逐项本机退出与安全拒绝审计见 [S9-gates.md](acceptance/S9-gates.md)。

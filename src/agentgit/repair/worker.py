@@ -9,6 +9,7 @@ from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.interventions import PlanPatch, PromptPatch
 from agentgit.core.models import parse_contract
 from agentgit.core.repair import (
+    RepairCandidateComparison,
     RepairConsumption,
     RepairLease,
     RepairProposal,
@@ -194,38 +195,57 @@ class RepairSearchWorker:
             t["intent"]["proposal_ref"]: t for t in screens if t["result"]["verdict"] == "passed"
         }
         selected: dict[str, Any] = {}
-        if passed:
+        comparison: list[RepairCandidateComparison] = []
+        if screens:
             changes = self._changes(manifest)
-            ranks = []
+            observed = {trial["intent"]["proposal_ref"]: trial for trial in screens}
             for proposal in view["proposals"]:
-                if proposal["proposal_key"] not in passed:
+                if proposal["proposal_key"] not in observed:
                     continue
                 definition = parse_contract(
                     self.history.objects.get(proposal["definition_ref"], ObjectType.BLOB),
                     RepairProposal,
                 )
-                result = passed[proposal["proposal_key"]]["result"]
+                trial = observed[proposal["proposal_key"]]
+                result = trial["result"]
                 magnitude = sum(changes[index] for index in definition.ordered_indices)
-                usage = result["usage"]
-                ranks.append(
-                    (
-                        (
-                            len(definition.ordered_indices),
-                            magnitude,
-                            usage["tokens"],
-                            usage["cost_micro_usd"],
-                            proposal["ordinal"],
+                report = self.history.objects.get_json(result["replay_report_ref"], ObjectType.BLOB)
+                if not isinstance(report, dict) or not isinstance(report.get("actual"), dict):
+                    raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "排序缺少实际执行报告")
+                wall = report["actual"].get("wall_ms")
+                if wall is not None and (type(wall) is not int or wall < 0):
+                    raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "实际墙钟计量损坏")
+                comparison.append(
+                    parse_contract(
+                        encode(
+                            dict(
+                                schema_version=1,
+                                proposal_id=proposal["proposal_id"],
+                                proposal_key=proposal["proposal_key"],
+                                trial_id=trial["trial_id"],
+                                result_ref=result["result_ref"],
+                                ordinal=proposal["ordinal"],
+                                verdict=result["verdict"],
+                                category=result["category"],
+                                determinate=result["determinate"],
+                                safety_violations=result["safety_violations"],
+                                patch_count=len(definition.ordered_indices),
+                                change_bytes=magnitude,
+                                usage=result["usage"],
+                                wall_ms=wall,
+                            )
                         ),
-                        proposal,
-                        result,
+                        RepairCandidateComparison,
                     )
                 )
-            rank, proposal, result = min(ranks, key=lambda row: row[0])
+        comparison.sort(key=lambda row: row.rank_key())
+        best = next((row for row in comparison if row.verdict == "passed"), None)
+        if best is not None:
             selected = dict(
-                selected_proposal_id=proposal["proposal_id"],
-                selected_proposal_key=proposal["proposal_key"],
-                selected_result_ref=result["result_ref"],
-                selected_change_bytes=rank[1],
+                selected_proposal_id=best.proposal_id,
+                selected_proposal_key=best.proposal_key,
+                selected_result_ref=best.result_ref,
+                selected_change_bytes=best.change_bytes,
             )
         # 变更幅度读取在事务外；封存时复核 revision，防止覆盖并发取消或新结算。
         with self.history.engine.begin() as connection:
@@ -252,6 +272,7 @@ class RepairSearchWorker:
                     result_refs=tuple(
                         t["result"]["result_ref"] for t in view["trials"] if "result" in t
                     ),
+                    comparison=tuple(comparison),
                     usage=RepairConsumption.model_validate(usage),
                     uncertainties=(
                         "仅涵盖已选入的声明空间；排除项和未探索项没有结论。",

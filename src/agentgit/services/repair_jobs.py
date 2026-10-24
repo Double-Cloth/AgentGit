@@ -680,6 +680,21 @@ class RepairJobService:
                 ):
                     raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "停止报告与冻结搜索不符")
                 response["decision"] = {**decision.model_dump(mode="json"), "decision_ref": stopped}
+            if job["status"] in TERMINAL_SEARCHES:
+                if stopped is not None and decision.status == job["status"]:
+                    elapsed = decision.usage.elapsed_wall_ms
+                else:
+                    ended = connection.execute(
+                        sa.select(events.c.created_at).where(
+                            events.c.repository_id == repository,
+                            events.c.search_id == search,
+                            events.c.revision == job["revision"],
+                        )
+                    ).scalar_one_or_none()
+                    if ended is None:
+                        raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "终态缺少对应审计时刻")
+                    elapsed = max(0, int((ended - root["created_at"]).total_seconds() * 1000))
+                response["usage"]["elapsed_wall_ms"] = elapsed
             if len(encode(response)) > 8 * 1024 * 1024:
                 raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "搜索查询超过有界大小，不能截断证据")
             return response
