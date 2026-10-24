@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 
-from agentgit.core.canonical import ObjectType
+from agentgit.core.canonical import ObjectType, encode
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.models import parse_contract
 from agentgit.core.repair import (
@@ -15,12 +15,14 @@ from agentgit.core.repair import (
     RepairLease,
     RepairSearchManifest,
     RepairTrialIntent,
+    RepairTrialResult,
 )
 from agentgit.repair.budget import admission
 from agentgit.repair.space import trial_key
 from agentgit.services.environment import source_revision
 from agentgit.services.history import HistoryService
-from agentgit.storage.schema_s9 import TERMINAL_SEARCHES, build_metadata
+from agentgit.storage.schema import build_metadata
+from agentgit.storage.schema_s9 import TERMINAL_SEARCHES
 
 TABLES = build_metadata().tables
 
@@ -146,7 +148,7 @@ class RepairJobService:
         with self.history.engine.begin() as connection:
             now = connection.execute(sa.select(sa.func.clock_timestamp())).scalar_one()
             query = sa.select(jobs).where(
-                jobs.c.status.in_(("queued", "running", "cancelling")),
+                jobs.c.status.in_(("queued", "running", "cancelling", "waiting_reconciliation")),
                 sa.or_(jobs.c.lease_until.is_(None), jobs.c.lease_until <= now),
             )
             if repository is not None:
@@ -184,7 +186,13 @@ class RepairJobService:
                 job,
                 "claimed",
                 {"worker": worker, "token": str(token)},
-                status="cancelling" if job["cancel_requested"] else "running",
+                status="cancelling"
+                if job["cancel_requested"]
+                else (
+                    "waiting_reconciliation"
+                    if job["status"] == "waiting_reconciliation"
+                    else "running"
+                ),
                 lease_token=token,
                 lease_worker=worker,
                 lease_until=until,
@@ -313,6 +321,8 @@ class RepairJobService:
             job = self._leased(connection, lease)
             if job["cancel_requested"]:
                 raise AgentGitError(ErrorCode.CONTROL_REQUESTED, "搜索取消后不能新增试验意图")
+            if job["status"] == "waiting_reconciliation":
+                raise AgentGitError(ErrorCode.APPROVAL_REQUIRED, "必须先核对未决试验，不能扩展候选")
             root = self._root(connection, UUID(lease.repository_id), UUID(lease.search_id))
             manifest = self._manifest(connection, root)
             if manifest.code_revision != source_revision():
@@ -553,7 +563,67 @@ class RepairJobService:
                 .mappings()
                 .all()
             )
-            return {
+            details = [self._intent(row) for row in trial_rows]
+            trial_ids = [row["id"] for row in trial_rows]
+            by_id = {UUID(detail["trial_id"]): detail for detail in details}
+            for table_name, key in (
+                ("repair_trial_jobs", "dispatch"),
+                ("repair_trial_results", "result"),
+                ("repair_trial_waits", "waiting"),
+            ):
+                table = TABLES[table_name]
+                rows = (
+                    connection.execute(
+                        sa.select(table).where(
+                            table.c.repository_id == repository,
+                            table.c.id.in_(trial_ids),
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+                for row in rows:
+                    value: dict[str, Any]
+                    if key == "dispatch":
+                        value = {
+                            "job_id": str(row["job_id"]),
+                            "initial_run_id": str(row["initial_run_id"]),
+                        }
+                    elif key == "waiting":
+                        value = {"reason": row["reason"], "payload_ref": row["payload_ref"]}
+                    else:
+                        payload = self.history.objects.get(row["result_ref"], ObjectType.BLOB)
+                        if row["verdict"] == "not_started":
+                            value = {
+                                "verdict": "not_started",
+                                "result_ref": row["result_ref"],
+                                "category": "cancelled",
+                                "determinate": False,
+                            }
+                        else:
+                            result = parse_contract(payload, RepairTrialResult)
+                            if (
+                                result.trial_id != str(row["id"])
+                                or result.verdict != row["verdict"]
+                                or any(
+                                    getattr(result.usage, name) != row[name]
+                                    for name in (
+                                        "model_calls",
+                                        "tool_calls",
+                                        "tokens",
+                                        "cost_micro_usd",
+                                    )
+                                )
+                            ):
+                                raise AgentGitError(
+                                    ErrorCode.OBJECT_CORRUPT, "试验结果与结算索引不同"
+                                )
+                            value = {
+                                **result.model_dump(mode="json"),
+                                "result_ref": row["result_ref"],
+                            }
+                    by_id[row["id"]][key] = value
+            response = {
                 "search_id": str(search),
                 "repository_id": str(repository),
                 "manifest_ref": root["manifest_ref"],
@@ -563,7 +633,7 @@ class RepairJobService:
                 "revision": job["revision"],
                 "stop_reason": job["stop_reason"],
                 "usage": usage.model_dump(mode="json"),
-                "trials": [self._intent(row) for row in trial_rows],
+                "trials": details,
                 "proposals": [
                     {
                         "proposal_id": str(row["id"]),
@@ -574,3 +644,6 @@ class RepairJobService:
                     for row in proposal_rows
                 ],
             }
+            if len(encode(response)) > 8 * 1024 * 1024:
+                raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "搜索查询超过有界大小，不能截断证据")
+            return response

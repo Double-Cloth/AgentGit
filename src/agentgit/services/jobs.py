@@ -40,6 +40,7 @@ class JobService:
         budget: BudgetLimits | None = None,
         replay: RecordedReplaySpec | LiveReplaySpec | HybridReplaySpec | None = None,
         connection: Connection | None = None,
+        execution_wall_ms: int | None = None,
     ) -> Submission:
         if not actor or not key or len(actor) > 200 or len(key) > 200:
             raise AgentGitError(ErrorCode.VALIDATION, "操作者和幂等键必须为有界非空字符串")
@@ -57,6 +58,15 @@ class JobService:
         }
         if replay is not None:
             request_payload["replay"] = replay.model_dump(mode="json")
+        if execution_wall_ms is not None:
+            if (
+                type(execution_wall_ms) is not int
+                or execution_wall_ms < 1
+                or replay is None
+                or replay.mode != "recorded"
+            ):
+                raise AgentGitError(ErrorCode.VALIDATION, "独立执行期限仅用于 Recorded 的实际墙钟")
+            request_payload["execution_wall_ms"] = execution_wall_ms
         request_digest = object_digest(
             ObjectType.BLOB,
             encode(request_payload),
@@ -96,6 +106,8 @@ class JobService:
             self.history.objects.get(task["budget_ref"], ObjectType.BLOB), BudgetLimits
         )
         limits = budget or task_budget
+        if execution_wall_ms is not None and execution_wall_ms > limits.max_wall_ms:
+            raise AgentGitError(ErrorCode.FORBIDDEN, "Recorded 实际执行期限不能扩大配置上限")
         if not limits.within(task_budget, config.limits):
             raise AgentGitError(ErrorCode.FORBIDDEN, "Run 预算不能扩大 Task 或配置上限")
         parse_contract(
@@ -116,7 +128,7 @@ class JobService:
             sources=tuple(self.research.corpus.sources.values()),
             evaluation_time=self.research.corpus.evaluation_time,
             initial_plan_version=plan_version,
-            max_wall_ms=limits.max_wall_ms,
+            max_wall_ms=execution_wall_ms if execution_wall_ms is not None else limits.max_wall_ms,
             limits=limits,
         )
         job_id, run_id = uuid4(), uuid4()

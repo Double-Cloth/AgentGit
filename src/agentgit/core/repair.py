@@ -228,3 +228,73 @@ class RepairTrialIntent(RepairTrialIdentity):
         if self.phase != "screen" or self.repeat != 0:
             raise ValueError("S9 仅提交独立筛选；复测身份保留给 S10")
         return self
+
+
+class RepairTrialUsage(Contract):
+    model_calls: NonNegative
+    tool_calls: NonNegative
+    tokens: NonNegative
+    cost_micro_usd: NonNegative
+    unit: Literal["mock_utf8_bytes", "provider_tokens", "mixed_units"]
+    cost_basis: Literal["local_mock_free", "pricebook_estimate", "recorded_no_external_calls"]
+
+
+class RepairTrialResult(Contract):
+    kind: Literal["repair_trial_result/v1"] = "repair_trial_result/v1"
+    trial_id: Identifier
+    job_id: Identifier
+    initial_run_id: Identifier
+    current_run_id: Identifier
+    operation: Literal["recorded_preflight", "screen"]
+    verdict: Literal["chain_valid", "passed", "failed"]
+    category: Literal["recovery", "oracle", "execution", "budget", "cancelled", "safety"]
+    determinate: bool
+    usage: RepairTrialUsage
+    replay_report_ref: Digest
+    assessment: FrozenAssessment | None = None
+    safety_violations: Annotated[tuple[str, ...], Field(max_length=32)] = ()
+    uncertainties: Annotated[tuple[str, ...], Field(max_length=32)] = ()
+    test_only: Literal[True] = True
+
+    @model_validator(mode="after")
+    def bound_outcome(self) -> "RepairTrialResult":
+        if self.operation == "recorded_preflight":
+            if self.assessment is not None or self.verdict == "passed":
+                raise ValueError("Recorded 恢复证明不能冒充修复硬验收通过")
+            if any(
+                (
+                    self.usage.model_calls,
+                    self.usage.tool_calls,
+                    self.usage.tokens,
+                    self.usage.cost_micro_usd,
+                )
+            ):
+                raise ValueError("Recorded 不会产生新的外部调用或供应商费用")
+            if self.category == "oracle" or (
+                self.verdict == "chain_valid"
+                and (not self.determinate or self.category != "recovery")
+            ):
+                raise ValueError("恢复链通过必须是确定的恢复证明，不能替代任务验收")
+        elif self.verdict == "chain_valid":
+            raise ValueError("筛选试验不能声称是 Recorded 恢复证明")
+        elif self.category == "recovery":
+            raise ValueError("筛选结果不能标记为历史恢复证明")
+        if self.assessment is not None and self.assessment.run_id != self.current_run_id:
+            raise ValueError("结果验收必须绑定实际当前 Run")
+        if self.verdict == "passed" and (
+            self.assessment is None
+            or self.assessment.verdict != "passed"
+            or self.safety_violations
+            or not self.determinate
+            or self.category != "oracle"
+        ):
+            raise ValueError("只有确定硬验收通过且零安全违规的筛选可以通过")
+        if self.category in ("budget", "cancelled", "safety") and self.determinate:
+            raise ValueError("预算、取消或安全停止不能算作完整空间的确定失败")
+        if (
+            self.category == "oracle"
+            and self.determinate
+            and (self.assessment is None or self.assessment.verdict != self.verdict)
+        ):
+            raise ValueError("确定的任务结论必须与独立冻结验收一致")
+        return self

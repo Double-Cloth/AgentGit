@@ -31,6 +31,14 @@ class HistorySelection:
     until_seq: int
 
 
+@dataclass(frozen=True)
+class PreparedBranch:
+    repository_id: UUID
+    request: NewBranch
+    snapshot_payload: bytes
+    ancestors: frozenset[str]
+
+
 class VersionService:
     def __init__(self, history: HistoryService):
         self.history = history
@@ -299,6 +307,12 @@ class VersionService:
     ) -> dict[str, Any]:
         if not actor or len(actor) > 200:
             raise AgentGitError(ErrorCode.VALIDATION, "Fork 必须记录有界操作者")
+        prepared = self.prepare_fork(repository_id, payload)
+        with transaction(self.history.engine, connection) as connection:
+            return self.publish_fork(prepared, actor=actor, connection=connection)
+
+    def prepare_fork(self, repository_id: UUID, payload: NewBranch) -> PreparedBranch:
+        payload = parse_contract(encode(payload.model_dump(mode="json")), NewBranch)
         self.select_range(
             repository_id,
             RecordedRange(
@@ -308,14 +322,29 @@ class VersionService:
             ),
         )
         snapshot = self.history.restore(repository_id, payload.from_commit)
-        ancestors = set(self.ancestors(repository_id, payload.from_commit))
+        ancestors = frozenset(self.ancestors(repository_id, payload.from_commit))
+        return PreparedBranch(
+            repository_id, payload, encode(snapshot.model_dump(mode="json")), ancestors
+        )
+
+    def publish_fork(
+        self,
+        prepared: PreparedBranch,
+        *,
+        actor: str,
+        connection: Connection,
+    ) -> dict[str, Any]:
+        if not actor or len(actor) > 200:
+            raise AgentGitError(ErrorCode.VALIDATION, "Fork 必须记录有界操作者")
+        repository_id, payload = prepared.repository_id, prepared.request
+        snapshot = parse_contract(prepared.snapshot_payload, StateSnapshot)
         with transaction(self.history.engine, connection) as connection:
             self._safe(
                 connection,
                 repository_id,
                 UUID(payload.source_run_id),
                 payload.from_commit,
-                ancestors,
+                set(prepared.ancestors),
                 snapshot,
             )
             branches = TABLES["branches"]

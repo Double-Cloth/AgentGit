@@ -6,7 +6,7 @@ S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命
 
 ## 环境
 
-S9 开发位于 `codex/s9-repair`；[有限模板、顺序枚举、预算契约及持久意图](S9-repair-plan.md)已经建立。新增 `0017_repair_search_ledger` 保存冻结搜索、编排租约、全部提案、试验意图、Job 归属、结算及审计。本轮只在独立测试 schema 迁移/回退，不自动修改用户业务库；尚无对外搜索 API/CLI、repair-worker 或新桌面包。真实 Run 执行期间不得修改 `src/agentgit/**/*.py/.json` 与 `uv.lock`，这些字节全部参与冻结环境摘要；先结束所有相关试验再继续源码变更。
+S9 开发位于 `codex/s9-repair`；[有限模板、顺序枚举、预算契约及持久意图](S9-repair-plan.md)已经建立。`0017_repair_search_ledger` 保存冻结搜索、编排租约、全部提案、试验意图、Job 归属、结算及审计；新增 `0018_repair_dispatch_control` 保存未决标记并约束派发。Recorded/Live/Hybrid 真实通道与物理结算见[验收范围](acceptance/S9-trial-dispatch.md)。本轮只在独立测试 schema 迁移/回退，不自动修改用户业务库；尚无对外搜索 API/CLI、repair-worker 或新桌面包。真实 Run 执行期间不得修改 `src/agentgit/**/*.py/.json` 与 `uv.lock`，这些字节全部参与冻结环境摘要；先结束所有相关试验再继续源码变更。
 
 S8 的行为图、依赖对齐与静态 Debug Report API/CLI 见 [S8 方案](S8-diagnosis-plan.md)与 [API.md](API.md)。`behavioral-trace/behavioral-diff` 继续只读既有历史；`debug-report` 在 `0016_static_debug_reports` 发布不可变静态候选和硬断言，不启动 Worker 或执行历史动作。完整 20 例定位评估、干预结果及桌面视图尚待完成，源码增量未进入 0.1.4 桌面分发包。
 

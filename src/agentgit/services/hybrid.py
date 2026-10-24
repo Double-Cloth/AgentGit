@@ -95,16 +95,39 @@ def freeze_policy(
 
 
 def register_inputs(
-    history: HistoryService, connection: Connection, repository: UUID, job_id: str, policy_ref: str
+    history: HistoryService,
+    connection: Connection,
+    repository: UUID,
+    job_id: str,
+    policy_ref: str,
+    *,
+    repair_proposal_id: UUID | None = None,
 ) -> None:
     refs = TABLES["object_refs"]
+    ownership = sa.and_(refs.c.owner_type == "experiment", refs.c.role.like("hybrid:%"))
+    if repair_proposal_id is not None:
+        proposals = TABLES["repair_proposals"]
+        if (
+            connection.execute(
+                sa.select(proposals.c.id).where(
+                    proposals.c.repository_id == repository,
+                    proposals.c.id == repair_proposal_id,
+                )
+            ).first()
+            is None
+        ):
+            raise AgentGitError(ErrorCode.NOT_FOUND, "Hybrid 修复提案不可访问")
+        ownership = sa.and_(
+            refs.c.owner_type == "repair_proposal",
+            refs.c.owner_id == str(repair_proposal_id),
+            refs.c.role == "hybrid",
+        )
     if (
         connection.execute(
             sa.select(refs.c.object_id).where(
                 refs.c.repository_id == repository,
                 refs.c.object_id == policy_ref,
-                refs.c.owner_type == "experiment",
-                refs.c.role.like("hybrid:%"),
+                ownership,
             )
         ).first()
         is None
@@ -137,6 +160,7 @@ def policy_for_run(
 ) -> tuple[str, FrozenHybridPolicy]:
     jobs = TABLES["jobs"]
     current: UUID | None = run_id
+    selected: tuple[UUID, str] | None = None
     with history.engine.connect() as connection:
         for _ in range(100):
             if current is None:
@@ -157,11 +181,13 @@ def policy_for_run(
                 )
                 if not isinstance(payload.replay, HybridReplaySpec):
                     raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "Hybrid 来源 Job 类型不符")
-                return payload.replay.policy_ref, owned_policy(
-                    history, repository, job["id"], payload.replay.policy_ref, verify_inputs=True
-                )
+                selected = (job["id"], payload.replay.policy_ref)
+                break
             current = history._run(connection, repository, current)["origin_run_id"]
-    raise AgentGitError(ErrorCode.RECORDING_MISSING, "Hybrid 来源缺少自身冻结 Job")
+    if selected is None:
+        raise AgentGitError(ErrorCode.RECORDING_MISSING, "Hybrid 来源缺少自身冻结 Job")
+    job_id, reference = selected
+    return reference, owned_policy(history, repository, job_id, reference, verify_inputs=True)
 
 
 def owned_policy(

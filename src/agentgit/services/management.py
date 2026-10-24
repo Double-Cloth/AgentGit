@@ -273,13 +273,21 @@ class ManagementService:
     def replay(
         self, repository_id: UUID, payload: RecordedReplay | LiveReplay, key: str
     ) -> dict[str, Any]:
+        route = "POST /replays"
+        body = payload.model_dump(mode="json")
+        digest = self._mutation_digest(key, repository_id, body)
+        with self.history.engine.connect() as connection:
+            cached = self._cached_response(connection, route, key, repository_id, digest)
+        if cached is not None:
+            return cached
+        prepared = self.replays.prepare(repository_id, payload)
         return self._mutate(
-            "POST /replays",
+            route,
             key,
             repository_id,
-            payload.model_dump(mode="json"),
-            lambda connection: self.replays.submit(
-                repository_id, payload, actor=self.actor, key=key, connection=connection
+            body,
+            lambda connection: self.replays.publish(
+                prepared, actor=self.actor, key=key, connection=connection
             ),
         )
 
