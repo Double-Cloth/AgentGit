@@ -1,9 +1,13 @@
 """有限修复空间及分阶段预算；不包含执行、确认或生产配置写入。"""
 
+from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
+from agentgit.core.debug_reports import FailureAssertion
+from agentgit.core.experiments import FrozenAssessment
+from agentgit.core.hybrid import HybridPolicy
 from agentgit.core.interventions import NewIntervention
 from agentgit.core.models import Contract, Digest, Identifier, NonNegative
 from agentgit.core.research import BudgetLimits
@@ -150,3 +154,77 @@ class BudgetDecision(Contract):
         "wall_time",
     ]
     protected_trials: NonNegative
+
+
+class RepairSearchSpec(Contract):
+    space: RepairSpace
+    budget: RepairBudget
+    intervention_ids: Annotated[tuple[Identifier, ...], Field(max_length=8)]
+    hybrid: HybridPolicy | None = None
+
+
+class RepairSearchManifest(RepairSearchSpec):
+    kind: Literal["bounded_repair_search/v1"] = "bounded_repair_search/v1"
+    source_head_commit: Digest
+    baseline: FrozenAssessment
+    failure_assertions: Annotated[tuple[FailureAssertion, ...], Field(min_length=1, max_length=100)]
+    code_revision: Annotated[str, Field(pattern=r"^source-sha256:[0-9a-f]{64}$")]
+
+    @model_validator(mode="after")
+    def frozen_conditions(self) -> "RepairSearchManifest":
+        binding = self.space.binding
+        if len(self.intervention_ids) != len(self.space.patches) or len(
+            set(self.intervention_ids)
+        ) != len(self.intervention_ids):
+            raise ValueError("原子补丁必须逐项绑定不同的已发布 S7 干预")
+        if (
+            self.baseline.verdict != "failed"
+            or self.baseline.run_id != binding.failed_run_id
+            or self.baseline.commit_id != self.source_head_commit
+            or self.baseline.validator_ref != binding.validator_ref
+        ):
+            raise ValueError("修复必须绑定冻结验收器核验的原失败终态")
+        if self.hybrid is None and any(
+            patch.intervention.operator == "TOOL_RESPONSE_PATCH" for patch in self.space.patches
+        ):
+            raise ValueError("测试观测补丁必须绑定明确 Hybrid 策略")
+        return self
+
+
+class RepairProposal(Contract):
+    key: Digest
+    ordered_indices: Annotated[
+        tuple[Annotated[int, Field(ge=0, le=7)], ...], Field(min_length=1, max_length=2)
+    ]
+    intervention_ids: Annotated[tuple[Identifier, ...], Field(min_length=1, max_length=2)]
+    patch_refs: Annotated[tuple[Digest, ...], Field(min_length=1, max_length=2)]
+    hybrid_ref: Digest | None = None
+
+    @model_validator(mode="after")
+    def ordered_bindings(self) -> "RepairProposal":
+        if not len(self.ordered_indices) == len(self.intervention_ids) == len(self.patch_refs):
+            raise ValueError("提案的有序索引、干预和效果摘要必须逐项匹配")
+        if len(set(self.ordered_indices)) != len(self.ordered_indices):
+            raise ValueError("提案不能重复应用同一原子补丁")
+        return self
+
+
+class RepairLease(Contract):
+    repository_id: Identifier
+    search_id: Identifier
+    token: Identifier
+    worker: Annotated[str, Field(min_length=1, max_length=200)]
+    expires_at: datetime
+
+
+class RepairTrialIntent(RepairTrialIdentity):
+    ordinal: Annotated[int, Field(ge=0, le=399)]
+    operation: Literal["recorded_preflight", "screen"]
+    branch_name: Annotated[str, Field(pattern=r"^repair-[0-9a-f]{32}-[0-9]{1,3}$")]
+    limits: BudgetLimits
+
+    @model_validator(mode="after")
+    def only_screening(self) -> "RepairTrialIntent":
+        if self.phase != "screen" or self.repeat != 0:
+            raise ValueError("S9 仅提交独立筛选；复测身份保留给 S10")
+        return self

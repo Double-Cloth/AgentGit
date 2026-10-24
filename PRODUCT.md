@@ -42,7 +42,7 @@ web
 
 S8 已提供行为图、依赖对齐、失败硬断言及[不可变静态 Debug Report](doc/acceptance/S8-static-reports.md)，API/CLI 支持创建、读取与发现，未运行干预时保持 static_only。单连接池与并发发布边界已修复、验证。[20 例及 12/8 划分](tests/fixtures/diagnosis/v1/README.md)、排名及评估脚本先后冻结；[暂定全量评估](doc/acceptance/S8-evaluation.md)无漏例，保留集主要注入点 Top-3 为 4/8，未达 6/8，不能用拟修复决策的 8/8 替代主要指标。已增加[候选与 S7 单变量干预的只读关联](doc/acceptance/S8-candidate-experiments.md)，并接入[桌面报告、精确事件跳转与显式干预表单](doc/acceptance/S8-desktop.md)。真实 Mock 示例 A 0/5、B 5/5 通过，桌面可保存单项干预并带入 A/B 表单，静态报告及不确定项保持；该示例不替代全量定位验收。功能已进入 [0.1.5 分发候选并完成包内复验](doc/acceptance/S8-package-015.md)；[人工标签](doc/S8-dataset-review.md)、其余适用故障效果证据和环境/原生前置仍待补，不宣告 S8、D2 验收或定位优势；后续可按方案用完整候选显式降级验证搜索工程。
 
-S9 已开始[有界修复搜索基础](doc/S9-repair-plan.md)：固定三类干预模板、先单点后有序双点、语义去重与独立重复 trial 身份，以及 Token/调用/费用/墙钟的确认和回归预留。默认明确使用完整候选降级。持久调度、预算台账、API/CLI 和完整搜索验收继续实施；模板和枚举不代表已执行搜索，也不提前输出 verified 或最小性结论。
+S9 已提供[有界修复搜索基础](doc/S9-repair-plan.md)：固定三类干预模板、先单点后有序双点、语义去重与独立重复 trial 身份，以及 Token/调用/费用/墙钟的确认和回归预留。[持久意图及控制台账](doc/acceptance/S9-ledger.md)已落库，支持原子预留、租约替代、跨独立进程退出复用、取消及审计；本轮 515 单元 + 20 真实集成通过。默认明确使用完整候选降级。真实试验派发/结算、对外 API/CLI 和完整搜索验收继续实施；持久意图不代表已执行有界搜索，也不提前输出 verified 或最小性结论。
 
 ## Brand Commitments
 
