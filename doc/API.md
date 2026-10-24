@@ -1,6 +1,6 @@
 # 本地服务与 CLI（S4–S10 耐久缩减）
 
-当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。用户准备好业务环境后运行 `uv run --locked alembic upgrade head`，当前 head 为 `0019_repair_reduction_studies`；桌面不会自动迁移后端。
+当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。用户准备好业务环境后运行 `uv run --locked alembic upgrade head`，当前 head 为 `0020_repair_validation_pools`；桌面不会自动迁移后端。
 
 ## CLI 离线流程
 
@@ -398,4 +398,29 @@ uv run --locked agentgit repair-study-cancel $repo.repository_id $study.study_id
 
 查询返回冻结 manifest/state、逐删除 intent/dispatch/收据、待核对引用、共享总用量及 `final_lock`。未决 trial 仍占完整预留；用量包括原 S9 和本阶段实际调用，Mock 字节与供应商 Token 区分。墙钟从原搜索创建时起计算，候选锁定后仍计等待，原 S9 已封存的决定和查询不改写。新建代码版本不能继续旧 study。
 
-`awaiting_samples` 表示最终候选已经锁定，确认池尚未打开。当前未提供确认或批准 API，不能把这个状态当作 verified。完整 fixture 删除测试只支持所声明原子语法的 1-minimal；预算不足、未测和非确定结果保持未证明，字段缩减仍未运行。详细范围及真实证据见 [S10-reduction.md](acceptance/S10-reduction.md)。
+`awaiting_samples` 表示最终候选已经锁定，确认池尚未打开。当前未提供确认试验派发或批准 API，不能把这个状态当作 verified；预注册及开启入口见下节。完整 fixture 删除测试只支持所声明原子语法的 1-minimal；预算不足、未测和非确定结果保持未证明，字段缩减仍未运行。详细范围及真实证据见 [S10-reduction.md](acceptance/S10-reduction.md)。
+
+## 确认条件预注册与开启（S10）
+
+在启动 `repair-worker` 之前调用 `POST /repair-validation-suites`（201），给出未首次领取的 `search_id` 和四个固定回归任务的来源起点。服务自动冻结六次 confirm 条件与四项 regression 条件，不接受响应正文、用户 verdict、采样 UUID、验收规则或费用。四个回归输入须不同，也须不同于确认任务；来源、检查点、完整配置及权限都核对项目归属。
+
+```json
+{
+  "schema_version": 1,
+  "search_id": "<尚未领取的 S9 搜索 UUID>",
+  "regression": [
+    {"schema_version":1,"source_run_id":"<回归任务 1 的 Run UUID>","from_commit":"<模型决策前检查点>"},
+    {"schema_version":1,"source_run_id":"<回归任务 2 的 Run UUID>","from_commit":"<模型决策前检查点>"},
+    {"schema_version":1,"source_run_id":"<回归任务 3 的 Run UUID>","from_commit":"<模型决策前检查点>"},
+    {"schema_version":1,"source_run_id":"<回归任务 4 的 Run UUID>","from_commit":"<模型决策前检查点>"}
+  ]
+}
+```
+
+`GET /repair-validation-suites/{suite_id}` 只读返回冻结条件。已开始筛选且没有预注册的来源不能事后补登记，应新建预注册搜索。固定回归来源应提前准备，准备耗时不会重置搜索墙钟。
+
+最终候选锁后调用 `POST /repair-studies/{study_id}/open-validation`，正文为 `{"schema_version":1,"suite_id":"<预注册 suite UUID>"}`。资源与六加四配额足够时，事务一次性绑定池与候选、冻结计划和开启事件，并进入 `validation_ready`；返回 `opened=true/opening_ref/plan_ref`。不足则 `opened=false/decision/reason`，原候选和预算不改写。同键异参拒绝，原请求重试复用原绑定；取消后的旧绑定仍可读取，但不会恢复执行。`GET /repair-studies/{study_id}/validation` 返回绑定或 `validation=null`。
+
+对应 CLI 为 `repair-validation-suite <repository_id> --file suite.json --key ...`、`repair-validation-open <repository_id> <study_id> <suite_id> --key ...`、`repair-validation-status <repository_id> <study_id>`。认证、项目头、幂等键、JSON 编码与大小限制沿用前述规则。
+
+当前票据明确为 `response_status=not_generated`，开启为 `execution_status=not_started`。`validation_ready` 不能当作已确认；现有 `repair-study-worker` 只处理缩减，不会执行这些票据。实际六次确认、四次回归的派发、原始调用核验和结算继续接入；没有上传“验证成功”的接口。范围及证据见 [S10-pools.md](acceptance/S10-pools.md)。

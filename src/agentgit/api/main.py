@@ -34,6 +34,7 @@ from agentgit.core.management import (
 )
 from agentgit.core.models import parse_contract
 from agentgit.core.repair import NewRepairSearch
+from agentgit.core.repair_pools import NewRepairValidationSuite, OpenRepairValidationPool
 from agentgit.core.repair_studies import NewRepairStudy
 from agentgit.core.versions import NewBranch, parse_replay
 from agentgit.services.execution_views import ExecutionResource
@@ -227,6 +228,44 @@ def create_app(
         service: Annotated[ManagementService, Depends(get_manager)],
     ) -> dict[str, Any]:
         return service.validator(repo, validator_ref)
+
+    @app.post("/repair-validation-suites", status_code=201)
+    def repair_suite_create(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_repair_validation_suite(
+            repo, parse_contract(encode(body), NewRepairValidationSuite), key
+        )
+
+    @app.get("/repair-validation-suites/{suite_id}")
+    def repair_suite_status(
+        suite_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.repair_validation_suite(repo, suite_id)
+
+    @app.post("/repair-studies/{study_id}/open-validation")
+    def repair_validation_open(
+        study_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        request = parse_contract(encode(body), OpenRepairValidationPool)
+        return service.open_repair_validation(repo, study_id, UUID(request.suite_id), key)
+
+    @app.get("/repair-studies/{study_id}/validation")
+    def repair_validation_status(
+        study_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.repair_validation(repo, study_id)
 
     @app.post("/repair-studies", status_code=202)
     def repair_study_create(

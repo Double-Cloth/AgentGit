@@ -29,6 +29,7 @@ from agentgit.core.management import (
 from agentgit.core.model_usage import OpenAIOptions, price_micro_usd
 from agentgit.core.models import CallIntent, parse_contract
 from agentgit.core.repair import NewRepairSearch
+from agentgit.core.repair_pools import NewRepairValidationSuite
 from agentgit.core.repair_studies import NewRepairStudy
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage
 from agentgit.core.versions import LiveReplay, NewBranch, RecordedRange, RecordedReplay
@@ -43,6 +44,7 @@ from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.inspection import InspectionService
 from agentgit.services.jobs import JobService
 from agentgit.services.repair_jobs import RepairJobService
+from agentgit.services.repair_pools import RepairValidationPoolService
 from agentgit.services.repair_searches import RepairSearchService
 from agentgit.services.repair_studies import RepairStudyService
 from agentgit.services.repair_templates import prepare_templates
@@ -128,6 +130,31 @@ class ManagementService:
 
     def repair_study(self, repository_id: UUID, study_id: UUID) -> dict[str, Any]:
         return RepairStudyService(self.history).view(repository_id, study_id)
+
+    def create_repair_validation_suite(
+        self, repository_id: UUID, request: NewRepairValidationSuite, key: str
+    ) -> dict[str, Any]:
+        return RepairValidationPoolService(self.research).submit(
+            repository_id, request, actor=self.actor, key=key
+        )
+
+    def repair_validation_suite(self, repository_id: UUID, suite_id: UUID) -> dict[str, Any]:
+        return RepairValidationPoolService(self.research).view(repository_id, suite_id)
+
+    def open_repair_validation(
+        self, repository_id: UUID, study_id: UUID, suite_id: UUID, key: str
+    ) -> dict[str, Any]:
+        return RepairValidationPoolService(self.research).open(
+            repository_id, study_id, suite_id, actor=self.actor, key=key
+        )
+
+    def repair_validation(self, repository_id: UUID, study_id: UUID) -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "validation": RepairValidationPoolService(self.research).opening(
+                repository_id, study_id
+            ),
+        }
 
     def cancel_repair_study(self, repository_id: UUID, study_id: UUID, key: str) -> dict[str, Any]:
         return self._mutate(

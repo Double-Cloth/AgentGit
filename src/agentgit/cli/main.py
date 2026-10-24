@@ -33,6 +33,7 @@ from agentgit.core.management import (
 )
 from agentgit.core.models import parse_contract
 from agentgit.core.repair import NewRepairSearch
+from agentgit.core.repair_pools import NewRepairValidationSuite
 from agentgit.core.repair_studies import NewRepairStudy
 from agentgit.core.research import AgentConfig, BudgetLimits, ResearchGoal
 from agentgit.core.versions import NewBranch, parse_replay
@@ -247,6 +248,46 @@ def freeze_validator(
             FreezeValidator,
         )
         emit(service.freeze_validator(repository_id, payload, key))
+
+
+@app.command("repair-validation-suite")
+def repair_validation_suite(
+    repository_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """在筛选首次领取前预注册六次确认条件与四个固定回归任务。"""
+    with management(testing) as service:
+        with file.open("rb") as stream:
+            payload = stream.read(1_048_577)
+        if len(payload) > 1_048_576:
+            raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "确认池输入文件超过上限")
+        emit(
+            service.create_repair_validation_suite(
+                repository_id, parse_contract(payload, NewRepairValidationSuite), key
+            )
+        )
+
+
+@app.command("repair-validation-open")
+def repair_validation_open(
+    repository_id: UUID,
+    study_id: UUID,
+    suite_id: UUID,
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """最终候选锁后一次性开启固定池，不执行模型或工具。"""
+    with management(testing) as service:
+        emit(service.open_repair_validation(repository_id, study_id, suite_id, key))
+
+
+@app.command("repair-validation-status")
+def repair_validation_status(repository_id: UUID, study_id: UUID, testing: bool = False) -> None:
+    """读取冻结计划；未执行的采样票据不能当作通过证据。"""
+    with management(testing) as service:
+        emit(service.repair_validation(repository_id, study_id))
 
 
 @app.command("repair-reduce")

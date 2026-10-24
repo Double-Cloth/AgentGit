@@ -6,7 +6,7 @@ S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命
 
 ## 环境
 
-S10 开发位于 `codex/s10-repair`，从 S9 本机后端退出提交 `fa37baf` 继续。[首增量](acceptance/S10-kernel.md)是纯删除与确认协议；[第二增量](acceptance/S10-reduction.md)已接入耐久缩减、原搜索共享预算、实际 Live/Hybrid 删除 Job、物理结算和候选锁。测试命令为 `uv run --locked pytest tests/unit` 及 `uv run --locked pytest tests/integration/test_repair_studies.py tests/integration/test_repair_study_boundaries.py`。确认池唯一开启、六加四实际试验、审批、Repair Lab 与评估尚待接入；纯协议 UUID 仍不能当成数据库 Run 或实测费用。
+S10 开发位于 `codex/s10-repair`，从 S9 本机后端退出提交 `fa37baf` 继续。[首增量](acceptance/S10-kernel.md)是纯删除与确认协议；[第二增量](acceptance/S10-reduction.md)接入耐久缩减、原搜索共享预算、实际 Live/Hybrid 删除 Job、物理结算和候选锁；[第三增量](acceptance/S10-pools.md)接入筛选前采样条件预注册及锁后一次性开启。测试命令为 `uv run --locked pytest tests/unit`，真实新边界为 `uv run --locked pytest tests/integration/test_repair_pools.py tests/integration/test_repair_pool_registration.py`，旧缩减回归为 `uv run --locked pytest tests/integration/test_repair_studies.py tests/integration/test_repair_study_boundaries.py`。采样票据仅冻结调用条件，实际六加四试验、审批、Repair Lab 与评估继续接入；未执行票据及纯协议 UUID 不能当作实际 Run 或实测费用。
 
 S9 开发位于 `codex/s9-repair`；[有限模板、顺序枚举、预算契约及持久意图](S9-repair-plan.md)已经建立。`0017_repair_search_ledger` 保存冻结搜索、编排租约、全部提案、试验意图、Job 归属、结算及审计；`0018_repair_dispatch_control` 保存未决标记并约束派发。Recorded/Live/Hybrid 通道与物理结算见[派发验收](acceptance/S9-trial-dispatch.md)，后续[自动搜索循环、模板 API/CLI 和新版 Mock 预算](acceptance/S9-search-loop.md)已经核对。`repair-worker` 只编排，研究 Job 由另一个 `worker` 执行；入口示例见 [API.md](API.md#有界修复搜索s9)。本轮仅在独立测试 schema 迁移/回退，不自动修改业务库，尚无本轮新桌面包。真实 Run 执行期间不得修改 `src/agentgit/**/*.py/.json` 与 `uv.lock`，这些字节全部参与冻结环境摘要；先结束所有相关试验再继续源码变更。
 
@@ -83,7 +83,7 @@ CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障�
 
 ## S3 离线研究演示
 
-S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 Schema head 为 `0019_repair_reduction_studies`。S10 八张缩减控制/证据表只在独立测试 Schema 验证，没有迁移业务库。用户自行准备业务环境后再运行：
+S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 Schema head 为 `0020_repair_validation_pools`。S10 八张缩减控制/证据表及三张预注册/开启表只在独立测试 Schema 验证，没有迁移业务库。用户自行准备业务环境后再运行：
 
 ```powershell
 uv run --locked alembic upgrade head
