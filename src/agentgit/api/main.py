@@ -20,6 +20,7 @@ from agentgit import __version__
 from agentgit.api.security import LocalBoundary, RequestStats, error_response
 from agentgit.config import Settings
 from agentgit.core.canonical import encode
+from agentgit.core.debug_reports import NewDebugReport
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.experiments import FreezeValidator, NewExperiment
 from agentgit.core.interventions import NewIntervention
@@ -341,6 +342,35 @@ def create_app(
         service: Annotated[ManagementService, Depends(get_manager)],
     ) -> dict[str, Any]:
         return service.behavioral_diff(repo, left_run_id, right_run_id)
+
+    @app.post("/debug-reports", status_code=201)
+    def create_debug_report(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_debug_report(repo, parse_contract(encode(body), NewDebugReport), key)
+
+    @app.get("/debug-reports/{report_id}")
+    def debug_report(
+        report_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.debug_report(repo, report_id)
+
+    @app.get("/repositories/{repository_id}/debug-reports")
+    def debug_reports_list(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "报告项目不可访问")
+        return service.debug_reports_list(repo, after_id=after_id, limit=limit)
 
     @app.post("/tasks", status_code=201)
     def task(

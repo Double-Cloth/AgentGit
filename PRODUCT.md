@@ -40,7 +40,7 @@ web
 - 无外部模型密钥、无外网时离线 Demo 和确定性测试必须可用。S6 已接入固定 OpenAI Responses 模型，Runs/Live 显式选择并输入 USD 上限，Timeline 区分价格表估计、预留、历史逻辑和本次实际用量。密钥只在独立 Worker；真实供应商冒烟需明确开启、单列实际结果，不成为离线隐含条件。
 - S7 后端已提供冻结验收器、A/B Live/Hybrid 实验、持久 Job/Run 和 API/CLI，以及[类型化干预与只读上下文](doc/acceptance/S7-interventions.md)。Hybrid 已接入 Worker、不可变观测账本、实际/逻辑计量、恢复与 Recorded 复验；synthetic 与模拟结果显式标为 test_only。[精确统计](doc/acceptance/S7-statistics.md)和[桌面受控实验视图](doc/acceptance/S7-desktop.md)已实现并进入 [Windows 0.1.4](doc/acceptance/S7-package-014.md)。新 ZIP 中的真实 Live 10 trial 得到 9 通过及 1 取消，Hybrid 各 5 项全部通过，录制/合成来源、原键确认及重开查询均实测。[S7 本机退出核对](doc/acceptance/S7-gates.md)齐备，S6/D1 前置待补，S7 未整体验收。
 
-S8 已提供只读行为图、依赖对齐及 API/CLI 的事件引用、边依据、歧义和缺证据结果；参见 [S8 方案](doc/S8-diagnosis-plan.md)。[20 个故障规格及 12/8 划分](tests/fixtures/diagnosis/v1/README.md)已在排序实现前冻结，20 对真实研究 Run 和离线证据包通过构造验证；全部拟议标签仍[待人工审阅](doc/S8-dataset-review.md)。首个可见分歧不代表根因，候选排序、完整定位评估、受控干预、Debug Report 与桌面视图仍待完成，不宣告 S8 或 D2 验收。
+S8 已提供行为图、依赖对齐、失败硬断言及[不可变静态 Debug Report](doc/acceptance/S8-static-reports.md)，API/CLI 支持创建、读取与元数据发现，候选与异常观测分开，未运行干预时保持 static_only。[20 个故障规格及 12/8 划分](tests/fixtures/diagnosis/v1/README.md)先于排序实现冻结；[初始规则与实现](doc/acceptance/S8-static-rules-v1.json)也已在保留集排序评估前绑定，全部拟议标签仍[待人工审阅](doc/S8-dataset-review.md)。首个可见分歧与静态排名不代表根因，完整定位评估、受控干预及桌面视图仍待完成，不宣告 S8 或 D2 验收。
 
 ## Brand Commitments
 

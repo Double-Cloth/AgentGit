@@ -19,6 +19,7 @@ from agentgit import __version__
 from agentgit.adapters.execution.policy import bundled_policy
 from agentgit.config import Settings
 from agentgit.core.canonical import decode, encode
+from agentgit.core.debug_reports import NewDebugReport
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.experiments import FreezeValidator, NewExperiment
 from agentgit.core.interventions import NewIntervention
@@ -392,6 +393,30 @@ def behavioral_diff(
     """按逻辑身份与已核验依赖对齐两个 Run，不执行干预或判断根因。"""
     with management(testing) as service:
         emit(service.behavioral_diff(repository_id, left_run_id, right_run_id))
+
+
+@app.command("debug-report")
+def create_debug_report(
+    repository_id: UUID,
+    failed_run_id: UUID,
+    reference_run_id: UUID | None = None,
+    key: str = typer.Option(...),
+    testing: bool = False,
+) -> None:
+    """冻结失败硬断言、完整静态候选及证据，不执行干预。"""
+    with management(testing) as service:
+        request = NewDebugReport(
+            failed_run_id=str(failed_run_id),
+            reference_run_id=str(reference_run_id) if reference_run_id else None,
+        )
+        emit(service.create_debug_report(repository_id, request, key))
+
+
+@app.command("debug-report-status")
+def debug_report_status(repository_id: UUID, report_id: UUID, testing: bool = False) -> None:
+    """读取已冻结的历史报告，不按当前规则重新定位或重新执行。"""
+    with management(testing) as service:
+        emit(service.debug_report(repository_id, report_id))
 
 
 @app.command("run")

@@ -12,7 +12,7 @@
 | S5 | 已验收（本机） | [S5.md](acceptance/S5.md)：T01–T09 核对；599 项由三个不重叠组全部覆盖，无失败/跳过；实际 CLI 五工具→Recorded→复合 Recorded→A/B Live→Diff 通过；来源不变，4 个容器独立且清理确认 |
 | S6 | 实施中，未验收 | [0.1.3 历史 T01–T12 核对](acceptance/S6-keyboard-and-gates.md)保留 MSIX 安装生命周期等证据；当前候选为 [0.1.4](acceptance/S7-package-014.md)，本轮仅构建/审计/便携运行，未重做安装/升级/卸载。[D1 指南](D1-desktop-demo.md)和[独立 Windows 清单](S6-windows-acceptance.md)绑定新摘要。原生保存、独立用户/原生 DPI/禁止外网及真实依赖缺失交叉复核待补；真实供应商冒烟未运行 |
 | S7 | 本机功能核对通过，前置待补 | 冻结验收器、实验/干预、Hybrid、精确统计、桌面及 [0.1.4 Windows 包](acceptance/S7-package-014.md)已实现；[T01–T06 与实施交付/退出矩阵](acceptance/S7-gates.md)齐备。后端最新 497 项定向回归、当前 26 桌面单元和 8 条打包 Electron 流程分别记录，不累加此前 764 项历史结果。新 ZIP 的 Live 10 trial 为 9 通过/1 取消，Hybrid 各 5 全通过，来源不变、40 容器执行清理、原键重试与重开无 POST 已核对。S6/D1 原生/环境前置仍待补，S7 不标整体验收或合并 main |
-| S8 | 实施中，未验收 | [只读基础](acceptance/S8-behavioral-foundation.md)已实现行为图、对齐、API/CLI。新增[20 例冻结构造与证据包](acceptance/S8-dataset.md)：12/8 划分及注入器在排序前冻结，32 项最终检查通过；20 对成功/故障 Run 齐全，拟议标签待人工审阅。按[方案](S8-diagnosis-plan.md)继续候选排序、完整评估、干预、Debug Report 和桌面，不能算作 D2 |
+| S8 | 实施中，未验收 | [行为基础](acceptance/S8-behavioral-foundation.md)、[20 例冻结构造与证据包](acceptance/S8-dataset.md)及[静态候选/不可变报告](acceptance/S8-static-reports.md)已接通。新报告组 543、30、1 项分批通过，去重 546；规则在保留集排序评估前绑定，API/CLI、硬断言、历史读取与迁移通过。人工标注、完整 20 例定位/时间基线评估、受控干预与桌面仍待完成，不能算作 D2 |
 | S9–S10 | 未开始 | 后续完成有界修复搜索、缩减和独立复测；不能提前算作已交付 |
 | S11 | 必选，未开始 | D2 后完成三方产物/结构化状态合并、桌面 Merge Review 及验收，再进入 S12 |
 | S12-A/B/C/D | 必选，未开始 | S11 及四项适配全部验收、最终桌面包验证后才达到 D3 |

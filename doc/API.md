@@ -1,6 +1,6 @@
-# 本地服务与 CLI（S4–S8 只读基础）
+# 本地服务与 CLI（S4–S8 静态报告）
 
-当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0015_hybrid_observations`；桌面不会自动迁移后端。
+当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0016_static_debug_reports`；桌面不会自动迁移后端。
 
 ## CLI 离线流程
 
@@ -91,6 +91,9 @@ serve 只监听 127.0.0.1。Origin 默认允许 http://127.0.0.1:8000、http://l
 | GET /diff | left_commit、right_commit、after≥0、limit=1..1000 | common_ancestor（可为 null）、字段/产物/调用变化、total_changes、next_after、has_more |
 | GET /runs/{id}/behavioral-trace | Run UUID、项目头 | 当前 Run 的有界事件 DAG、精确事件引用、依赖依据与证据缺口，只读 |
 | GET /behavioral-diff | left_run_id、right_run_id 为 UUID，项目头 | 两侧已核验 DAG、共同祖先、对齐/变化/单侧事件、歧义及首个可见分歧前沿 |
+| POST /debug-reports | failed_run_id、可选 reference_run_id，项目头与幂等键 | 201，debug_report_id/report_ref/mode=static_only；冻结硬断言、候选与证据，不执行干预 |
+| GET /debug-reports/{id} | 报告 UUID、项目头 | 不可变报告、操作者与创建时间；读取不使用当前规则重新定位 |
+| GET /repositories/{id}/debug-reports | after_id、limit=30（1–100），路径与项目头一致 | 报告元数据发现，按 UUID 升序；游标须属本项目，不读取 CAS 或重新验收 |
 | POST /agents | config 可省略、expected_version | 201，不可变 config_id、递增 version |
 | POST /tasks | config_id、config_version、goal、expected_version=0 | 201，task_id |
 | POST /tasks/{id}/runs | config_version、expected_branch_version、expected_head；branch_name 默认 main；budget 可省略 | 202，耐久 job_id/run_id |
@@ -124,7 +127,26 @@ uv run --locked agentgit behavioral-diff $repo.repository_id $leftRunId $rightRu
 
 对齐先要求共同版本祖先，再使用 logical step、调用身份、签名、规范请求和已对齐的依赖上下文。重复身份无法唯一识别时保留 `ambiguities`；无共同祖先返回 `no_shared_ancestor`。结果中的 `first_left/first_right` 是已观察 DAG 上的最小差异前沿，可包含并列事件；它们不是根因。缺失已归属的事件正文或观测标为缺口/未核验，未提交、截断、未知结果也不计作完整证据；对象损坏、无归属或跨项目引用直接拒绝。
 
-每侧最多 10,000 个事件、30,000 条去重边/缺口，当前 Run 内容缓存读取累计最多 64 MiB，单图和合并报告各最多 8 MiB；版本祖先核验另受既有 10,000 层限制及单对象读取上限约束。重复对齐候选最多比较 200,000 次，超过限制返回 `output_limit`，不输出一个伪装完整的前缀。暂不提供分页；该接口未接入候选排序、20 例评估、干预效果或 Debug Report 创建，详见 [S8 方案](S8-diagnosis-plan.md)。
+每侧最多 10,000 个事件、30,000 条去重边/缺口，当前 Run 内容缓存读取累计最多 64 MiB，单图和合并报告各最多 8 MiB；版本祖先核验另受既有 10,000 层限制及单对象读取上限约束。重复对齐候选最多比较 200,000 次，超过限制返回 `output_limit`，不输出一个伪装完整的前缀。行为轨迹和对齐暂不提供分页；静态候选通过下面的 Debug Report 创建读取，20 例定位评估和干预效果仍待完成，详见 [S8 方案](S8-diagnosis-plan.md)。
+
+### 静态 Debug Report
+
+已有失败 Run 时可省略参考；提供参考时必须是同项目、硬验收通过的已完成研究 Run：
+
+```powershell
+$report = uv run --locked agentgit debug-report $repo.repository_id $failedRunId --reference-run-id $successRunId --key debug-001 | ConvertFrom-Json
+uv run --locked agentgit debug-report-status $repo.repository_id $report.debug_report_id
+```
+
+省略 `--reference-run-id` 仍会沿失败断言依赖生成静态候选。POST 只接收 `schema_version=1/failed_run_id/reference_run_id`，不接受样例 ID、gold、自报硬断言、根因分数、效果或权限补丁。`static_debug_reports` 能力标识表示这组后端入口可用，不表示 S8 整体或桌面已经验收。
+
+硬断言由失败终态快照与对应已提交事件交叉核验，区分固定研究验收器的错误和 Runtime 停止码。未完成、没有硬断言或没有可核验失败依赖路径时返回 `insufficient_evidence`，保留完整回退候选，不冒称已定位。成功运行不能冒充失败输入。缺失已归属的轨迹正文会降低完整性；关键头快照、无归属、跨项目或损坏对象直接拒绝。
+
+候选识别已接受的计划、已接受的工具决策及未关联接受事件的模型输出。工具输入/观测异常单列 `observed_anomalies`，最终只触发硬验收的输出另列 `excluded_terminal_outputs`。特征依次为失败路径、报告角色、到失败的距离、到首个可见分歧的距离、不确定项数；规则摘要与生成代码版本一并冻结。相同特征保留同一竞争排名及 `tied_count`，不会按事件 ID 或时间打破并列。完整候选不按 Top-k 截断，超过输出上限拒绝创建。
+
+报告始终 `mode=static_only/intervention_status=not_run/intervention_improvement=null`。接受某个决策不证明它能被当前操作修复；特别是冻结语料自身过期或来自未来时，保持输入和验收规则不变可能不存在可行补丁，须在后续实验中如实记录。报告包含两侧捕获的 DAG、比较、环境差异字段和限制；`complete_evidence` 指捕获时的证据范围，不等于根因确定、修复成功或未来源对象永远可用。
+
+报告索引、CAS 归属、幂等响应原子发布，重复同键同参返回原 ID；GET 不重新运行定位、模型、工具、容器或 Worker，元数据列表也不重新读取报告内容。用户历史、源分支和任务不因报告创建改变。此增量需要显式迁移到 `0016_static_debug_reports`；本轮自动测试只迁移独立测试 schema，没有自动修改业务库，当前 0.1.4 桌面包尚无报告视图或桥接。
 
 ## S5 分支、历史与差异
 

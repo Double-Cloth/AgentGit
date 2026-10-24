@@ -13,6 +13,7 @@ from agentgit import __version__
 from agentgit.adapters.execution.policy import bundled_policy
 from agentgit.config import Settings
 from agentgit.core.canonical import ObjectType, encode, object_digest
+from agentgit.core.debug_reports import NewDebugReport
 from agentgit.core.effects import ToolPolicy
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.experiments import FreezeValidator, NewExperiment
@@ -31,6 +32,7 @@ from agentgit.core.research import AgentConfig, AgentState, BudgetUsage
 from agentgit.core.versions import LiveReplay, NewBranch, RecordedRange, RecordedReplay
 from agentgit.runtime.model_budget import call_budget
 from agentgit.services.approvals import ApprovalService
+from agentgit.services.debug_reports import DebugReportService
 from agentgit.services.diagnosis import BehaviorService
 from agentgit.services.execution_views import ExecutionResource, ExecutionViewService
 from agentgit.services.experiments import ExperimentService
@@ -66,6 +68,7 @@ class ManagementService:
         self.replays = ReplayService(research)
         self.inspection = InspectionService(self.history)
         self.behavior = BehaviorService(self.history)
+        self.debug_reports = DebugReportService(self.history)
         self.execution_views = ExecutionViewService(self.history)
         self.experiments = ExperimentService(research)
 
@@ -217,6 +220,7 @@ class ManagementService:
                 "hybrid_observations",
                 "typed_interventions",
                 "experiment_statistics",
+                "static_debug_reports",
             ],
             "worker": {"status": "unknown", "reason": "no_readiness_probe"},
             "execution_environment": {"status": "unknown", "reason": "policy_is_not_readiness"},
@@ -319,6 +323,27 @@ class ManagementService:
 
     def behavioral_trace(self, repository_id: UUID, run_id: UUID) -> dict[str, Any]:
         return self.behavior.trace(repository_id, run_id).model_dump(mode="json")
+
+    def create_debug_report(
+        self, repository_id: UUID, payload: NewDebugReport, key: str
+    ) -> dict[str, Any]:
+        return self._mutate(
+            "POST /debug-reports",
+            key,
+            repository_id,
+            payload.model_dump(mode="json"),
+            lambda connection: self.debug_reports.create(
+                repository_id, payload, self.actor, connection
+            ),
+        )
+
+    def debug_report(self, repository_id: UUID, identity: UUID) -> dict[str, Any]:
+        return self.debug_reports.get(repository_id, identity)
+
+    def debug_reports_list(
+        self, repository_id: UUID, *, after_id: UUID | None = None, limit: int = 30
+    ) -> dict[str, Any]:
+        return self.debug_reports.listing(repository_id, after_id=after_id, limit=limit)
 
     def behavioral_diff(self, repository_id: UUID, left: UUID, right: UUID) -> dict[str, Any]:
         return self.behavior.compare(repository_id, left, right)
