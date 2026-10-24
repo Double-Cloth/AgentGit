@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_heldout_evaluation",
+  "frozen_at_utc": "2026-10-24T00:40:09+00:00",
+  "rules_file": "doc/acceptance/S8-static-rules-v1-storage-2.json",
+  "rules_file_sha256": "7f107f762d803a31f1edfbd56a0afd19aa8a895e6963c4309de23bf87d3c736b",
+  "input_summary_file": ".agentgit/evidence/S8-dataset-v1-summary.json",
+  "input_summary_sha256": "8ae0dd3a2291c0aa88b3c9f081b59c8ed7ecc600383289b3a27af153c575896c",
+  "implementation_sha256": {
+    "tests/integration/diagnosis_evaluation.py": "65ed6c6989457039a8e006f9becb145375ecceb686ab7e93c1ac413382a117ea",
+    "tests/integration/evaluate_diagnosis.py": "da6a33b4f1fd6d3c1ac72410f49e32c7cd5fd7e237ea31b2155ca468a264d11d",
+    "tests/integration/diagnosis_evidence.py": "62b25be5c5d021e209f02ffcbcfbb53b719bafb3db04b305b75c9c3d6e8a314e",
+    "tests/integration/diagnosis_dataset.py": "ec9d9d3c4cb753cf98563f261b135b4de9f50df137891906c2f44eab94b9d6ce"
+  },
+  "primary_metric": "injection_point_exact_event_top3_with_reference",
+  "heldout_target": {
+    "minimum": 6,
+    "denominator": 8,
+    "must_not_be_below_time_baseline": true
+  },
+  "other_metrics": [
+    "注入点 Top-1/Top-3",
+    "首个可见异常精确 Top-k 与观测覆盖",
+    "拟修复决策精确 Top-k",
+    "未定位和每例错误",
+    "距离搜索出队节点数/边检查数",
+    "模型/工具/供应商调用及费用范围",
+    "实际分析耗时"
+  ],
+  "tie_policy": "只有并列组全部落在 Top-k 内才确定命中；跨边界并列计未确定，另报歧义数。",
+  "missing_policy": "全部 20 例保留在分母；缺证据/不支持事件目标/未定位不算命中，缺步骤保留未知。",
+  "baseline": "首个显式错误或失败验收事件，按 recorded_at 排序，同刻按本 Run 的 seq；不使用 gold 选择预测。",
+  "annotation_status": "agent_proposed_pending_human",
+  "formal_s8_t04_passed": false,
+  "formal_s8_t05_passed": false,
+  "change_policy": "冻结后不得根据保留集结果调参、换指标或补选成功案例；变化须新版本及适用的新保留集。"
+}

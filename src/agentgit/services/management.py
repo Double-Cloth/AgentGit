@@ -327,13 +327,22 @@ class ManagementService:
     def create_debug_report(
         self, repository_id: UUID, payload: NewDebugReport, key: str
     ) -> dict[str, Any]:
+        route = "POST /debug-reports"
+        body = payload.model_dump(mode="json")
+        digest = self._mutation_digest(key, repository_id, body)
+        with self.history.engine.connect() as connection:
+            cached = self._cached_response(connection, route, key, repository_id, digest)
+        if cached is not None:
+            return cached
+        # 编译只读且有界，不持有发布事务的连接；并发编译可重复，发布仍由幂等锁串行确认。
+        report = self.debug_reports.compile(repository_id, payload)
         return self._mutate(
-            "POST /debug-reports",
+            route,
             key,
             repository_id,
-            payload.model_dump(mode="json"),
-            lambda connection: self.debug_reports.create(
-                repository_id, payload, self.actor, connection
+            body,
+            lambda connection: self.debug_reports.store(
+                repository_id, report, self.actor, connection
             ),
         )
 
@@ -364,6 +373,50 @@ class ManagementService:
         )
         return cls(ResearchService(history, root), actor=settings.operator_id)
 
+    @staticmethod
+    def _mutation_digest(
+        key: str,
+        repository_id: UUID | None,
+        payload: dict[str, Any],
+    ) -> str:
+        if not key or len(key) > 200:
+            raise AgentGitError(ErrorCode.VALIDATION, "需要有界、非空的幂等键")
+        return object_digest(
+            ObjectType.BLOB,
+            encode(
+                {"repository_id": str(repository_id) if repository_id else None, "body": payload}
+            ),
+        )
+
+    def _cached_response(
+        self,
+        connection: Connection,
+        route: str,
+        key: str,
+        repository_id: UUID | None,
+        digest: str,
+    ) -> dict[str, Any] | None:
+        table = TABLES["idempotency_keys"]
+        cached = (
+            connection.execute(
+                sa.select(table).where(
+                    table.c.actor == self.actor, table.c.route == route, table.c.key == key
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if cached is None:
+            return None
+        if cached["request_digest"] != digest or (
+            repository_id is not None and cached["repository_id"] != repository_id
+        ):
+            raise AgentGitError(ErrorCode.VERSION_CONFLICT, "同一幂等键不能用于不同请求")
+        saved = self.history.objects.get_json(cached["result_ref"], ObjectType.BLOB)
+        if not isinstance(saved, dict):
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "幂等响应格式无效")
+        return saved
+
     def _mutate(
         self,
         route: str,
@@ -372,38 +425,16 @@ class ManagementService:
         payload: dict[str, Any],
         action: Callable[[Connection], dict[str, Any]],
     ) -> dict[str, Any]:
-        if not key or len(key) > 200:
-            raise AgentGitError(ErrorCode.VALIDATION, "需要有界、非空的幂等键")
-        digest = object_digest(
-            ObjectType.BLOB,
-            encode(
-                {"repository_id": str(repository_id) if repository_id else None, "body": payload}
-            ),
-        )
+        digest = self._mutation_digest(key, repository_id, payload)
         table = TABLES["idempotency_keys"]
         with self.history.engine.begin() as connection:
             scope = encode([self.actor, route, key]).decode()
             connection.execute(
                 sa.select(sa.func.pg_advisory_xact_lock(sa.func.hashtextextended(scope, 0)))
             )
-            cached = (
-                connection.execute(
-                    sa.select(table).where(
-                        table.c.actor == self.actor, table.c.route == route, table.c.key == key
-                    )
-                )
-                .mappings()
-                .first()
-            )
+            cached = self._cached_response(connection, route, key, repository_id, digest)
             if cached is not None:
-                if cached["request_digest"] != digest or (
-                    repository_id is not None and cached["repository_id"] != repository_id
-                ):
-                    raise AgentGitError(ErrorCode.VERSION_CONFLICT, "同一幂等键不能用于不同请求")
-                saved = self.history.objects.get_json(cached["result_ref"], ObjectType.BLOB)
-                if not isinstance(saved, dict):
-                    raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "幂等响应格式无效")
-                return saved
+                return cached
             result: dict[str, Any] = public(action(connection))
             owner = repository_id or UUID(result["repository_id"])
             response = self.history.objects.put(ObjectType.BLOB, encode(result))

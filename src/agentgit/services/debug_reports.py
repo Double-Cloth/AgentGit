@@ -206,12 +206,13 @@ class DebugReportService:
             raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "定位报告超过输出上限，不能截断候选或证据")
         return report
 
-    def create(
-        self, repository: UUID, request: NewDebugReport, actor: str, connection: Connection
+    def store(
+        self, repository: UUID, report: DebugReport, actor: str, connection: Connection
     ) -> dict[str, Any]:
         if not actor or len(actor) > 200:
             raise AgentGitError(ErrorCode.VALIDATION, "定位报告必须记录有效操作者")
-        report = self.compile(repository, request)
+        if report.repository_id != str(repository):
+            raise AgentGitError(ErrorCode.NOT_FOUND, "待发布报告不属于当前项目")
         identity = uuid4()
         blob = self.history.objects.put(ObjectType.BLOB, encode(report.model_dump(mode="json")))
         self.history._ref(connection, repository, blob, "debug_report", str(identity), "report")
