@@ -119,6 +119,7 @@ class ReductionSummary(Contract):
         "eligible_deletions_remain",
         "declared_deletions_complete",
         "phase_trials",
+        "search_budget",
         "trial_budget",
         "unresolved_trial",
         "safety_violation",

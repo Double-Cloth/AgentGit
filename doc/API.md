@@ -1,6 +1,6 @@
-# 本地服务与 CLI（S4–S8 静态报告）
+# 本地服务与 CLI（S4–S10 耐久缩减）
 
-当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。先运行 `uv run --locked alembic upgrade head`，当前 head 为 `0016_static_debug_reports`；桌面不会自动迁移后端。
+当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。用户准备好业务环境后运行 `uv run --locked alembic upgrade head`，当前 head 为 `0019_repair_reduction_studies`；桌面不会自动迁移后端。
 
 ## CLI 离线流程
 
@@ -374,3 +374,28 @@ uv run --locked agentgit worker
 `repair-worker --once` 只推进一次编排；`worker --once` 执行一个研究 Job。查询展示 `trials` 的意图、Job/Run 归属、物理用量、未决项、冻结停止 `decision`（如有）及结果引用。Recorded 的 `chain_valid` 不等于任务通过；`needs_confirmation` 不等于 verified。只有非空声明空间每一提案都得到确定硬验收失败才返回 `no_solution_in_space`；预算停止保留剩余数量和未确认原因，执行异常不冒充确定无解。取消后不再扩展，已派发项由原 Worker 结算，未知项不自动重发。完整边界见 [S9 搜索记录](acceptance/S9-search-loop.md)。
 
 当前停止报告的 `decision.comparison` 冻结全部已探索候选的 trial/结果身份、安全和验收、补丁数、变更字节、实际计量与墙钟，按规定字典序排列；选中项必须是首个通过候选。旧报告没有比较表时返回 `null`，不补造历史结果。终态 `usage.elapsed_wall_ms` 取冻结决定或对应控制审计时刻，之后只读查询不再增长；活动任务仍按数据库时钟计入排队/重启/等待。逐项本机退出与安全拒绝审计见 [S9-gates.md](acceptance/S9-gates.md)。
+
+## 耐久逐补丁缩减（S10）
+
+`POST /repair-studies`（202）、`GET /repair-studies/{study_id}`、`POST /repair-studies/{study_id}/cancel` 复用原认证、项目头、幂等键和请求/输出上限。创建只接受 `schema_version=1`、`search_id` 及可选 `max_reduce_trials`。来源必须是同一代码下已排空封存的 S9 `needs_confirmation`；一个来源只能建立一个 study，次数覆盖只能收紧原 reduce 额度。没有接收候选正文、用户 verdict、费用或确认结果的入口。
+
+```json
+{"schema_version":1,"search_id":"<已封存 S9 搜索 UUID>"}
+```
+
+等价 CLI：
+
+```powershell
+$study = uv run --locked agentgit repair-reduce $repo.repository_id $search.search_id --key reduce-001 | ConvertFrom-Json
+uv run --locked agentgit repair-study-worker --repository-id $repo.repository_id
+# 在另一终端运行同代码、同配置的普通 worker，执行实际研究 Job。
+uv run --locked agentgit worker
+uv run --locked agentgit repair-study-status $repo.repository_id $study.study_id
+uv run --locked agentgit repair-study-cancel $repo.repository_id $study.study_id --key reduce-stop-001
+```
+
+两个 Worker 均可加 `--once`；仅运行控制器不会执行研究任务。HTTP 取消请求发送 JSON 空对象和 `Content-Type: application/json`；取消本身只请求停止扩展/子 Job，不伪造执行完成。
+
+查询返回冻结 manifest/state、逐删除 intent/dispatch/收据、待核对引用、共享总用量及 `final_lock`。未决 trial 仍占完整预留；用量包括原 S9 和本阶段实际调用，Mock 字节与供应商 Token 区分。墙钟从原搜索创建时起计算，候选锁定后仍计等待，原 S9 已封存的决定和查询不改写。新建代码版本不能继续旧 study。
+
+`awaiting_samples` 表示最终候选已经锁定，确认池尚未打开。当前未提供确认或批准 API，不能把这个状态当作 verified。完整 fixture 删除测试只支持所声明原子语法的 1-minimal；预算不足、未测和非确定结果保持未证明，字段缩减仍未运行。详细范围及真实证据见 [S10-reduction.md](acceptance/S10-reduction.md)。

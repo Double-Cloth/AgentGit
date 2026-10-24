@@ -33,9 +33,11 @@ from agentgit.core.management import (
 )
 from agentgit.core.models import parse_contract
 from agentgit.core.repair import NewRepairSearch
+from agentgit.core.repair_studies import NewRepairStudy
 from agentgit.core.research import AgentConfig, BudgetLimits, ResearchGoal
 from agentgit.core.versions import NewBranch, parse_replay
 from agentgit.diagnostics import sandbox_prerequisites
+from agentgit.repair.study_worker import RepairStudyWorker
 from agentgit.repair.worker import RepairSearchWorker
 from agentgit.services.management import ManagementService
 from agentgit.storage.database import probe_database
@@ -245,6 +247,75 @@ def freeze_validator(
             FreezeValidator,
         )
         emit(service.freeze_validator(repository_id, payload, key))
+
+
+@app.command("repair-reduce")
+def repair_reduce(
+    repository_id: UUID,
+    search_id: UUID,
+    key: Annotated[str, typer.Option()],
+    max_trials: int | None = typer.Option(None, min=0, max=100),
+    testing: bool = False,
+) -> None:
+    """从已封存的待确认筛选建立唯一后续缩减；沿用原搜索预算。"""
+    with management(testing) as service:
+        emit(
+            service.create_repair_study(
+                repository_id,
+                NewRepairStudy(search_id=str(search_id), max_reduce_trials=max_trials),
+                key,
+            )
+        )
+
+
+@app.command("repair-study-status")
+def repair_study_status(repository_id: UUID, study_id: UUID, testing: bool = False) -> None:
+    """读取共享预算、真实删除试验和最终候选锁。"""
+    with management(testing) as service:
+        emit(service.repair_study(repository_id, study_id))
+
+
+@app.command("repair-study-cancel")
+def repair_study_cancel(
+    repository_id: UUID, study_id: UUID, key: Annotated[str, typer.Option()], testing: bool = False
+) -> None:
+    """停止新删除，向已派发研究 Job 传递取消。"""
+    with management(testing) as service:
+        emit(service.cancel_repair_study(repository_id, study_id, key))
+
+
+@app.command("repair-study-worker")
+def repair_study_worker(
+    once: bool = False,
+    repository_id: UUID | None = None,
+    poll_ms: int = typer.Option(1000, min=100, max=60000),
+    testing: bool = False,
+) -> None:
+    """独立推进耐久缩减；普通 worker 执行实际研究任务。"""
+    with management(testing) as service:
+        runner, previous = RepairStudyWorker(service.research), None
+        try:
+            while True:
+                result = runner.run_once(repository=repository_id)
+                summary: dict[str, Any] = (
+                    {k: result[k] for k in ("study_id", "status", "stop_reason", "usage")}
+                    if result
+                    else {"status": "idle"}
+                )
+                progress = {
+                    **summary,
+                    "usage": {
+                        k: v for k, v in summary.get("usage", {}).items() if k != "elapsed_wall_ms"
+                    },
+                }
+                if once or (result is not None and progress != previous):
+                    emit(summary)
+                previous = progress
+                if once:
+                    return
+                Event().wait(poll_ms / 1000)
+        except KeyboardInterrupt:
+            emit({"status": "repair_study_worker_stopped"})
 
 
 @app.command("repair-search")

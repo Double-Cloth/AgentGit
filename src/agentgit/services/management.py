@@ -29,6 +29,7 @@ from agentgit.core.management import (
 from agentgit.core.model_usage import OpenAIOptions, price_micro_usd
 from agentgit.core.models import CallIntent, parse_contract
 from agentgit.core.repair import NewRepairSearch
+from agentgit.core.repair_studies import NewRepairStudy
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage
 from agentgit.core.versions import LiveReplay, NewBranch, RecordedRange, RecordedReplay
 from agentgit.runtime.model_budget import call_budget
@@ -43,6 +44,7 @@ from agentgit.services.inspection import InspectionService
 from agentgit.services.jobs import JobService
 from agentgit.services.repair_jobs import RepairJobService
 from agentgit.services.repair_searches import RepairSearchService
+from agentgit.services.repair_studies import RepairStudyService
 from agentgit.services.repair_templates import prepare_templates
 from agentgit.services.replays import ReplayService
 from agentgit.services.research import ResearchService
@@ -116,6 +118,27 @@ class ManagementService:
 
     def repair_search(self, repository_id: UUID, search_id: UUID) -> dict[str, Any]:
         return RepairJobService(self.history).view(repository_id, search_id)
+
+    def create_repair_study(
+        self, repository_id: UUID, payload: NewRepairStudy, key: str
+    ) -> dict[str, Any]:
+        return RepairStudyService(self.history).submit(
+            repository_id, payload, actor=self.actor, key=key
+        )
+
+    def repair_study(self, repository_id: UUID, study_id: UUID) -> dict[str, Any]:
+        return RepairStudyService(self.history).view(repository_id, study_id)
+
+    def cancel_repair_study(self, repository_id: UUID, study_id: UUID, key: str) -> dict[str, Any]:
+        return self._mutate(
+            f"POST /repair-studies/{study_id}/cancel",
+            key,
+            repository_id,
+            {"study_id": str(study_id)},
+            lambda connection: RepairStudyService(self.history).cancel(
+                repository_id, study_id, actor=self.actor, connection=connection
+            ),
+        )
 
     def repair_searches(
         self,

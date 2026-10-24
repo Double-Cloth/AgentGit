@@ -102,9 +102,29 @@ def register_inputs(
     policy_ref: str,
     *,
     repair_proposal_id: UUID | None = None,
+    repair_reduction_trial_id: UUID | None = None,
 ) -> None:
     refs = TABLES["object_refs"]
     ownership = sa.and_(refs.c.owner_type == "experiment", refs.c.role.like("hybrid:%"))
+    if repair_proposal_id is not None and repair_reduction_trial_id is not None:
+        raise AgentGitError(ErrorCode.VALIDATION, "Hybrid 输入不能同时属于不同试验")
+    if repair_reduction_trial_id is not None:
+        trials = TABLES["repair_reduction_trials"]
+        if (
+            connection.execute(
+                sa.select(trials.c.id).where(
+                    trials.c.repository_id == repository,
+                    trials.c.id == repair_reduction_trial_id,
+                )
+            ).first()
+            is None
+        ):
+            raise AgentGitError(ErrorCode.NOT_FOUND, "Hybrid 缩减意图不可访问")
+        ownership = sa.and_(
+            refs.c.owner_type == "repair_reduction_trial",
+            refs.c.owner_id == str(repair_reduction_trial_id),
+            refs.c.role == "hybrid",
+        )
     if repair_proposal_id is not None:
         proposals = TABLES["repair_proposals"]
         if (

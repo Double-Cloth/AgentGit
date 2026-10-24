@@ -1,6 +1,7 @@
 """重算不可变删除轨迹；成功删除后重启本轮，旧失败不能证明新集合必要性。"""
 
 from agentgit.core.errors import AgentGitError, ErrorCode
+from agentgit.core.repair import BudgetDecision
 from agentgit.core.repair_validation import (
     DeletionRequest,
     DeletionStep,
@@ -98,7 +99,13 @@ def record_deletion(state: ReductionState, evidence: ValidationTrialEvidence) ->
     return updated
 
 
-def summarize_reduction(state: ReductionState) -> ReductionSummary:
+def summarize_reduction(
+    state: ReductionState, *, budget_stop: BudgetDecision | None = None
+) -> ReductionSummary:
+    if budget_stop is not None and (
+        budget_stop.allowed or budget_stop.reason in ("concurrency", "available")
+    ):
+        raise AgentGitError(ErrorCode.VALIDATION, "只有确定的预算拒绝才能提前封存缩减")
     current, tested, halted = _replay(state)
     remaining = tuple(atom.patch_ref for atom in current.atoms if atom.patch_ref not in tested)
     indeterminate = tuple(
@@ -120,11 +127,15 @@ def summarize_reduction(state: ReductionState) -> ReductionSummary:
         status, reason = "needs_review", "indeterminate_deletions"
     elif remaining:
         status, reason = (
-            ("budget_exhausted", "phase_trials")
-            if len(state.steps) >= state.max_trials
+            ("budget_exhausted", "search_budget")
+            if budget_stop is not None
             else (
-                "running",
-                "eligible_deletions_remain",
+                ("budget_exhausted", "phase_trials")
+                if len(state.steps) >= state.max_trials
+                else (
+                    "running",
+                    "eligible_deletions_remain",
+                )
             )
         )
     else:
@@ -154,8 +165,13 @@ def summarize_reduction(state: ReductionState) -> ReductionSummary:
     )
 
 
-def lock_reduced_candidate(state: ReductionState, *, selection_event_ref: str) -> FinalRepairLock:
-    summary = summarize_reduction(state)
+def lock_reduced_candidate(
+    state: ReductionState,
+    *,
+    selection_event_ref: str,
+    budget_stop: BudgetDecision | None = None,
+) -> FinalRepairLock:
+    summary = summarize_reduction(state, budget_stop=budget_stop)
     if summary.status == "running":
         raise AgentGitError(ErrorCode.VALIDATION, "还有可执行删除测试，尚未锁定最终候选")
     if summary.safety_violations:

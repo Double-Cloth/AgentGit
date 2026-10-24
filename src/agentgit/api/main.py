@@ -34,6 +34,7 @@ from agentgit.core.management import (
 )
 from agentgit.core.models import parse_contract
 from agentgit.core.repair import NewRepairSearch
+from agentgit.core.repair_studies import NewRepairStudy
 from agentgit.core.versions import NewBranch, parse_replay
 from agentgit.services.execution_views import ExecutionResource
 from agentgit.services.management import ManagementService
@@ -226,6 +227,32 @@ def create_app(
         service: Annotated[ManagementService, Depends(get_manager)],
     ) -> dict[str, Any]:
         return service.validator(repo, validator_ref)
+
+    @app.post("/repair-studies", status_code=202)
+    def repair_study_create(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_repair_study(repo, parse_contract(encode(body), NewRepairStudy), key)
+
+    @app.get("/repair-studies/{study_id}")
+    def repair_study_status(
+        study_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.repair_study(repo, study_id)
+
+    @app.post("/repair-studies/{study_id}/cancel")
+    def repair_study_cancel(
+        study_id: UUID,
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.cancel_repair_study(repo, study_id, key)
 
     @app.post("/repair-searches", status_code=202)
     def repair_search_create(
