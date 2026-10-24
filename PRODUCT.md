@@ -44,6 +44,8 @@ S8 已提供行为图、依赖对齐、失败硬断言及[不可变静态 Debug 
 
 S9 已提供[基础与台账](doc/S9-repair-plan.md)、[原子派发/结算](doc/acceptance/S9-trial-dispatch.md)、[自动搜索、模板 API/CLI 和 repair-worker](doc/acceptance/S9-search-loop.md)，完成[本机后端退出核对](doc/acceptance/S9-gates.md)。最新 569 单元 + 32 真实集成通过（不与历史重复累加）；五类安全拒绝均有关联审计且零新 trial，比较表完整保留失败/未知与实际成本，终态墙钟冻结。新 Mock 字节策略按预算摘要冻结、保护确认/回归额度；原生产 Mock 默认入口在两个 Prompt 失败后自动找到 Plan，总筛选 99,753 字节、最终试验 47,109 字节，来源不变。候选来源仍为完整有限模板降级，状态仅为待确认，不输出 verified 或最小性结论。[S10 实施计划](doc/S10-repair-plan.md)已建立；S6/D1 和 S8 待补项保持，尚无本轮桌面分发包，继续 S10–S12 的必选完整目标。
 
+S10 已实现[纯删除/独立确认协议](doc/acceptance/S10-kernel.md)，全部 629 单元通过，含 60 项新增。成功删除后重验、完整状态/计划绑定、响应样本角色隔离、5/6+4/4 门槛、Wilson 区间、已知计量/未知与观测补丁采纳限制已核对。测试使用合成协议事实，未执行 S10 实际独立 Job/Run，也未产生可采纳的稳定修复建议；任务层评估划分、耐久控制/共享预算、字段缩减、实际确认/回归、审批、Repair Lab、30 例/四基线和 D2 继续实施。
+
 ## Brand Commitments
 
 产品名称为 AgentGit。界面继承根目录 DESIGN.md 的视觉体系、允许的字体替代、组件和断点；不另外发明品牌配色或装饰体系。字体和其他资产须有授权并满足安装包离线使用要求；已取得本地 Inter、EB Garamond、JetBrains Mono 及 OFL，记录上游提交和摘要，没有把未提供的商业字体视为已具备。

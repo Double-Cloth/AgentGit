@@ -2,9 +2,11 @@
 
 实现进度与阶段证据见 [PROGRESS.md](PROGRESS.md)。README 保留项目介绍；方案和设计的 S0 描述是规划时的历史基线。
 
-S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命令、身份预置和字体授权见 [desktop/README.md](../desktop/README.md)。当前候选 [0.1.4 的本机证据](acceptance/S7-package-014.md)已归档，独立用户/原生专项仍未验收。用户已授权延后这些专项、先继续其他开发与本机验收；范围见实施方案第 1.2 节。
+S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命令、身份预置和字体授权见 [desktop/README.md](../desktop/README.md)。当前候选 [0.1.5 的本机证据](acceptance/S8-package-015.md)已归档，独立用户/原生专项仍未验收；新增 S9/S10 后端未进入该包。用户已授权延后这些专项、先继续其他开发与本机验收；范围见实施方案第 1.2 节。
 
 ## 环境
+
+S10 开发位于 `codex/s10-repair`，从 S9 本机后端退出提交 `fa37baf` 继续。[首增量](acceptance/S10-kernel.md)是纯删除与确认协议，不启动模型/工具或 Job；测试命令 `uv run --locked pytest tests/unit/test_repair_validation.py`。实际耐久执行、共享预算、确认池唯一开启、审批、Repair Lab 与评估尚待接入，不应把合成协议 UUID 当作数据库 Run 查询或把其计量当成实测费用。
 
 S9 开发位于 `codex/s9-repair`；[有限模板、顺序枚举、预算契约及持久意图](S9-repair-plan.md)已经建立。`0017_repair_search_ledger` 保存冻结搜索、编排租约、全部提案、试验意图、Job 归属、结算及审计；`0018_repair_dispatch_control` 保存未决标记并约束派发。Recorded/Live/Hybrid 通道与物理结算见[派发验收](acceptance/S9-trial-dispatch.md)，后续[自动搜索循环、模板 API/CLI 和新版 Mock 预算](acceptance/S9-search-loop.md)已经核对。`repair-worker` 只编排，研究 Job 由另一个 `worker` 执行；入口示例见 [API.md](API.md#有界修复搜索s9)。本轮仅在独立测试 schema 迁移/回退，不自动修改业务库，尚无本轮新桌面包。真实 Run 执行期间不得修改 `src/agentgit/**/*.py/.json` 与 `uv.lock`，这些字节全部参与冻结环境摘要；先结束所有相关试验再继续源码变更。
 
@@ -81,7 +83,7 @@ CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障�
 
 ## S3 离线研究演示
 
-S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 head 已推进至 `0015_hybrid_observations`。先升级开发库，再运行：
+S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 Schema head 为 `0018_repair_dispatch_control`，S10 纯协议增量未新增迁移。用户自行准备业务环境后再运行：
 
 ```powershell
 uv run --locked alembic upgrade head
