@@ -23,7 +23,7 @@ function Usage({ value }: { value: JsonObject }) {
 function Trials({ title, trials, open }: { title: string; trials: JsonObject[]; open: (id: string) => void }) {
   if (!trials.length) return null;
   return <section><h3>{title} · {trials.length} 项</h3><div className="table-scroll"><table><thead><tr><th>阶段 / 试验</th><th>结果</th><th>本次调用 / 费用</th><th>执行与证据</th></tr></thead><tbody>{trials.map((trial, index) => {
-    const result = object(trial.result), dispatch = object(trial.dispatch), usage = object(result.usage), run = str(result.current_run_id ?? dispatch.initial_run_id);
+    const envelope = object(trial.result), result = envelope.execution ? object(envelope.execution) : envelope, dispatch = object(trial.dispatch), usage = object(result.usage), run = str(result.current_run_id ?? dispatch.initial_run_id);
     return <tr key={str(trial.trial_id) || index}><td>{str(result.phase ?? trial.operation) || title}<br /><code>{short(trial.trial_id)}</code></td><td><Status value={result.verdict ?? trial.status} /><br />{str(result.category)}{result.test_only === true && <span> · test_only</span>}</td><td>{count(usage.model_calls)} / {money(usage.cost_micro_usd)}</td><td>{UUID.test(run) && <button onClick={() => open(run)}>查看执行</button>}<details><summary>试验收据与投影</summary><JsonView value={trial} /></details></td></tr>;
   })}</tbody></table></div></section>;
 }

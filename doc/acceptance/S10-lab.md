@@ -36,7 +36,7 @@
 
 原始操作和截图在忽略目录以 `S10-lab-native-v2.json`、`S10-lab-desktop-v2.png`、`S10-lab-narrow-v2.png` 独立保存。`S10-lab-summary-v2.json` 记录报告/源码/截图摘要、明确 fixture 范围、原键请求与版本竞争，以及失败探索；不将 UI fixture 的通过数计为研究成功率。运行数据不进入提交或安装包。
 
-继续独立 PostgreSQL/API/Worker 的真实 Electron 端到端流程，覆盖真实试验收据、字段/Plan 长内容、失败/未知/取消和既有候选交接；再进行包内复验。当前源码的 Repair Lab 未进入既有 0.1.5 候选，不将分开验证当作同一次真实完整链路。
+后续[真实设施联调](S10-lab-real.md)已在同一次 Electron/API/Worker/CAS 链路完成联合 Prompt/Plan、字段缩减、实际六加四、版本竞争和精确批准，且重开没有 POST；修正真实字段收据计量展示。该用例仍采用固定 Mock，未知/取消/观测等其余真实桌面边界、既有候选交接和包内复验继续。当前源码的 Repair Lab 未进入既有 0.1.5 候选；本页原先分开验证的历史范围不变。
 
 ```powershell
 uv run --locked pytest tests/unit tests/integration/test_repair_workflow.py

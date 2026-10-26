@@ -7,12 +7,12 @@ import type { JsonObject, Reply } from '../../src/shared/bridge';
 export const TOKEN = 'fixture-real-desktop-token-000000000000000000000';
 export function data<T>(reply: Reply<T>): T { if (!reply.ok) throw new Error(`${reply.error.code}: ${reply.error.message}`); return reply.data; }
 export function objects(value: unknown): JsonObject[] { return Array.isArray(value) ? value as JsonObject[] : []; }
-export async function startBackend() {
-  const child = spawn('uv', ['run', '--locked', 'python', 'desktop/tests/support/real_backend.py'], {
+export async function startBackend(kind: 'standard' | 'repair' = 'standard') {
+  const child = spawn('uv', ['run', '--locked', 'python', kind === 'repair' ? 'desktop/tests/support/repair_backend.py' : 'desktop/tests/support/real_backend.py'], {
     cwd: resolve('..'), windowsHide: true, env: { ...process.env, AGENTGIT_API_TOKEN: TOKEN, PYTHONIOENCODING: 'utf-8' },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
-  let logs = '', sequence = 0;
+  let logs = '', sequence = 0, terminal: Error | null = null;
   const diagnostics = () => logs.replace(/^.*"event": "http.request".*\r?\n/gm, '');
   child.stderr.on('data', bytes => { logs = (logs + String(bytes)).slice(-64000); });
   const pending = new Map<number, { resolve: (value: JsonObject) => void; reject: (error: Error) => void }>();
@@ -25,13 +25,15 @@ export async function startBackend() {
     } catch { readyReject(new Error('联调进程输出无效')); }
   });
   child.once('error', error => readyReject(error));
-  child.once('exit', code => { const error = new Error(`联调进程结束 ${code}\n${diagnostics()}`); readyReject(error); for (const value of pending.values()) value.reject(error); });
+  child.once('exit', code => { const error = new Error(`联调进程结束 ${code}\n${diagnostics()}`); terminal = error; readyReject(error); for (const value of pending.values()) value.reject(error); pending.clear(); });
+  child.stdin.on('error', () => { const error = terminal ?? new Error(`联调控制通道已关闭\n${diagnostics()}`); for (const value of pending.values()) value.reject(error); pending.clear(); });
   const address = await ready;
   return { ...address,
     command: (command: string, args: JsonObject = {}) => new Promise<JsonObject>((resolve, reject) => {
+      if (terminal || child.stdin.destroyed) { reject(terminal ?? new Error('联调控制通道已关闭')); return; }
       const id = ++sequence; pending.set(id, { resolve, reject }); child.stdin.write(JSON.stringify({ id, command, ...args }) + '\n');
     }),
-    stop: async () => { child.stdin.end(JSON.stringify({ command: 'stop' }) + '\n'); expect(await finished, diagnostics()).toBe(0); },
+    stop: async () => { if (!terminal && !child.stdin.destroyed) child.stdin.end(JSON.stringify({ command: 'stop' }) + '\n'); expect(await finished, diagnostics()).toBe(0); },
   };
 }
 export async function readRun(page: Page, runId: string) { return data(await page.evaluate(id => window.agentgit.getRun({ runId: id }), runId)); }

@@ -46,7 +46,7 @@ S9 已提供[基础与台账](doc/S9-repair-plan.md)、[原子派发/结算](doc
 
 S10 已实现[耐久缩减](doc/acceptance/S10-reduction.md)、[预注册/一次性开启](doc/acceptance/S10-pools.md)、[实际六加四](doc/acceptance/S10-confirmation.md)、[三原子](doc/acceptance/S10-three-atoms.md)、[字段缩减](doc/acceptance/S10-fields.md)、[精确提案/审批后端](doc/acceptance/S10-reviews.md)及[随机拒绝/实际观测伪修复后端](doc/acceptance/S10-falsefix.md)。原子、字段和必要性复查共用原预算；确切派生内容在最终锁后独立验证。建议展示 before/after、任务/环境、用量和范围；票据绑定配置版本，批准只创建新版本，Plan 模板由新任务真实执行，保存实验只落定义。随机确认失败保留拒绝；观测补丁即使六加四通过也不能采纳为正式配置。仅在隔离测试库验证，业务配置未采纳；合成验证仍标 `verified_under_fixture`，预选随机向量不构成无偏成功率研究。当前测试范围见独立记录，旧版本结果不累加；S9 默认深度二和 reduce=6 不变。继续 Repair Lab、30 例/四基线和 D2，S10 尚未整体验收。
 
-Repair Lab 的[原子准备与桌面桥接基础](doc/acceptance/S10-prepared.md)及[可见页面与只读流程](doc/acceptance/S10-lab.md)现已实现：搜索和十张预注册票据同事务发布；第五页接入来源/预算、缩减、锁后复测、配置对照、精确票据与决定。原键确认、版本冲突、观测禁采纳、断连保留和重开只读由真实 Electron 的明确 HTTP fixture 验证，真实后端另核对只读身份发现；这两类不冒充同一次设施联调。继续独立 PostgreSQL/API/Worker 的真实桌面完整链路、真实试验数据与候选交接和新包复验，不能据此宣告 Repair Lab/S10/D2 退出。
+Repair Lab 的[原子准备与桌面桥接基础](doc/acceptance/S10-prepared.md)及[可见页面与只读流程](doc/acceptance/S10-lab.md)现已实现：搜索和十张预注册票据同事务发布；第五页接入来源/预算、缩减、锁后复测、配置对照、精确票据与决定。原键确认、观测禁采纳和断连保留有明确 HTTP fixture 覆盖；新增[同次真实设施联调](doc/acceptance/S10-lab-real.md)经 PostgreSQL/API/独立 Worker/CAS 完成联合 Prompt/Plan、两项字段缩减、六次确认/四项回归、真实版本竞争和精确批准，来源不变、批准无新 Job/Run、重开只读。真实字段收据展示已修正，结论仍为固定 Mock 条件验证。继续其余真实桌面边界、候选交接、30 例/四基线和新包复验，不能据此宣告 Repair Lab/S10/D2 退出。
 
 ## Brand Commitments
 
