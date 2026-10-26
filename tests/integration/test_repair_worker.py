@@ -72,12 +72,15 @@ class ConditionalMock(MockResearchModel):
         return encode(result.model_dump(mode="json"))
 
 
-def create_case(history, tmp_path, *, mode="prompt", budget_transform=lambda b: b):
+def create_case(
+    history, tmp_path, *, mode="prompt", budget_transform=lambda b: b, adapter_binding=None
+):
     research = ResearchService(history, tmp_path / "research")
     repo = history.create_repository("自动搜索受控 Mock")
     config = research.create_config(repo)
     adapter_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    goal = ResearchGoal(text=f"{mode};adapter_sha256={adapter_hash};比较三个合成框架")
+    extra = f"{adapter_binding};" if adapter_binding else ""
+    goal = ResearchGoal(text=f"{mode};adapter_sha256={adapter_hash};{extra}比较三个合成框架")
     task = research.create_task(repo, config, goal)
     session = research.start(repo, task)
     assert session.execute(ConditionalMock()).status == RunStatus.FAILED

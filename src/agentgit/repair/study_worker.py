@@ -12,7 +12,7 @@ from agentgit.repair.reduction import next_deletion, summarize_reduction
 from agentgit.services.repair_reductions import RepairReductionService
 from agentgit.services.repair_studies import RepairStudyService
 from agentgit.services.research import ResearchService
-from agentgit.storage.schema_s10_reduction import STUDY_TERMINAL
+from agentgit.storage.schema_s10_confirmation import STUDY_TERMINAL
 
 
 class RepairStudyWorker:

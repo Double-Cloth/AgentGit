@@ -398,7 +398,7 @@ uv run --locked agentgit repair-study-cancel $repo.repository_id $study.study_id
 
 查询返回冻结 manifest/state、逐删除 intent/dispatch/收据、待核对引用、共享总用量及 `final_lock`。未决 trial 仍占完整预留；用量包括原 S9 和本阶段实际调用，Mock 字节与供应商 Token 区分。墙钟从原搜索创建时起计算，候选锁定后仍计等待，原 S9 已封存的决定和查询不改写。新建代码版本不能继续旧 study。
 
-`awaiting_samples` 表示最终候选已经锁定，确认池尚未打开。当前未提供确认试验派发或批准 API，不能把这个状态当作 verified；预注册及开启入口见下节。完整 fixture 删除测试只支持所声明原子语法的 1-minimal；预算不足、未测和非确定结果保持未证明，字段缩减仍未运行。详细范围及真实证据见 [S10-reduction.md](acceptance/S10-reduction.md)。
+`awaiting_samples` 表示最终候选已经锁定，确认池尚未打开，不能把这个状态当作 verified；预注册、开启及实际执行入口见下节。正式配置批准 API 尚未提供。完整 fixture 删除测试只支持所声明原子语法的 1-minimal；预算不足、未测和非确定结果保持未证明，字段缩减仍未运行。详细范围及真实证据见 [S10-reduction.md](acceptance/S10-reduction.md)。
 
 ## 确认条件预注册与开启（S10）
 
@@ -423,4 +423,17 @@ uv run --locked agentgit repair-study-cancel $repo.repository_id $study.study_id
 
 对应 CLI 为 `repair-validation-suite <repository_id> --file suite.json --key ...`、`repair-validation-open <repository_id> <study_id> <suite_id> --key ...`、`repair-validation-status <repository_id> <study_id>`。认证、项目头、幂等键、JSON 编码与大小限制沿用前述规则。
 
-当前票据明确为 `response_status=not_generated`，开启为 `execution_status=not_started`。`validation_ready` 不能当作已确认；现有 `repair-study-worker` 只处理缩减，不会执行这些票据。实际六次确认、四次回归的派发、原始调用核验和结算继续接入；没有上传“验证成功”的接口。范围及证据见 [S10-pools.md](acceptance/S10-pools.md)。
+票据中的 `response_status=not_generated` 和开启记录的 `execution_status=not_started` 是登记/开启时的不可变历史事实。`GET /repair-studies/{study_id}/validation` 与 `repair-validation-status` 另返回当前 `execution`，未开启时为 `null`；其中包含 `status`、实际 `trials`、投影、独立 Job/Run、收据及原始调用来源引用、全流程 `usage`、`provisional_verification` 和最终封存 `verification`。`validation_ready` 仍不能当作已确认。
+
+```powershell
+# 开启成功后运行确认控制器；普通 worker 在另一终端执行实际研究 Job。
+uv run --locked agentgit repair-confirm-worker --repository-id $repositoryId
+uv run --locked agentgit worker
+uv run --locked agentgit repair-validation-status $repositoryId $studyId
+```
+
+两个 Worker 均支持 `--once`。控制器按预注册票据串行执行六项确认、四项固定回归，不调用 Adapter；`repair-study-worker` 仅处理尚未开启验证的缩减任务。确定的确认失败仍保留并继续回归；未知用量/效果保留完整预留并等待核对，安全违规停止扩展。取消仍使用 `repair-study-cancel`，由普通 Worker 应用子 Job 的控制并结算，不能用取消请求冒充已经停止。
+
+六项完整硬验收至少五项通过、四项回归全部通过、安全零违规和完整物理用量才可封存验证结果。执行错误、零新模型调用或仅重验旧产物不能充当完整确认；收据必须来自实际 Job、固定验收器和该 Job 自身调用/恢复链。合成条件结果为 `verified_under_fixture`，真实模型路径为 `empirically_confirmed` 并保留小样本限制；本轮没有付费供应商实测。状态不代表配置已采纳，`adoption=not_reviewed` 保持。没有上传“验证成功”的接口。
+
+自定义回归语料和时钟应由持久 Job 冻结；旧直接执行来源若缺少可重建且一致的输入，会在 Replay/预注册时返回 `replay_mismatch`，不会静默改用 bundled 语料。预注册/开启与实际执行证据分别见 [S10-pools.md](acceptance/S10-pools.md) 和 [S10-confirmation.md](acceptance/S10-confirmation.md)。

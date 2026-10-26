@@ -53,6 +53,7 @@ class PreparedReplay:
     execution_wall_ms: int | None = None
     repair_proposal_id: UUID | None = None
     repair_reduction_trial_id: UUID | None = None
+    repair_validation_trial_id: UUID | None = None
 
 
 class ReplayService:
@@ -111,17 +112,33 @@ class ReplayService:
         execution_wall_ms: int | None = None,
         repair_proposal_id: UUID | None = None,
         repair_reduction_trial_id: UUID | None = None,
+        repair_validation_trial_id: UUID | None = None,
     ) -> PreparedReplay:
         request = parse_contract(encode(request.model_dump(mode="json")), type(request))
         if isinstance(request, RecordedReplay) and (
-            hybrid_ref or repair_proposal_id is not None or repair_reduction_trial_id is not None
+            hybrid_ref
+            or repair_proposal_id is not None
+            or repair_reduction_trial_id is not None
+            or repair_validation_trial_id is not None
         ):
             raise AgentGitError(ErrorCode.FORBIDDEN, "Recorded 不接受 Hybrid 干预")
         if (
-            repair_proposal_id is not None or repair_reduction_trial_id is not None
+            repair_proposal_id is not None
+            or repair_reduction_trial_id is not None
+            or repair_validation_trial_id is not None
         ) and hybrid_ref is None:
             raise AgentGitError(ErrorCode.VALIDATION, "Hybrid 提案归属必须绑定冻结 policy")
-        if repair_proposal_id is not None and repair_reduction_trial_id is not None:
+        if (
+            sum(
+                value is not None
+                for value in (
+                    repair_proposal_id,
+                    repair_reduction_trial_id,
+                    repair_validation_trial_id,
+                )
+            )
+            > 1
+        ):
             raise AgentGitError(ErrorCode.VALIDATION, "Hybrid 输入只能有一个精确派发归属")
         if execution_wall_ms is not None and (
             type(execution_wall_ms) is not int
@@ -161,6 +178,12 @@ class ReplayService:
             evaluation_time=corpus.evaluation_time, sources=tuple(corpus.sources.values())
         )
         corpus = Corpus(corpus_snapshot.sources, evaluation_time=corpus_snapshot.evaluation_time)
+        if (
+            frozen.get("corpus_digest") != corpus.digest()
+            or environment.evaluation_time != corpus.evaluation_time
+            or frozen.get("goal") != snapshot.data.get("goal")
+        ):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "来源语料、任务或时钟没有一致的冻结输入")
         if isinstance(request, RecordedReplay):
             baseline = (
                 parse_contract(encode(frozen["budget_baseline"]), BudgetUsage)
@@ -251,6 +274,7 @@ class ReplayService:
             files=files,
             repair_proposal_id=repair_proposal_id,
             repair_reduction_trial_id=repair_reduction_trial_id,
+            repair_validation_trial_id=repair_validation_trial_id,
         )
 
     def publish(
@@ -323,6 +347,7 @@ class ReplayService:
                     spec.policy_ref,
                     repair_proposal_id=prepared.repair_proposal_id,
                     repair_reduction_trial_id=prepared.repair_reduction_trial_id,
+                    repair_validation_trial_id=prepared.repair_validation_trial_id,
                 )
             for path, media_type, content in prepared.files:
                 obj = self.history.objects.put(ObjectType.BLOB, content, media_type=media_type)

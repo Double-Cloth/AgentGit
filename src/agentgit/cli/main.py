@@ -38,6 +38,7 @@ from agentgit.core.repair_studies import NewRepairStudy
 from agentgit.core.research import AgentConfig, BudgetLimits, ResearchGoal
 from agentgit.core.versions import NewBranch, parse_replay
 from agentgit.diagnostics import sandbox_prerequisites
+from agentgit.repair.confirmation_worker import RepairConfirmationWorker
 from agentgit.repair.study_worker import RepairStudyWorker
 from agentgit.repair.worker import RepairSearchWorker
 from agentgit.services.management import ManagementService
@@ -288,6 +289,45 @@ def repair_validation_status(repository_id: UUID, study_id: UUID, testing: bool 
     """读取冻结计划；未执行的采样票据不能当作通过证据。"""
     with management(testing) as service:
         emit(service.repair_validation(repository_id, study_id))
+
+
+@app.command("repair-confirm-worker")
+def repair_confirm_worker(
+    once: bool = False,
+    repository_id: UUID | None = None,
+    poll_ms: int = typer.Option(1000, min=100, max=60000),
+    testing: bool = False,
+) -> None:
+    """推进已开启池的确认与回归；普通 worker 执行实际研究 Job。"""
+    with management(testing) as service:
+        runner, previous = RepairConfirmationWorker(service.research), None
+        try:
+            while True:
+                result = runner.run_once(repository=repository_id)
+                summary: dict[str, Any] = (
+                    {
+                        key: result[key]
+                        for key in ("study_id", "status", "stop_reason", "usage", "verification")
+                    }
+                    if result
+                    else {"status": "idle"}
+                )
+                progress = {
+                    **summary,
+                    "usage": {
+                        key: value
+                        for key, value in summary.get("usage", {}).items()
+                        if key != "elapsed_wall_ms"
+                    },
+                }
+                if once or (result is not None and progress != previous):
+                    emit(summary)
+                previous = progress
+                if once:
+                    return
+                Event().wait(poll_ms / 1000)
+        except KeyboardInterrupt:
+            emit({"status": "repair_confirm_worker_stopped"})
 
 
 @app.command("repair-reduce")

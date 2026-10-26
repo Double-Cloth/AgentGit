@@ -48,7 +48,7 @@ from agentgit.services.validators import ValidatorService
 from agentgit.services.versions import VersionService
 from agentgit.storage.database import transaction
 from agentgit.storage.schema import build_metadata
-from agentgit.storage.schema_s10_reduction import STUDY_TERMINAL
+from agentgit.storage.schema_s10_confirmation import STUDY_TERMINAL
 
 TABLES = build_metadata().tables
 
@@ -447,6 +447,7 @@ class RepairStudyService:
             query = sa.select(table).where(
                 table.c.status.in_(("queued", "reducing", "cancelling", "waiting_reconciliation")),
                 sa.or_(table.c.lease_until.is_(None), table.c.lease_until <= now),
+                ~sa.exists().where(TABLES["repair_validation_openings"].c.id == table.c.study_id),
             )
             if repository is not None:
                 query = query.where(table.c.repository_id == repository)
@@ -552,12 +553,43 @@ class RepairStudyService:
             .mappings()
             .all()
         )
-        return evolve(
+        usage = evolve(
             usage,
             started=evolve(usage.started, reduce=usage.started.reduce + len(rows)),
             active=usage.active + sum(row["id"] is None for row in rows),
             **{
                 name: getattr(usage, name) + sum(row[name] for row in rows if row["id"] is not None)
+                for name in ("model_calls", "tool_calls", "tokens", "cost_micro_usd")
+            },
+        )
+        validation, settled = (
+            TABLES["repair_validation_trials"],
+            TABLES["repair_validation_results"],
+        )
+        outcomes = (
+            connection.execute(
+                sa.select(validation.c.phase, settled)
+                .select_from(validation.outerjoin(settled, settled.c.id == validation.c.id))
+                .where(
+                    validation.c.study_id == study["id"],
+                    validation.c.repository_id == study["repository_id"],
+                )
+            )
+            .mappings()
+            .all()
+        )
+        return evolve(
+            usage,
+            started=evolve(
+                usage.started,
+                confirm=usage.started.confirm + sum(row["phase"] == "confirm" for row in outcomes),
+                regression=usage.started.regression
+                + sum(row["phase"] == "regression" for row in outcomes),
+            ),
+            active=usage.active + sum(row["id"] is None for row in outcomes),
+            **{
+                name: getattr(usage, name)
+                + sum(row[name] for row in outcomes if row["id"] is not None)
                 for name in ("model_calls", "tool_calls", "tokens", "cost_micro_usd")
             },
         )

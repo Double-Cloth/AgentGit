@@ -152,6 +152,14 @@ class RepairValidationPoolService:
                 ErrorCode.FORBIDDEN, "采样起点必须允许新的模型决策，不能重验已结束的输出"
             )
         corpus = ReplayService(self.research)._source_corpus(repository, UUID(source_run))
+        if (
+            frozen.get("corpus_digest") != corpus.digest()
+            or environment["evaluation_time"] != corpus.evaluation_time
+            or frozen.get("goal") != state.goal.model_dump(mode="json")
+        ):
+            raise AgentGitError(
+                ErrorCode.REPLAY_MISMATCH, "采样来源语料、任务或时钟没有一致的冻结输入"
+            )
         validator = ValidatorService(self.history).freeze(
             repository,
             state.goal,

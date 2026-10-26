@@ -43,6 +43,7 @@ from agentgit.services.experiments import ExperimentService
 from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.inspection import InspectionService
 from agentgit.services.jobs import JobService
+from agentgit.services.repair_confirmation import RepairConfirmationService
 from agentgit.services.repair_jobs import RepairJobService
 from agentgit.services.repair_pools import RepairValidationPoolService
 from agentgit.services.repair_searches import RepairSearchService
@@ -149,11 +150,13 @@ class ManagementService:
         )
 
     def repair_validation(self, repository_id: UUID, study_id: UUID) -> dict[str, Any]:
+        opening = RepairValidationPoolService(self.research).opening(repository_id, study_id)
         return {
             "schema_version": 1,
-            "validation": RepairValidationPoolService(self.research).opening(
-                repository_id, study_id
-            ),
+            "validation": opening,
+            "execution": RepairConfirmationService(self.research).view(repository_id, study_id)
+            if opening
+            else None,
         }
 
     def cancel_repair_study(self, repository_id: UUID, study_id: UUID, key: str) -> dict[str, Any]:
