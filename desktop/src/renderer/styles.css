@@ -205,8 +205,8 @@ dd { margin: 0; color: var(--ink); }
   .shell { width: calc(100% - 32px); }
   .topbar-inner { flex-wrap: wrap; gap: 0; padding-top: 8px; }
   .wordmark { flex: 1; }
-  .topbar nav { order: 3; flex-basis: 100%; justify-content: space-between; }
-  .nav-button { min-height: 48px; padding-block: 12px; }
+  .topbar nav { order: 3; flex-basis: 100%; justify-content: flex-start; gap: 4px; overflow-x: auto; padding-bottom: 1px; }
+  .nav-button { min-height: 48px; padding: 12px 8px; white-space: nowrap; flex-shrink: 0; }
   .contextbar { gap: 8px; padding-block: 12px; }
   .contextbar > code { flex-basis: calc(100% - 80px); }
   .context-end { display: none; }
@@ -237,6 +237,11 @@ dd { margin: 0; color: var(--ink); }
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
 .experiments { min-width: 0; }
+.repair-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; margin-block: 16px; }
+.repair-lab section, .repair-lab details, .repair-lab label { min-width: 0; }
+.repair-lab code, .repair-lab summary { overflow-wrap: anywhere; }
+.repair-lab .primary:disabled { border-color: var(--line); }
+@media (max-width: 767px) { .repair-pair { grid-template-columns: minmax(0, 1fr); } }
 .workspace { border: 0; margin: 0; padding: 0; min-width: 0; }
 .experiment-layout { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 32px; align-items: start; }
 .experiments fieldset { border: 0; border-top: 1px solid var(--line); margin: 24px 0; padding: 20px 0 0; min-width: 0; }

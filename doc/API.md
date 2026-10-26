@@ -385,6 +385,8 @@ uv run --locked agentgit worker
 
 成功响应在原搜索响应之外增加 `validation_suite`，包含 `suite_id/search_id/manifest_ref/response_status=not_generated`；这不是已生成样本，也不自动打开确认池。原键重试返回相同搜索与 suite，即使搜索已运行或完成也不重新生成模板/票据；更换四项来源、参数或混用旧搜索请求会冲突。CLI 为 `agentgit repair-prepare <repository_id> --file prepared.json --key ...`。能力响应新增 `prepared_repair_search/repair_search/repair_validation/repair_reviews`，后端版本协议不变。
 
+`GET /repair-searches/{search_id}/workflow` 仅以当前项目读取已有 `suite_id/study_id/proposal_id`，尚未生成的身份返回 null。该入口不创建任何记录、不生成票据、不写 CAS，也不重新提交任务；用于窗口重开后的只读发现。返回另含 `schema_version/search_id/repository_id`。未授权项目或不存在搜索返回 404，桌面桥接响应限 16 KiB；能力标记为 `repair_workflow`。Repair Lab 同时要求该标记和 `prepared_repair_search`，旧后端缺能力时不给出可用搜索动作。
+
 ## 耐久逐补丁缩减（S10）
 
 `POST /repair-studies`（202）、`GET /repair-studies/{study_id}`、`POST /repair-studies/{study_id}/cancel` 复用原认证、项目头、幂等键和请求/输出上限。创建只接受 `schema_version=1`、`search_id` 及可选 `max_reduce_trials`、`field_policy`。来源必须是同一代码下已排空封存的 S9 `needs_confirmation`；一个来源只能建立一个 study，次数覆盖只能收紧原 reduce 额度。没有接收候选正文、用户 verdict、费用或确认结果的入口。

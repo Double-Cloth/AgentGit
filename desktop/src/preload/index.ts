@@ -26,6 +26,7 @@ const api: DesktopApi = {
   createDebugReport: method('createDebugReport'), getDebugReport: method('getDebugReport'),
   getDebugCandidateContext: method('getDebugCandidateContext'), getDebugCandidateExperiment: method('getDebugCandidateExperiment'),
   createPreparedRepairSearch: method('createPreparedRepairSearch'), getRepairSearch: method('getRepairSearch'),
+  getRepairWorkflow: method('getRepairWorkflow'),
   listRepairSearches: method('listRepairSearches'), cancelRepairSearch: method('cancelRepairSearch'),
   createRepairStudy: method('createRepairStudy'), getRepairStudy: method('getRepairStudy'), cancelRepairStudy: method('cancelRepairStudy'),
   getRepairValidationSuite: method('getRepairValidationSuite'), openRepairValidation: method('openRepairValidation'),

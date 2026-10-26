@@ -174,6 +174,41 @@ class ManagementService:
     def repair_search(self, repository_id: UUID, search_id: UUID) -> dict[str, Any]:
         return RepairJobService(self.history).view(repository_id, search_id)
 
+    def repair_workflow(self, repository: UUID, search: UUID) -> dict[str, Any]:
+        """只读发现原子流程身份，重开窗口不通过重提修改请求寻找记录。"""
+        with self.history.engine.connect() as connection:
+            RepairJobService(self.history)._root(connection, repository, search)
+            suite = connection.execute(
+                sa.select(TABLES["repair_validation_suites"].c.id).where(
+                    TABLES["repair_validation_suites"].c.repository_id == repository,
+                    TABLES["repair_validation_suites"].c.search_id == search,
+                )
+            ).scalar_one_or_none()
+            study = connection.execute(
+                sa.select(TABLES["repair_studies"].c.id).where(
+                    TABLES["repair_studies"].c.repository_id == repository,
+                    TABLES["repair_studies"].c.search_id == search,
+                )
+            ).scalar_one_or_none()
+            proposal = (
+                connection.execute(
+                    sa.select(TABLES["repair_adoption_proposals"].c.id).where(
+                        TABLES["repair_adoption_proposals"].c.repository_id == repository,
+                        TABLES["repair_adoption_proposals"].c.study_id == study,
+                    )
+                ).scalar_one_or_none()
+                if study
+                else None
+            )
+        return dict(
+            schema_version=1,
+            search_id=str(search),
+            repository_id=str(repository),
+            suite_id=str(suite) if suite else None,
+            study_id=str(study) if study else None,
+            proposal_id=str(proposal) if proposal else None,
+        )
+
     def create_repair_proposal(self, repository: UUID, study: UUID, key: str) -> dict[str, Any]:
         return RepairReviewService(self.research).create(
             repository, study, actor=self.actor, key=key
@@ -428,6 +463,7 @@ class ManagementService:
                 "experiment_statistics",
                 "static_debug_reports",
                 "prepared_repair_search",
+                "repair_workflow",
                 "repair_search",
                 "repair_validation",
                 "repair_reviews",

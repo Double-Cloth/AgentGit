@@ -6,7 +6,9 @@ S7 已接通验收器、实验/干预及实验列表共八个固定 IPC，以及
 
 ## 固定构建环境
 
-S10 源码已增加[原子准备与 14 项固定 IPC](../doc/acceptance/S10-prepared.md)，使用搜索与采样条件的单事务发布。当前可运行 `npx.cmd playwright test --config playwright.repair.config.ts` 核对真实 Electron preload 和主进程 HTTP 边界；这是受控 fixture，尚不代表 Repair Lab 可见页面或真实后端桌面闭环。后续见[桌面计划](../doc/S10-desktop-plan.md)，新接口未进入既有 0.1.5 分发候选。
+S10 源码已增加[原子准备与 14 项固定 IPC](../doc/acceptance/S10-prepared.md)，使用搜索与采样条件的单事务发布。可运行 `npx.cmd playwright test --config playwright.repair.config.ts` 核对真实 Electron preload、主进程 HTTP 和新增页面；桥接原专项使用受控 fixture，不能单独证明可见页面或真实后端桌面闭环。后续见[桌面计划](../doc/S10-desktop-plan.md)，新接口未进入既有 0.1.5 分发候选。
+
+随后已接入[Repair Lab 第五页与只读 workflow](../doc/acceptance/S10-lab.md)，页面专项包含原键、票据/版本、观测禁采纳、断连与重开流程，仍使用明确 HTTP fixture。真实 PostgreSQL/API/Worker 的同次桌面链路和新包待补。旧四页配置现也接受 `AGENTGIT_ELECTRON_EVIDENCE_PREFIX`；复验时设置独立前缀以免覆盖默认报告。
 
 Windows x64，Node.js **24.19.0**，npm **12.1.0**。使用 `package-lock.json`，不隐式升级依赖。
 

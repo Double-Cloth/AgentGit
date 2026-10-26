@@ -68,6 +68,7 @@ export interface Inputs {
   getDebugCandidateExperiment: { reportId: string; candidateEventId: number; experimentId: string };
   createPreparedRepairSearch: { request: JsonObject; key: string };
   getRepairSearch: { searchId: string };
+  getRepairWorkflow: { searchId: string };
   listRepairSearches: Page;
   cancelRepairSearch: { searchId: string; key: string };
   createRepairStudy: { request: JsonObject; key: string };

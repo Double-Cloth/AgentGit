@@ -316,6 +316,7 @@ export class BusinessController {
       case 'getValidator': input = fields(raw, ['validatorRef']); return get(`/validators/${digest(input.validatorRef)}`, 1048576);
       case 'createPreparedRepairSearch': input = fields(raw, ['request', 'key']); return post('/repair-searches/prepared', jsonObject(input.request));
       case 'getRepairSearch': input = fields(raw, ['searchId']); return get(`/repair-searches/${id(input.searchId)}`);
+      case 'getRepairWorkflow': input = fields(raw, ['searchId']); return get(`/repair-searches/${id(input.searchId)}/workflow`, 16384);
       case 'listRepairSearches': input = fields(raw, [], ['afterId', 'limit']); return page(`/repositories/${this.state.repositoryId ?? ''}/repair-searches`);
       case 'cancelRepairSearch': input = fields(raw, ['searchId', 'key']); return post(`/repair-searches/${id(input.searchId)}/cancel`, {});
       case 'createRepairStudy': input = fields(raw, ['request', 'key']); return post('/repair-studies', jsonObject(input.request));

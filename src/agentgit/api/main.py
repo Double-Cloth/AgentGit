@@ -376,6 +376,14 @@ def create_app(
             repo, parse_contract(encode(body), NewRepairSearch), key
         )
 
+    @app.get("/repair-searches/{search_id}/workflow")
+    def repair_workflow_status(
+        search_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.repair_workflow(repo, search_id)
+
     @app.get("/repair-searches/{search_id}")
     def repair_search_status(
         search_id: UUID,
