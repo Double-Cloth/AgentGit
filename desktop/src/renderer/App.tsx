@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import type { ConnectionState } from '../shared/bridge';
 import type { CandidateExperimentPreset } from '../shared/diagnosis';
+import type { CandidateRepairPreset } from '../shared/repair';
 import { call, err, Notice, useAction, type EvidenceTarget } from './ui';
 import { Runs } from './Runs';
 const Timeline = lazy(() => import('./Timeline'));
@@ -16,6 +17,7 @@ export function App() {
   const [runId, setRunId] = useState(''), [commit, setCommit] = useState('');
   const [eventFocus, setEventFocus] = useState<EvidenceTarget | null>(null), [diagnosisRunId, setDiagnosisRunId] = useState('');
   const [experimentPreset, setExperimentPreset] = useState<CandidateExperimentPreset | null>(null);
+  const [repairPreset, setRepairPreset] = useState<CandidateRepairPreset | null>(null);
   const [confirmedWorkspace, setConfirmedWorkspace] = useState('');
   useEffect(() => {
     let active = true, first = true, timer: ReturnType<typeof setTimeout>;
@@ -34,21 +36,21 @@ export function App() {
   const workspace = connection?.repositoryId ? connection.repositoryId + ':' + connection.baseUrl : '';
   useEffect(() => { if (ready && workspace) setConfirmedWorkspace(workspace); }, [ready, workspace]);
   const retainWorkspace = Boolean(workspace && (ready || confirmedWorkspace === workspace));
-  function changeConnection(value: ConnectionState) { setConnection(value); setRunId(''); setCommit(''); setEventFocus(null); setDiagnosisRunId(''); setExperimentPreset(null); }
+  function changeConnection(value: ConnectionState) { setConnection(value); setRunId(''); setCommit(''); setEventFocus(null); setDiagnosisRunId(''); setExperimentPreset(null); setRepairPreset(null); }
   const props = { runId, setRunId, selectedCommit: commit, setSelectedCommit: setCommit,
     openTimeline: (id: string) => { setRunId(id); setEventFocus(null); setPage('timeline'); },
     openDiagnosis: (id: string) => { setDiagnosisRunId(id); setPage('diff'); }, eventFocus,
-    openRepair: (id: string, selected = '') => { setRunId(id); setCommit(selected); setPage('repair'); },
+    openRepair: (id: string, selected = '') => { setRunId(id); setCommit(selected); setRepairPreset(null); setPage('repair'); },
     openBranch: (id: string, selected: string) => { setRunId(id); setCommit(selected); setExperimentPreset(null); setPage('branch'); }, experimentPreset };
   return <><a href="#main" className="skip">跳到主要内容</a><header className="topbar"><div className="shell topbar-inner">
-    <span className="wordmark">AgentGit</span><nav aria-label="主要页面">{PAGES.map(item => <button key={item.id} className={`nav-button ${page === item.id ? 'active' : ''}`} aria-current={page === item.id ? 'page' : undefined} onClick={() => setPage(item.id)}>{item.text}</button>)}</nav>
+    <span className="wordmark">AgentGit</span><nav aria-label="主要页面">{PAGES.map(item => <button key={item.id} className={`nav-button ${page === item.id ? 'active' : ''}`} aria-current={page === item.id ? 'page' : undefined} onClick={() => { if (item.id === 'repair') setRepairPreset(null); setPage(item.id); }}>{item.text}</button>)}</nav>
     <button className="connection-button" onClick={() => setSettings(value => !value)} aria-expanded={settings}><span className={`connection-dot ${ready ? 'connected' : ''}`} aria-hidden="true" />{ready ? 'API 已连接' : '连接设置'}</button>
   </div></header><div className="shell contextbar"><span>当前项目</span><code>{connection?.repositoryId ?? '尚未选择'}</code><button className="text-button" onClick={() => setSettings(true)}>切换项目</button><span className="context-end">本机 · Windows x64</span></div>
     <main id="main" className="shell" tabIndex={-1}><Notice>{problem || (connection && !ready ? connection.message : '')}</Notice>
       {settings && <Connection key={connection?.baseUrl ?? 'initial'} state={connection} onChange={changeConnection} onClose={() => setSettings(false)} />}
       {!retainWorkspace && <section className="welcome"><span className="eyebrow">执行历史 · 隔离分支 · 可审计回放</span><h1>让每次执行有据可查。</h1><p>连接本机 API 后选择项目，查看运行、追溯检查点，并比较独立分支的结果。</p><p className="muted">桌面只展示和管理任务。Worker 与固定容器是否就绪，以实际任务证据为准。</p>{!settings && <button className="primary" onClick={() => setSettings(true)}>配置连接与项目</button>}</section>}
       {retainWorkspace && <fieldset className="workspace" disabled={!ready} aria-label="当前项目工作区" key={workspace}><Suspense fallback={<p role="status">正在打开页面…</p>}>
-          {page === 'runs' ? <Runs {...props} /> : page === 'timeline' ? <Timeline {...props} /> : page === 'branch' ? <Branch {...props} /> : page === 'repair' ? <RepairLab {...props} active={ready} /> : <Diff diagnosisRunId={diagnosisRunId} openEvent={target => { setEventFocus(target); setRunId(target.runId); setPage('timeline'); }} openExperiment={preset => { setRunId(preset.sourceRunId); setCommit(preset.fromCommit); setExperimentPreset(preset); setPage('branch'); }} />}
+          {page === 'runs' ? <Runs {...props} /> : page === 'timeline' ? <Timeline {...props} /> : page === 'branch' ? <Branch {...props} /> : page === 'repair' ? <RepairLab {...props} active={ready} preset={repairPreset} /> : <Diff diagnosisRunId={diagnosisRunId} openEvent={target => { setEventFocus(target); setRunId(target.runId); setPage('timeline'); }} openExperiment={preset => { setRunId(preset.sourceRunId); setCommit(preset.fromCommit); setExperimentPreset(preset); setPage('branch'); }} openRepair={preset => { setRunId(preset.sourceRunId); setCommit(preset.fromCommit); setRepairPreset(preset); setPage('repair'); }} />}
         </Suspense></fieldset>}
     </main><footer className="shell footer"><span>AgentGit {__AGENTGIT_DESKTOP_VERSION__}</span><span>状态可恢复、历史可验证与修复有效，分别判断。</span></footer></>;
 }

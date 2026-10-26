@@ -21,4 +21,6 @@
 
 当前已补齐[原子准备及 14 项固定 IPC](acceptance/S10-prepared.md)。复用预注册服务的“事务前准备、事务内发布”，不新增迁移、依赖或 Worker 队列状态。真实并发领取、回滚、单连接池、HTTP/CLI 和六加四验证，以及真实 Electron preload 边界分别核验。
 
-当前[可见页面](acceptance/S10-lab.md)已接通只读 workflow、时间线交接、配置对照/票据冲突、断连/原键确认/重开只读及观测禁采纳；HTTP fixture 的真实 Electron 用户操作通过。[同次真实设施联调](acceptance/S10-lab-real.md)已完成联合 Prompt/Plan、实际字段收据、六加四、版本竞争、精确批准与只读重开，原始 CAS 独立审计通过。继续真实未知/取消/观测等边界及既有候选交接，再更新桌面候选并做包内复验。固定 Mock 结论限于框架条件；30 例/四基线、D2、S11 与 S12-A/B/C/D 的范围保持。
+当前[可见页面](acceptance/S10-lab.md)已接通只读 workflow、时间线交接、配置对照/票据冲突、断连/原键确认/重开只读及观测禁采纳；HTTP fixture 的真实 Electron 用户操作通过。[同次真实设施联调](acceptance/S10-lab-real.md)已完成联合 Prompt/Plan、实际字段收据、六加四、版本竞争、精确批准与只读重开，原始 CAS 独立审计通过。继续真实未知/取消/观测等边界，再更新桌面候选并做包内复验。固定 Mock 结论限于框架条件；30 例/四基线、D2、S11 与 S12-A/B/C/D 的范围保持。
+
+[故障候选交接](acceptance/S10-candidate-handoff.md)现已实现，并由同次真实设施验证：只传核验来源、起点、screen 验收器及请求事件，回归/预算/执行授权仍须填写，没有新 Job/Run；实际 confirm 输入被拒绝。该交接不把候选排名包装为根因，也不替代其余真实边界或包内复验。

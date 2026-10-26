@@ -48,6 +48,8 @@ S10 已实现[耐久缩减](doc/acceptance/S10-reduction.md)、[预注册/一次
 
 Repair Lab 的[原子准备与桌面桥接基础](doc/acceptance/S10-prepared.md)及[可见页面与只读流程](doc/acceptance/S10-lab.md)现已实现：搜索和十张预注册票据同事务发布；第五页接入来源/预算、缩减、锁后复测、配置对照、精确票据与决定。原键确认、观测禁采纳和断连保留有明确 HTTP fixture 覆盖；新增[同次真实设施联调](doc/acceptance/S10-lab-real.md)经 PostgreSQL/API/独立 Worker/CAS 完成联合 Prompt/Plan、两项字段缩减、六次确认/四项回归、真实版本竞争和精确批准，来源不变、批准无新 Job/Run、重开只读。真实字段收据展示已修正，结论仍为固定 Mock 条件验证。继续其余真实桌面边界、候选交接、30 例/四基线和新包复验，不能据此宣告 Repair Lab/S10/D2 退出。
 
+[故障候选到 Repair Lab 的显式交接](doc/acceptance/S10-candidate-handoff.md)已通过真实设施核对：只预填已核验来源、起点、screen 验收器及请求事件，不启动搜索或继承授权，confirm/regression 样本拒绝；回归来源、预算及授权须由操作者填写。该项补齐上文候选交接待办，其余真实桌面边界与新包仍待完成。
+
 ## Brand Commitments
 
 产品名称为 AgentGit。界面继承根目录 DESIGN.md 的视觉体系、允许的字体替代、组件和断点；不另外发明品牌配色或装饰体系。字体和其他资产须有授权并满足安装包离线使用要求；已取得本地 Inter、EB Garamond、JetBrains Mono 及 OFL，记录上游提交和摘要，没有把未提供的商业字体视为已具备。

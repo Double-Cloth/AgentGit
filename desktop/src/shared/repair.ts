@@ -1,8 +1,17 @@
 import type { Json, JsonObject } from './bridge';
 import { DIGEST, digest, identifier, UUID } from './experiments';
+import { evidenceTarget } from './diagnosis';
 
 const object = (value: Json | undefined): JsonObject => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 export type RegressionDraft = { run: string; commit: string };
+export type CandidateRepairPreset = { sourceRunId: string; fromCommit: string; validatorRef: string; eventId: number };
+export function candidateRepairPreset(bound: JsonObject, validator: JsonObject): CandidateRepairPreset {
+  const context = object(bound.context), event = evidenceTarget(bound.request_event), candidate = evidenceTarget(object(bound.candidate).event);
+  const sourceRunId = identifier(String(context.source_run_id), '失败 Run'), validatorRef = digest(String(object(context.precondition).validator_ref), '原验收器');
+  if (!event || !candidate || event.runId !== sourceRunId || candidate.runId !== sourceRunId || event.eventId !== context.target_event_id) throw new Error('候选与决策前事件引用无法核对');
+  if (validator.validator_ref !== validatorRef || object(validator.manifest).fixture_split !== 'screen') throw new Error('修复搜索须沿用已核对的 screen 验收器，不能使用 confirm 或 regression 样本');
+  return { sourceRunId, fromCommit: digest(String(context.base_commit), '安全起点'), validatorRef, eventId: event.eventId };
+}
 export function repairObject(text: string, name: string): JsonObject {
   const value: unknown = JSON.parse(text);
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${name}必须是 JSON 对象`);

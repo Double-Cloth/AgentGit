@@ -125,3 +125,5 @@ npx.cmd playwright test --config playwright.experiments.config.ts
 第五页支持显式准备搜索及预注册来源、缩减、锁后六次确认/四项回归、完整配置对照及精确审阅。批准只创建配置版本；观测替换仅允许保存实验。未知提交保持原键，重开通过只读查询发现既有流程。[同次真实 Electron/API/Worker/CAS 用例](../doc/acceptance/S10-lab-real.md)已验证联合 Prompt/Plan、字段缩减、版本竞争和批准；其余边界另有明确 HTTP fixture，固定 Mock 不代表实际模型效果。当前 0.1.5 分发包不含该页，仍需更新候选并包内复验。
 
 在 `desktop` 下设置唯一证据前缀后，运行 `npx.cmd playwright test --config playwright.repair.config.ts repair-real.spec.ts` 验证真实设施；只运行页面/桥接 fixture 时明确选择 `repair-bridge.spec.ts repair-lab.spec.ts`。两次须使用不同前缀，避免覆盖报告。真实设施需要仓库测试配置及 PostgreSQL，保持运行中的 Python 包、fixture、helper 和锁文件不变；仅创建、删除自己的测试 schema，模型免费且离线。
+
+故障候选核对上下文后可显式前往 Repair Lab，预填原来源/起点、screen 验收器及请求事件；confirm/regression 拒绝，四项回归和执行授权仍需填写。[交接验收](../doc/acceptance/S10-candidate-handoff.md)以 `repair-handoff-real.spec.ts` 实测没有搜索或新 Job/Run；不是自动采用候选补丁。

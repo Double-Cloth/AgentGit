@@ -1,10 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { preparedRepair, repairReviewGate } from '../src/shared/repair';
+import { candidateRepairPreset, preparedRepair, repairReviewGate } from '../src/shared/repair';
 import type { JsonObject } from '../src/shared/bridge';
 
 const uuid = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
 const draft = () => ({ run: uuid(1), base: 'a'.repeat(64), validator: 'b'.repeat(64), targets: '[{"event_id":9100}]', regression: [2, 3, 4, 5].map(i => ({ run: uuid(i), commit: 'c'.repeat(64) })), budget: '', hybrid: '', external: false, stochastic: false });
+
+test('候选搜索交接绑定请求事件和 screen，拒绝输出事件混用、跨 Run 和复测样本泄漏', () => {
+  const context = { source_run_id: uuid(1), base_commit: 'a'.repeat(64), target_event_id: 55, precondition: { validator_ref: 'b'.repeat(64) } };
+  const bound: JsonObject = { context, request_event: { run_id: uuid(1), seq: 7, event_id: 55 }, candidate: { event: { run_id: uuid(1), seq: 8, event_id: 56 } } };
+  const validator: JsonObject = { validator_ref: 'b'.repeat(64), manifest: { fixture_split: 'screen' } };
+  assert.deepEqual(candidateRepairPreset(bound, validator), { sourceRunId: uuid(1), fromCommit: 'a'.repeat(64), validatorRef: 'b'.repeat(64), eventId: 55 });
+  for (const fixture_split of ['confirm', 'regression', null]) assert.throws(() => candidateRepairPreset(bound, { ...validator, manifest: { fixture_split } }));
+  assert.throws(() => candidateRepairPreset(bound, { ...validator, validator_ref: 'c'.repeat(64) }));
+  for (const change of [{ request_event: { run_id: uuid(2), seq: 7, event_id: 55 } }, { request_event: { run_id: uuid(1), seq: 8, event_id: 56 } }, { candidate: { event: { run_id: uuid(2), seq: 8, event_id: 56 } } }, { context: { ...context, target_event_id: true } }, { context: { ...context, base_commit: '../file' } }]) assert.throws(() => candidateRepairPreset({ ...bound, ...change }, validator));
+});
 
 test('修复准备冻结四项来源和原事件，不猜测目标或放宽真实模型预算', () => {
   const input = draft(), result = preparedRepair(input);

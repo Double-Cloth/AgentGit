@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { JsonObject, Reply } from '../shared/bridge';
 import { count, DIGEST, hasFeature, identifier, knownRejection, money, UUID } from '../shared/experiments';
-import { preparedRepair, repairReviewGate, type RegressionDraft } from '../shared/repair';
+import { preparedRepair, repairReviewGate, type CandidateRepairPreset, type RegressionDraft } from '../shared/repair';
 import { call, Empty, JsonView, Notice, object, rows, short, Status, str, useAction, useRead, type PageProps } from './ui';
 
 type Bundle = { links: JsonObject; search: JsonObject; study: JsonObject; validation: JsonObject; proposal: JsonObject };
@@ -28,9 +28,9 @@ function Trials({ title, trials, open }: { title: string; trials: JsonObject[]; 
   })}</tbody></table></div></section>;
 }
 
-export default function RepairLab(props: PageProps & { active: boolean }) {
-  const [source, setSource] = useState(props.runId), [base, setBase] = useState(props.selectedCommit), [validator, setValidator] = useState('');
-  const [targets, setTargets] = useState('[]'), [budget, setBudget] = useState(''), [hybrid, setHybrid] = useState(''), [stochastic, setStochastic] = useState(false), [consent, setConsent] = useState(false);
+export default function RepairLab(props: PageProps & { active: boolean; preset?: CandidateRepairPreset | null }) {
+  const [source, setSource] = useState(props.preset?.sourceRunId ?? props.runId), [base, setBase] = useState(props.preset?.fromCommit ?? props.selectedCommit), [validator, setValidator] = useState(props.preset?.validatorRef ?? '');
+  const [targets, setTargets] = useState(() => props.preset ? JSON.stringify([{ schema_version: 1, event_id: props.preset.eventId }]) : '[]'), [budget, setBudget] = useState(''), [hybrid, setHybrid] = useState(''), [stochastic, setStochastic] = useState(false), [consent, setConsent] = useState(false);
   const [regression, setRegression] = useState<RegressionDraft[]>(() => Array.from({ length: 4 }, () => ({ run: '', commit: '' })));
   const [lookup, setLookup] = useState(''), [selected, setSelected] = useState(''), [afterId, setAfterId] = useState(''), [created, setCreated] = useState(false);
   const [ticket, setTicket] = useState<JsonObject | null>(null), [attempt, setAttempt] = useState<Attempt | null>(null), [waiting, setWaiting] = useState(false);

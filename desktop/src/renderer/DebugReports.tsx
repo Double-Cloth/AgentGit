@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import type { Inputs, Json, JsonObject } from '../shared/bridge';
 import { evidenceTarget, candidatePatch, candidatePreset, type CandidateExperimentPreset } from '../shared/diagnosis';
+import { candidateRepairPreset, type CandidateRepairPreset } from '../shared/repair';
 import { digest, exact, hasFeature, identifier, knownRejection } from '../shared/experiments';
 import { ExperimentStatistics } from './ExperimentStatistics';
 import { call, Empty, JsonView, Notice, object, rows, short, str, useAction, useRead, type EvidenceTarget } from './ui';
@@ -8,6 +9,7 @@ import { call, Empty, JsonView, Notice, object, rows, short, str, useAction, use
 const KINDS: Record<string, string> = { accepted_plan: '已接受计划', accepted_tool_decision: '已接受工具决策', unaccepted_model_output: '接受关系未完整核验的模型输出' };
 type OpenEvent = (target: EvidenceTarget) => void;
 type OpenExperiment = (preset: CandidateExperimentPreset) => void;
+type OpenRepair = (preset: CandidateRepairPreset) => void;
 type Submission = Inputs['createDebugReport'];
 
 export function EventLink({ event, openEvent, label }: { event: Json | undefined; openEvent: OpenEvent; label?: string }) {
@@ -16,15 +18,15 @@ export function EventLink({ event, openEvent, label }: { event: Json | undefined
     : <span className="muted small">{label ?? '事件'}：缺少可跳转的精确引用</span>;
 }
 
-export default function DebugReports({ failedRunId, openEvent, openExperiment }: { failedRunId: string; openEvent: OpenEvent; openExperiment: OpenExperiment }) {
+export default function DebugReports({ failedRunId, openEvent, openExperiment, openRepair }: { failedRunId: string; openEvent: OpenEvent; openExperiment: OpenExperiment; openRepair: OpenRepair }) {
   const capabilities = useRead(() => call(window.agentgit.capabilities()), []);
   const supported = hasFeature(capabilities.data, 'static_debug_reports');
   return <section className="debug-reports" aria-labelledby="debug-title"><div className="section-heading"><h2 id="debug-title">故障候选与报告</h2><span className="muted small">静态证据与干预效果分别判断</span></div>
-    <Notice>{capabilities.error}</Notice>{capabilities.loading ? <p role="status">核对定位能力…</p> : !supported ? <Empty title="当前后端尚不支持故障报告">请连接具有 static_debug_reports 能力的后端后重试；结构化差异仍可独立使用。</Empty> : <ReportWorkspace failedRunId={failedRunId} openEvent={openEvent} openExperiment={openExperiment} />}
+    <Notice>{capabilities.error}</Notice>{capabilities.loading ? <p role="status">核对定位能力…</p> : !supported ? <Empty title="当前后端尚不支持故障报告">请连接具有 static_debug_reports 能力的后端后重试；结构化差异仍可独立使用。</Empty> : <ReportWorkspace failedRunId={failedRunId} openEvent={openEvent} openExperiment={openExperiment} openRepair={openRepair} />}
   </section>;
 }
 
-function ReportWorkspace({ failedRunId, openEvent, openExperiment }: { failedRunId: string; openEvent: OpenEvent; openExperiment: OpenExperiment }) {
+function ReportWorkspace({ failedRunId, openEvent, openExperiment, openRepair }: { failedRunId: string; openEvent: OpenEvent; openExperiment: OpenExperiment; openRepair: OpenRepair }) {
   const [failed, setFailed] = useState(failedRunId), [reference, setReference] = useState('');
   const [reportId, setReportId] = useState(''), [lookup, setLookup] = useState(''), [afterId, setAfterId] = useState<string | undefined>();
   const [pending, setPending] = useState<Submission | null>(null), submission = useRef<Submission | null>(null);
@@ -57,11 +59,11 @@ function ReportWorkspace({ failedRunId, openEvent, openExperiment }: { failedRun
       <div className="debug-report-list" aria-label="已冻结报告">{rows(listing.data?.items).map(item => <button key={str(item.debug_report_id)} className={reportId === item.debug_report_id ? 'selected' : ''} onClick={() => openReport(str(item.debug_report_id))}><span>报告 <code>{short(item.debug_report_id)}</code></span><span className="small muted">失败 Run <code>{short(item.failed_run_id)}</code>{item.reference_run_id ? ' · 有成功参考' : ' · 无参考'}</span></button>)}</div>
       {!listing.loading && !rows(listing.data?.items).length && <p className="muted">当前页尚无报告。生成报告需要已终止的失败 Run。</p>}
       <div className="pagination"><button disabled={!afterId} onClick={() => setAfterId(undefined)}>报告首批</button><button disabled={!listing.data?.has_more} onClick={() => setAfterId(str(listing.data?.next_after_id))}>更多报告</button></div>
-    </div><Notice>{report.error}</Notice>{reportId && report.loading ? <p role="status">读取冻结报告…</p> : report.data ? <ReportDetail key={reportId} stored={report.data} openEvent={openEvent} openExperiment={openExperiment} /> : null}
+    </div><Notice>{report.error}</Notice>{reportId && report.loading ? <p role="status">读取冻结报告…</p> : report.data ? <ReportDetail key={reportId} stored={report.data} openEvent={openEvent} openExperiment={openExperiment} openRepair={openRepair} /> : null}
   </>;
 }
 
-function ReportDetail({ stored, openEvent, openExperiment }: { stored: JsonObject; openEvent: OpenEvent; openExperiment: OpenExperiment }) {
+function ReportDetail({ stored, openEvent, openExperiment, openRepair }: { stored: JsonObject; openEvent: OpenEvent; openExperiment: OpenExperiment; openRepair: OpenRepair }) {
   const report = object(stored.report), diagnosis = object(report.diagnosis), failed = object(report.failed), reference = object(report.reference), comparison = object(report.comparison);
   const candidates = rows(diagnosis.candidates), [index, setIndex] = useState(0), candidate = candidates[index];
   const [candidatePage, setCandidatePage] = useState(0);
@@ -73,7 +75,7 @@ function ReportDetail({ stored, openEvent, openExperiment }: { stored: JsonObjec
     <div className="debug-layout"><nav className="debug-outline" aria-label="故障候选">{candidates.slice(candidatePage, candidatePage + 50).map((item, offset) => { const i = candidatePage + offset; return <button key={str(object(item.event).run_id) + ':' + String(object(item.event).seq)} className={i === index ? 'selected' : ''} aria-pressed={i === index} onClick={() => setIndex(i)}><span>排名 {String(item.rank)}{Number(item.tied_count) > 1 ? ` · ${String(item.tied_count)} 项并列` : ''}</span><strong>{str(item.action_step) || KINDS[str(item.kind)] || '模型输出'}</strong><span className="small muted">{KINDS[str(item.kind)] ?? str(item.kind)}</span></button>; })}{candidates.length > 50 && <div className="pagination"><span>共 {candidates.length} 项</span><button disabled={!candidatePage} onClick={() => { setCandidatePage(candidatePage - 50); setIndex(candidatePage - 50); }}>上一批候选</button><button disabled={candidatePage + 50 >= candidates.length} onClick={() => { setCandidatePage(candidatePage + 50); setIndex(candidatePage + 50); }}>下一批候选</button></div>}</nav>
       {candidate ? <section className="debug-candidate" aria-labelledby="candidate-title"><h3 id="candidate-title">候选决策证据</h3><EventLink event={candidate.event} openEvent={openEvent} /><p className="small muted">{str(candidate.action_provider) || '未核验唯一接受动作'} · 并列项不使用时间或 ID 打破排名。</p><TextList value={candidate.reasons} /><h3>不确定性</h3>{Array.isArray(candidate.uncertainties) && candidate.uncertainties.length ? <TextList value={candidate.uncertainties} /> : <p>当前候选没有额外标注；仍须通过独立干预验证效果。</p>}
         <h3>支持事件</h3><div className="event-links">{rows(candidate.supporting_events).map((event, i) => <EventLink key={i} event={event} openEvent={openEvent} />)}</div><details><summary>静态特征原文</summary><JsonView value={candidate.features} /></details>
-        <CandidateExperiment key={String(object(candidate.event).event_id)} reportId={str(stored.debug_report_id)} candidate={candidate} openEvent={openEvent} openExperiment={openExperiment} />
+        <CandidateExperiment key={String(object(candidate.event).event_id)} reportId={str(stored.debug_report_id)} candidate={candidate} openEvent={openEvent} openExperiment={openExperiment} openRepair={openRepair} />
       </section> : <Empty title="没有可展示候选">请查看硬断言及证据缺口；不会生成虚构根因。</Empty>}
     </div><h3>行为对齐与证据缺口</h3><p>{reference.run_id ? comparison.status === 'comparable' ? `依赖对齐：${rows(comparison.matches).length} 对；歧义 ${ambiguities.length} 组。` : '没有共同版本祖先，无法作依赖对齐。' : '未提供成功参考，不能展示两侧对齐。'} 两侧范围合计缺口 {gaps.length} 项。</p>
     {reference.run_id && <><p>首个可见分歧来自依赖图最小前沿，可有多个；它不是故障根因。</p><div className="event-links">{rows(comparison.first_left).map((item, i) => <EventLink key={'L' + i} event={item} openEvent={openEvent} label={`失败侧分歧 · seq ${String(item.seq)}`} />)}{rows(comparison.first_right).map((item, i) => <EventLink key={'R' + i} event={item} openEvent={openEvent} label={`参考侧分歧 · seq ${String(item.seq)}`} />)}</div></>}
@@ -88,7 +90,7 @@ function ReportDetail({ stored, openEvent, openExperiment }: { stored: JsonObjec
   </article>;
 }
 
-function CandidateExperiment({ reportId, candidate, openEvent, openExperiment }: { reportId: string; candidate: JsonObject; openEvent: OpenEvent; openExperiment: OpenExperiment }) {
+function CandidateExperiment({ reportId, candidate, openEvent, openExperiment, openRepair }: { reportId: string; candidate: JsonObject; openEvent: OpenEvent; openExperiment: OpenExperiment; openRepair: OpenRepair }) {
   const [validator, setValidator] = useState(''), [experiment, setExperiment] = useState(''), [context, setContext] = useState<JsonObject | null>(null), [view, setView] = useState<JsonObject | null>(null);
   const action = useAction(), event = evidenceTarget(candidate.event), observed = object(view?.experiment);
   const [contextLocked, setContextLocked] = useState(false);
@@ -97,6 +99,7 @@ function CandidateExperiment({ reportId, candidate, openEvent, openExperiment }:
       setContext(null); if (event) setContext(await call(window.agentgit.getDebugCandidateContext({ reportId, candidateEventId: event.eventId, validatorRef: digest(validator, '验收器摘要') })));
     }); }}><label className="grow">候选验收器摘要<input value={validator} disabled={contextLocked} onChange={event => { setValidator(event.target.value); setContext(null); }} spellCheck={false} /></label><button disabled={action.busy || contextLocked || !validator.trim() || !event}>核对干预上下文</button></form>
     {context && <details open><summary>已核对的调用与检查点</summary><EventLink event={context.request_event} openEvent={openEvent} /><JsonView value={context.context} /></details>}
+    {context && <><button disabled={action.busy || contextLocked} onClick={() => void action.run(async () => { const frozen = await call(window.agentgit.getValidator({ validatorRef: str(object(object(context.context).precondition).validator_ref) })); openRepair(candidateRepairPreset(context, frozen)); })}>在修复实验室核对候选</button><p className="small muted">只交接已核对的来源、起点、screen 验收器和事件；预算、四项回归与执行授权仍需显式填写。排名不证明根因，confirm/regression 样本不能用于搜索。</p></>}
     {context && <CandidatePatch context={object(context.context)} candidate={candidate} lock={setContextLocked} openExperiment={openExperiment} />}
     <form className="inline-form" onSubmit={eventForm => { eventForm.preventDefault(); void action.run(async () => {
       setView(null); if (event) setView(await call(window.agentgit.getDebugCandidateExperiment({ reportId, candidateEventId: event.eventId, experimentId: identifier(experiment, '实验 ID') })));
