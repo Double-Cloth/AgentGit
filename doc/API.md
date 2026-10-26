@@ -402,7 +402,7 @@ uv run --locked agentgit repair-study-cancel $repo.repository_id $study.study_id
 
 查询额外返回 `field_reduction`：未进入阶段或旧策略时为 `null`，否则包含独立 `state/summary/trials`、不可变引用、实际收据与本 Job 模型调用来源。原 `reduction` 保留字段之前的原子摘要；最终候选的必要性应读取字段摘要中的 `atomic_minimality` 和 `field_minimality`。即使预算停止后最后一个通过候选仍能锁定，也不能把未测试字段标为最小。所有派生内容按项目和具体 study 解析，相同来源摘要不能跨 study 借用；确认投影使用最终锁中的确切派生内容。
 
-`awaiting_samples` 表示最终候选已经锁定，确认池尚未打开，不能把这个状态当作 verified；预注册、开启及实际执行入口见下节。正式配置批准 API 尚未提供。完整 fixture 删除测试只支持所声明原子语法的 1-minimal；预算不足、未测和非确定结果保持未证明。历史原子协议证据见 [S10-reduction.md](acceptance/S10-reduction.md)，字段规则见[字段缩减方案](S10-field-reduction-plan.md)。
+`awaiting_samples` 表示最终候选已经锁定，确认池尚未打开，不能把这个状态当作 verified；预注册、开启及实际执行入口见下节。正式配置审阅入口见下文的精确提案与审批。完整 fixture 删除测试只支持所声明原子语法的 1-minimal；预算不足、未测和非确定结果保持未证明。历史原子协议证据见 [S10-reduction.md](acceptance/S10-reduction.md)，字段规则见[字段缩减方案](S10-field-reduction-plan.md)。
 
 ## 确认条件预注册与开启（S10）
 
@@ -441,3 +441,35 @@ uv run --locked agentgit repair-validation-status $repositoryId $studyId
 六项完整硬验收至少五项通过、四项回归全部通过、安全零违规和完整物理用量才可封存验证结果。执行错误、零新模型调用或仅重验旧产物不能充当完整确认；收据必须来自实际 Job、固定验收器和该 Job 自身调用/恢复链。合成条件结果为 `verified_under_fixture`，真实模型路径为 `empirically_confirmed` 并保留小样本限制；本轮没有付费供应商实测。状态不代表配置已采纳，`adoption=not_reviewed` 保持。没有上传“验证成功”的接口。
 
 自定义回归语料和时钟应由持久 Job 冻结；旧直接执行来源若缺少可重建且一致的输入，会在 Replay/预注册时返回 `replay_mismatch`，不会静默改用 bundled 语料。预注册/开启与实际执行证据分别见 [S10-pools.md](acceptance/S10-pools.md) 和 [S10-confirmation.md](acceptance/S10-confirmation.md)。
+
+## 精确修复建议与审阅（S10）
+
+| 入口 | 请求 | 效果 |
+|---|---|---|
+| POST /repair-studies/{study_id}/proposal | `{"schema_version":1}`，幂等键 | 从已封存验证建立唯一精确建议，返回 201 |
+| GET /repair-proposals/{proposal_id} | 项目头 | 只读返回 before/after、完整补丁、验收器/任务/环境、预算用量、原子/字段范围、当前版本计数器及决定 |
+| POST /repair-proposals/{proposal_id}/review | `{"schema_version":1}`，幂等键 | 冻结当前配置版本和操作者的审阅票据，返回 201 |
+| POST /repair-proposals/{proposal_id}/approve | 下述决定，`approve` 或 `save_experiment` | 只创建配置新版本，或只保存实验定义 |
+| POST /repair-proposals/{proposal_id}/reject | 下述决定，`reject` | 只记录不可变拒绝，不创建配置 |
+
+这里的 `proposal_id` 是最终建议的新身份，`source_proposal_id` 才是原 S9 筛选候选。建议正文、候选锁、封存验证和来源 config ID/version/ref 不可替换；接口不接受用户提交 before/after、passed、费用、工具权限或执行选项。缺少/未知 Schema 为 409，未知字段为 422，沿用现有认证、项目、大小和幂等约束。
+
+```json
+{"schema_version":1,"review_id":"<审阅 UUID>","proposal_ref":"<精确建议摘要>","expected_config_version":21,"decision":"approve"}
+```
+
+`expected_config_version` 是票据中的项目配置版本计数器，包含私有试验配置；来源配置仍由独立的 `source_config_id/source_config_version` 指明。审阅后任何配置版本推进都使旧票据失效，返回 `version_conflict`；用新幂等键重新 POST review，取得同一不可变建议的新票据后再决定。一个建议只接受一个最终决定；相同决定原键重试返回原结果，改决定/改参数冲突，两个操作者竞争最多产生一个版本和一个决定。
+
+批准采用来源配置原有授权及预算，只应用确切 Prompt 与 `plan_template`。结果包含新 config ID/version；不修改原配置、已有 Task 或“活动头”，不启动 Run/Job。新任务须显式选择新配置。模板在新任务的同一 Runtime 里登记为 `plan.accepted`，包含配置来源和模板摘要；初始化不继承旧 Run 的完成节点、记忆、产物或副作用。空模板保留旧编码和首次模型规划行为。
+
+含 `TOOL_RESPONSE_PATCH` 时 `after=null/adoption_scope=save_experiment_only`，正式配置批准被拒绝。`save_experiment` 返回定义摘要、完整定义和 `execution=not_started`，没有排队执行；真正运行需另行提交、重新核对来源与授权。未完成或失败的确认/回归不能批准或作为合格实验保存，仍可审阅并拒绝。封存验证摘要中的 `adoption=not_reviewed` 保留当时事实，当前决定读取建议响应的 `review`。
+
+等价 CLI：
+
+```powershell
+uv run --locked agentgit repair-propose $repo.repository_id $study.study_id --key proposal-001
+uv run --locked agentgit repair-proposal-status $repo.repository_id $proposal.proposal_id
+uv run --locked agentgit repair-review $repo.repository_id $proposal.proposal_id --key review-001
+# decision.json 使用上面的完整严格请求；该动作不会开始执行。
+uv run --locked agentgit repair-review-decision $repo.repository_id $proposal.proposal_id --file decision.json --key decision-001
+```

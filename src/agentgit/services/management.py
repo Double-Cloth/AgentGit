@@ -30,6 +30,7 @@ from agentgit.core.model_usage import OpenAIOptions, price_micro_usd
 from agentgit.core.models import CallIntent, parse_contract
 from agentgit.core.repair import NewRepairSearch
 from agentgit.core.repair_pools import NewRepairValidationSuite
+from agentgit.core.repair_reviews import DecideRepairReview
 from agentgit.core.repair_studies import NewRepairStudy
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage
 from agentgit.core.versions import LiveReplay, NewBranch, RecordedRange, RecordedReplay
@@ -46,6 +47,7 @@ from agentgit.services.jobs import JobService
 from agentgit.services.repair_confirmation import RepairConfirmationService
 from agentgit.services.repair_jobs import RepairJobService
 from agentgit.services.repair_pools import RepairValidationPoolService
+from agentgit.services.repair_reviews import RepairReviewService
 from agentgit.services.repair_searches import RepairSearchService
 from agentgit.services.repair_studies import RepairStudyService
 from agentgit.services.repair_templates import prepare_templates
@@ -121,6 +123,26 @@ class ManagementService:
 
     def repair_search(self, repository_id: UUID, search_id: UUID) -> dict[str, Any]:
         return RepairJobService(self.history).view(repository_id, search_id)
+
+    def create_repair_proposal(self, repository: UUID, study: UUID, key: str) -> dict[str, Any]:
+        return RepairReviewService(self.research).create(
+            repository, study, actor=self.actor, key=key
+        )
+
+    def repair_proposal(self, repository: UUID, proposal: UUID) -> dict[str, Any]:
+        return RepairReviewService(self.research).view(repository, proposal)
+
+    def begin_repair_review(self, repository: UUID, proposal: UUID, key: str) -> dict[str, Any]:
+        return RepairReviewService(self.research).begin(
+            repository, proposal, actor=self.actor, key=key
+        )
+
+    def decide_repair_review(
+        self, repository: UUID, proposal: UUID, request: DecideRepairReview, key: str
+    ) -> dict[str, Any]:
+        return RepairReviewService(self.research).decide(
+            repository, proposal, request, actor=self.actor, key=key
+        )
 
     def create_repair_study(
         self, repository_id: UUID, payload: NewRepairStudy, key: str

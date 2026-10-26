@@ -6,7 +6,7 @@ S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命
 
 ## 环境
 
-S10 开发位于 `codex/s10-repair`，从 S9 本机后端退出提交 `fa37baf` 继续。[首增量](acceptance/S10-kernel.md)是纯删除与确认协议；[第二增量](acceptance/S10-reduction.md)接入耐久缩减、原搜索共享预算、实际 Live/Hybrid 删除 Job、物理结算和候选锁；[第三增量](acceptance/S10-pools.md)接入筛选前采样条件预注册及锁后一次性开启；[第四增量](acceptance/S10-confirmation.md)执行实际六加四验证并封存调用来源、计量和统计。随后完成[三原子用例](acceptance/S10-three-atoms.md)及[耐久字段缩减](acceptance/S10-fields.md)。审批、随机/观测伪修复、Repair Lab 与全量评估仍待完成，未执行票据及纯协议 UUID 不能当作实际 Run 或实测费用。
+S10 开发位于 `codex/s10-repair`，从 S9 本机后端退出提交 `fa37baf` 继续。[首增量](acceptance/S10-kernel.md)是纯删除与确认协议；[第二增量](acceptance/S10-reduction.md)接入耐久缩减、原搜索共享预算、实际 Live/Hybrid 删除 Job、物理结算和候选锁；[第三增量](acceptance/S10-pools.md)接入筛选前采样条件预注册及锁后一次性开启；[第四增量](acceptance/S10-confirmation.md)执行实际六加四验证并封存调用来源、计量和统计。随后完成[三原子用例](acceptance/S10-three-atoms.md)、[耐久字段缩减](acceptance/S10-fields.md)及[精确建议与审批后端](acceptance/S10-reviews.md)。随机/观测伪修复、Repair Lab 与全量评估仍待完成；测试库的批准不表示业务配置已经采纳，未执行票据及纯协议 UUID 不能当作实际 Run 或实测费用。
 
 确认入口为 `repair-confirm-worker` 加普通 `worker`；查询复用 `repair-validation-status`，详见 [API.md](API.md)。单元使用 `uv run --locked pytest tests/unit`，实际新边界为 `uv run --locked pytest tests/integration/test_repair_confirmation*.py tests/integration/test_repair_frozen_corpus_boundary.py`（PowerShell 可按下列完整枚举方式传入文件），旧流程回归为 `test_repair_trials.py`、`test_repair_studies.py`、`test_repair_study_boundaries.py`、`test_repair_pools.py` 和 `test_repair_pool_registration.py`。所有集成用例必须使用真实测试库、独立 `test_<uuid>` Schema 及临时 CAS；正文证据和运行数据仅留在忽略目录。
 
@@ -97,7 +97,7 @@ CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障�
 
 ## S3 离线研究演示
 
-S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 Schema head 为 `0022_repair_field_reduction`。S10 八张缩减控制/证据表、三张预注册/开启表、五张实际确认/结算/摘要表及七张字段状态/派生内容/执行证据表只在独立测试 Schema 验证，没有迁移业务库。字段阶段沿用原 study 租约和预算，旧原子协议记录保持原编码。用户自行准备业务环境后再运行：
+S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 Schema head 为 `0023_repair_proposal_reviews`。S10 八张缩减控制/证据表、三张预注册/开启表、五张实际确认/结算/摘要表、七张字段状态/执行证据表及四张精确建议/审阅/实验定义/决定表只在独立测试 Schema 验证，没有迁移业务库。字段阶段沿用原 study 租约和预算，旧原子协议记录保持原编码。用户自行准备业务环境后再运行：
 
 ```powershell
 uv run --locked alembic upgrade head

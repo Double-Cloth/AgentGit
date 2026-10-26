@@ -71,6 +71,7 @@ class AgentConfig(Contract):
     tools: tuple[str, ...] = ("corpus_search", "source_read", "artifact_write")
     execution_policy: ExecutionPolicy | None = None
     limits: BudgetLimits = BudgetLimits()
+    plan_template: "Plan | None" = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def fixed_permissions(self) -> "AgentConfig":
@@ -82,6 +83,19 @@ class AgentConfig(Contract):
             raise ValueError("容器工具必须且仅其需要绑定固定执行策略")
         if execution and self.limits.max_response_bytes < 8192:
             raise ValueError("容器工具需要至少 8 KiB 的完整结果封装预算")
+        if self.plan_template is not None:
+            permissions = {
+                "search": "corpus_search",
+                "read": "source_read",
+                "write_report": "artifact_write",
+                "write_sources": "artifact_write",
+                "write_execution_code": "artifact_write",
+                "write_execution_command": "artifact_write",
+                "code_exec": "code_exec",
+                "terminal_exec": "terminal_exec",
+            }
+            if {permissions[node.kind] for node in self.plan_template.nodes} - set(self.tools):
+                raise ValueError("配置计划模板不能扩大工具授权")
         if self.model == "mock-research/v1":
             if self.openai is not None:
                 raise ValueError("Mock 配置不能携带供应商选项")

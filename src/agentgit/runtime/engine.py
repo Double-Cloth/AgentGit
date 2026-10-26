@@ -108,6 +108,7 @@ class ResearchRuntime:
                 self._failure(exc)
             if self.state.status not in (RunStatus.PLANNING, RunStatus.RUNNING):
                 return self.state
+        self._use_template()
         if self.state.status in (RunStatus.PLANNING, RunStatus.RUNNING):
             try:
                 self._consume_recorded()
@@ -127,6 +128,7 @@ class ResearchRuntime:
         if self.state.status == RunStatus.QUEUED:
             self.state = evolve(self.state, status=RunStatus.PLANNING)
             self._save("run.planning")
+        self._use_template()
         while self.state.status in (RunStatus.PLANNING, RunStatus.RUNNING):
             before_call = self.state
             try:
@@ -154,6 +156,34 @@ class ResearchRuntime:
                     raise
                 self._failure(exc)
         return self.state
+
+    def _use_template(self) -> None:
+        template = self.config.plan_template
+        if (
+            template is not None
+            and self.state.status == RunStatus.PLANNING
+            and self.state.plan is None
+            and not self.state.completed
+            and not self.state.messages
+            and self.state.usage.steps == 0
+        ):
+            if self._control_point():
+                return
+            self.state = evolve(
+                self.state,
+                plan=template,
+                plan_version=self.state.plan_version + 1,
+                status=RunStatus.RUNNING,
+                error_code=None,
+            )
+            self._save(
+                "plan.accepted",
+                plan_version=self.state.plan_version,
+                source="agent_config",
+                template_ref=object_digest(
+                    ObjectType.BLOB, encode(template.model_dump(mode="json"))
+                ),
+            )
 
     def _control_point(self, only: frozenset[str] | None = None) -> bool:
         action = self.control() if self.control is not None else None

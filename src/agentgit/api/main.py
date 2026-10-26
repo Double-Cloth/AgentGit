@@ -32,9 +32,10 @@ from agentgit.core.management import (
     NewTask,
     SubmitRun,
 )
-from agentgit.core.models import parse_contract
+from agentgit.core.models import Contract, parse_contract
 from agentgit.core.repair import NewRepairSearch
 from agentgit.core.repair_pools import NewRepairValidationSuite, OpenRepairValidationPool
+from agentgit.core.repair_reviews import DecideRepairReview
 from agentgit.core.repair_studies import NewRepairStudy
 from agentgit.core.versions import NewBranch, parse_replay
 from agentgit.services.execution_views import ExecutionResource
@@ -266,6 +267,62 @@ def create_app(
         service: Annotated[ManagementService, Depends(get_manager)],
     ) -> dict[str, Any]:
         return service.repair_validation(repo, study_id)
+
+    @app.post("/repair-studies/{study_id}/proposal", status_code=201)
+    def repair_proposal_create(
+        study_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        parse_contract(encode(body), Contract)
+        return service.create_repair_proposal(repo, study_id, key)
+
+    @app.get("/repair-proposals/{proposal_id}")
+    def repair_proposal_status(
+        proposal_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.repair_proposal(repo, proposal_id)
+
+    @app.post("/repair-proposals/{proposal_id}/review", status_code=201)
+    def repair_review_begin(
+        proposal_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        parse_contract(encode(body), Contract)
+        return service.begin_repair_review(repo, proposal_id, key)
+
+    @app.post("/repair-proposals/{proposal_id}/approve")
+    def repair_review_approve(
+        proposal_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        request = parse_contract(encode(body), DecideRepairReview)
+        if request.decision == "reject":
+            raise AgentGitError(ErrorCode.VALIDATION, "拒绝决定必须使用 reject 入口")
+        return service.decide_repair_review(repo, proposal_id, request, key)
+
+    @app.post("/repair-proposals/{proposal_id}/reject")
+    def repair_review_reject(
+        proposal_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        request = parse_contract(encode(body), DecideRepairReview)
+        if request.decision != "reject":
+            raise AgentGitError(ErrorCode.VALIDATION, "采纳或保存实验必须使用 approve 入口")
+        return service.decide_repair_review(repo, proposal_id, request, key)
 
     @app.post("/repair-studies", status_code=202)
     def repair_study_create(

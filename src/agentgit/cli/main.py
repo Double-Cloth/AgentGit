@@ -34,6 +34,7 @@ from agentgit.core.management import (
 from agentgit.core.models import parse_contract
 from agentgit.core.repair import NewRepairSearch
 from agentgit.core.repair_pools import NewRepairValidationSuite
+from agentgit.core.repair_reviews import DecideRepairReview
 from agentgit.core.repair_studies import NewRepairStudy
 from agentgit.core.research import AgentConfig, BudgetLimits, ResearchGoal
 from agentgit.core.versions import NewBranch, parse_replay
@@ -345,6 +346,55 @@ def repair_reduce(
                 repository_id,
                 NewRepairStudy(search_id=str(search_id), max_reduce_trials=max_trials),
                 key,
+            )
+        )
+
+
+@app.command("repair-propose")
+def repair_propose(
+    repository_id: UUID, study_id: UUID, key: Annotated[str, typer.Option()], testing: bool = False
+) -> None:
+    """从封存确认生成唯一精确提案，不批准或执行。"""
+    with management(testing) as service:
+        emit(service.create_repair_proposal(repository_id, study_id, key))
+
+
+@app.command("repair-proposal-status")
+def repair_proposal_status(repository_id: UUID, proposal_id: UUID, testing: bool = False) -> None:
+    """读取精确前后配置、证据、范围与审阅决定。"""
+    with management(testing) as service:
+        emit(service.repair_proposal(repository_id, proposal_id))
+
+
+@app.command("repair-review")
+def repair_review(
+    repository_id: UUID,
+    proposal_id: UUID,
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """冻结当前配置版本的审阅票据；刷新不改提案内容。"""
+    with management(testing) as service:
+        emit(service.begin_repair_review(repository_id, proposal_id, key))
+
+
+@app.command("repair-review-decision")
+def repair_review_decision(
+    repository_id: UUID,
+    proposal_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """按明确票据批准、拒绝或保存实验；不启动 Run/Job。"""
+    with file.open("rb") as stream:
+        raw = stream.read(1_048_577)
+    if len(raw) > 1_048_576:
+        raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "审阅请求超过上限")
+    with management(testing) as service:
+        emit(
+            service.decide_repair_review(
+                repository_id, proposal_id, parse_contract(raw, DecideRepairReview), key
             )
         )
 
