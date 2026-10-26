@@ -1,7 +1,7 @@
 """事务外核验已发布补丁和失败条件，事务内冻结搜索及全部提案。"""
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
@@ -22,7 +22,7 @@ from agentgit.core.research import AgentConfig
 from agentgit.core.snapshots import StateSnapshot
 from agentgit.core.versions import RecordedRange
 from agentgit.experiments.validation import frozen_inputs
-from agentgit.repair.policy import validate_policy
+from agentgit.repair.policy import repair_model_scope, validate_policy
 from agentgit.repair.space import enumerate_proposals, patch_ref, proposal_key
 from agentgit.services.debug_reports import DebugReportService
 from agentgit.services.environment import source_revision
@@ -56,11 +56,17 @@ class RepairSearchService:
         budget: RepairBudget,
         intervention_ids: tuple[str, ...],
         hybrid: HybridPolicy | None = None,
+        *,
+        fixture_scope: Literal["stochastic_fixture"] | None = None,
     ) -> CompiledRepairSearch:
         binding = space.binding
         repository = UUID(binding.repository_id)
         RepairSearchSpec(
-            space=space, budget=budget, intervention_ids=intervention_ids, hybrid=hybrid
+            space=space,
+            budget=budget,
+            intervention_ids=intervention_ids,
+            hybrid=hybrid,
+            fixture_scope=fixture_scope,
         )
         if len(intervention_ids) != len(space.patches):
             raise AgentGitError(ErrorCode.VALIDATION, "每个搜索原子必须绑定一个已发布干预")
@@ -99,6 +105,7 @@ class RepairSearchService:
         if not isinstance(frozen, dict) or "config" not in frozen:
             raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "搜索起点缺少冻结配置")
         config = parse_contract(encode(frozen["config"]), AgentConfig)
+        repair_model_scope(config, fixture_scope)
         validate_policy(binding.policy_version, budget, config)
         if not budget.trial.within(config.limits):
             raise AgentGitError(ErrorCode.FORBIDDEN, "修复单试验预算不能扩大来源授权")
@@ -142,6 +149,7 @@ class RepairSearchService:
             failure_assertions=failure.diagnosis.assertions,
             code_revision=source_revision(),
             hybrid=hybrid,
+            fixture_scope=fixture_scope,
         )
         indices = {patch_ref(patch): index for index, patch in enumerate(space.patches)}
         proposals = []
@@ -217,12 +225,17 @@ class RepairSearchService:
         actor: str,
         key: str,
         hybrid: HybridPolicy | None = None,
+        fixture_scope: Literal["stochastic_fixture"] | None = None,
         _request_identity: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not actor or len(actor) > 200 or not key or len(key) > 200:
             raise AgentGitError(ErrorCode.VALIDATION, "搜索操作者和幂等键必须是有界非空字符串")
         RepairSearchSpec(
-            space=space, budget=budget, intervention_ids=intervention_ids, hybrid=hybrid
+            space=space,
+            budget=budget,
+            intervention_ids=intervention_ids,
+            hybrid=hybrid,
+            fixture_scope=fixture_scope,
         )
         request = (
             _request_identity
@@ -234,13 +247,17 @@ class RepairSearchService:
                 "hybrid": hybrid.model_dump(mode="json") if hybrid else None,
             }
         )
+        if _request_identity is None and fixture_scope is not None:
+            request = {**request, "fixture_scope": fixture_scope}
         digest = object_digest(ObjectType.BLOB, encode(request))
         with self.history.engine.connect() as connection:
             requested_at = connection.execute(sa.select(sa.func.clock_timestamp())).scalar_one()
             cached = self._cached(connection, actor, key, digest)
         if cached is not None:
             return cached
-        compiled = self.compile(space, budget, intervention_ids, hybrid)
+        compiled = self.compile(
+            space, budget, intervention_ids, hybrid, fixture_scope=fixture_scope
+        )
         manifest = compiled.manifest
         repository, identity = UUID(space.binding.repository_id), uuid4()
         with self.history.engine.begin() as connection:

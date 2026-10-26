@@ -37,6 +37,7 @@ from agentgit.core.research import AgentConfig, evolve
 from agentgit.core.snapshots import StateSnapshot
 from agentgit.experiments.validation import frozen_inputs
 from agentgit.repair.budget import admission
+from agentgit.repair.policy import repair_model_scope
 from agentgit.repair.reduction import lock_reduced_candidate, next_deletion, summarize_reduction
 from agentgit.repair.space import patch_ref
 from agentgit.services.environment import source_revision
@@ -336,7 +337,7 @@ class RepairStudyService:
             source_proposal_ref=definition.key,
             task_ref=validator.input_ref,
             atoms=atoms,
-            model_scope="deterministic_fixture" if config.openai is None else "provider",
+            model_scope=repair_model_scope(config, source_manifest.fixture_scope),
         )
         maximum = (
             request.max_reduce_trials

@@ -118,6 +118,7 @@ class ManagementService:
             actor=self.actor,
             key=key,
             hybrid=payload.hybrid,
+            fixture_scope=payload.fixture_scope,
             _request_identity=request,
         )
 

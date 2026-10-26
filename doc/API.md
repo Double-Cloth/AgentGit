@@ -344,6 +344,8 @@ Mock 的 usage_kind 为 mock_utf8_bytes；S6 已接入固定供应商与 provide
 
 创建请求为 `template_repair_search/v1`，给定共同起点和有限事件后自动生成固定模板。以下 ID/摘要取自已经失败的 Run、Timeline 和 S7 冻结 screen 验收器；不能使用成功 Run、其他项目事件或 confirm/regression 验收器。
 
+可选 `fixture_scope="stochastic_fixture"` 仅用于预先声明 Mock 适配器具有随机行为，必须在首次筛选前随创建请求冻结。声明进入请求幂等摘要和不可变搜索 manifest，并传递到缩减候选；其删除结果仅属经验缩减。省略时保留旧编码及确定性 Mock 默认范围；真实供应商配置禁止使用该声明，不能借此变成 fixture。已有搜索不能通过同键删除或改变声明来重分类，也不能在看到确认失败后修改范围或重开同一确认池。声明不改变模型参数、采样顺序或确认门槛。
+
 ```json
 {
   "schema_version": 1,

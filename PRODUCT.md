@@ -44,7 +44,7 @@ S8 已提供行为图、依赖对齐、失败硬断言及[不可变静态 Debug 
 
 S9 已提供[基础与台账](doc/S9-repair-plan.md)、[原子派发/结算](doc/acceptance/S9-trial-dispatch.md)、[自动搜索、模板 API/CLI 和 repair-worker](doc/acceptance/S9-search-loop.md)，完成[本机后端退出核对](doc/acceptance/S9-gates.md)。最新 569 单元 + 32 真实集成通过（不与历史重复累加）；五类安全拒绝均有关联审计且零新 trial，比较表完整保留失败/未知与实际成本，终态墙钟冻结。新 Mock 字节策略按预算摘要冻结、保护确认/回归额度；原生产 Mock 默认入口在两个 Prompt 失败后自动找到 Plan，总筛选 99,753 字节、最终试验 47,109 字节，来源不变。候选来源仍为完整有限模板降级，状态仅为待确认，不输出 verified 或最小性结论。[S10 实施计划](doc/S10-repair-plan.md)已建立；S6/D1 和 S8 待补项保持，尚无本轮桌面分发包，继续 S10–S12 的必选完整目标。
 
-S10 已实现[耐久缩减](doc/acceptance/S10-reduction.md)、[预注册/一次性开启](doc/acceptance/S10-pools.md)、[实际六加四](doc/acceptance/S10-confirmation.md)、[三原子](doc/acceptance/S10-three-atoms.md)、[字段缩减](doc/acceptance/S10-fields.md)及[精确提案/审批后端](doc/acceptance/S10-reviews.md)。原子、字段和必要性复查共用原预算；确切派生内容在最终锁后独立验证。建议展示 before/after、任务/环境、用量和范围；票据绑定配置版本，批准只创建新版本，Plan 模板由新任务真实执行，保存实验只落定义。仅在隔离测试库完成批准，业务配置未采纳；合成验证仍标 `verified_under_fixture`，保留小样本限制。当前同源码 746 项去重通过，旧版本结果不累加；S9 默认深度二和 reduce=6 不变。继续随机偶然通过、真实观测伪修复、Repair Lab、30 例/四基线和 D2，S10 尚未整体验收。
+S10 已实现[耐久缩减](doc/acceptance/S10-reduction.md)、[预注册/一次性开启](doc/acceptance/S10-pools.md)、[实际六加四](doc/acceptance/S10-confirmation.md)、[三原子](doc/acceptance/S10-three-atoms.md)、[字段缩减](doc/acceptance/S10-fields.md)、[精确提案/审批后端](doc/acceptance/S10-reviews.md)及[随机拒绝/实际观测伪修复后端](doc/acceptance/S10-falsefix.md)。原子、字段和必要性复查共用原预算；确切派生内容在最终锁后独立验证。建议展示 before/after、任务/环境、用量和范围；票据绑定配置版本，批准只创建新版本，Plan 模板由新任务真实执行，保存实验只落定义。随机确认失败保留拒绝；观测补丁即使六加四通过也不能采纳为正式配置。仅在隔离测试库验证，业务配置未采纳；合成验证仍标 `verified_under_fixture`，预选随机向量不构成无偏成功率研究。当前测试范围见独立记录，旧版本结果不累加；S9 默认深度二和 reduce=6 不变。继续 Repair Lab、30 例/四基线和 D2，S10 尚未整体验收。
 
 ## Brand Commitments
 

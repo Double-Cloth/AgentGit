@@ -1,11 +1,24 @@
 """以已核算的 Mock 字节成本冻结新版默认值；旧 v1 内容保持可读。"""
 
+from typing import Literal
+
 from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.repair import RepairBudget
 from agentgit.core.research import AgentConfig, BudgetLimits
 
 MOCK_POLICY = "bounded-templates/mock-bytes-v2"
+
+
+def repair_model_scope(
+    config: AgentConfig, fixture_scope: Literal["stochastic_fixture"] | None = None
+) -> Literal["deterministic_fixture", "stochastic_fixture", "provider"]:
+    """可保守声明 Mock 的随机范围，不能借此将真实模型变为 fixture。"""
+    if config.openai is not None:
+        if fixture_scope is not None:
+            raise AgentGitError(ErrorCode.FORBIDDEN, "真实模型不能借 Mock fixture 声明改变证据范围")
+        return "provider"
+    return fixture_scope or "deterministic_fixture"
 
 
 def mock_policy_version(budget: RepairBudget) -> str:

@@ -55,11 +55,14 @@ def row_count(history, name):
         return connection.execute(sa.select(sa.func.count()).select_from(TABLES[name])).scalar_one()
 
 
+@pytest.mark.parametrize("fixture_scope", [None, "stochastic_fixture"])
 def test_public_http_templates_to_independent_worker_and_readonly_cli(
-    history, tmp_path, monkeypatch
+    history, tmp_path, monkeypatch, fixture_scope
 ):
     repo, old, research, _ = create_case(history, tmp_path)
     body = public_request(history, repo, old)
+    if fixture_scope is not None:
+        body["fixture_scope"] = fixture_scope
     manager = ManagementService(research)
     with TestClient(
         create_app(Settings(api_token=SecretStr(TOKEN)), management=manager),
@@ -95,6 +98,18 @@ def test_public_http_templates_to_independent_worker_and_readonly_cli(
             == 409
         )
         ready = client.get(f"/repair-searches/{search}").json()
+        assert ready["manifest"].get("fixture_scope") == fixture_scope
+        assert not ready["trials"]
+        if fixture_scope is not None:
+            omitted_scope = {k: v for k, v in body.items() if k != "fixture_scope"}
+            assert (
+                client.post(
+                    "/repair-searches",
+                    json=omitted_scope,
+                    headers={"Idempotency-Key": "http-search"},
+                ).status_code
+                == 409
+            )
         assert ready["manifest"]["space"]["binding"]["policy_version"].startswith(
             "bounded-templates/mock-bytes-v2@"
         )

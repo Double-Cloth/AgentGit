@@ -73,7 +73,13 @@ class ConditionalMock(MockResearchModel):
 
 
 def create_case(
-    history, tmp_path, *, mode="prompt", budget_transform=lambda b: b, adapter_binding=None
+    history,
+    tmp_path,
+    *,
+    mode="prompt",
+    budget_transform=lambda b: b,
+    adapter_binding=None,
+    fixture_scope=None,
 ):
     research = ResearchService(history, tmp_path / "research")
     repo = history.create_repository("自动搜索受控 Mock")
@@ -155,7 +161,12 @@ def create_case(
         for index, p in enumerate(space.patches)
     )
     submitted = RepairSearchService(history).submit(
-        space, budget, identities, actor="test-operator", key="automatic-search"
+        space,
+        budget,
+        identities,
+        actor="test-operator",
+        key="automatic-search",
+        fixture_scope=fixture_scope,
     )
     return repo, UUID(submitted["search_id"]), research, session
 

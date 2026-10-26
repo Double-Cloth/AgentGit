@@ -149,6 +149,9 @@ class NewRepairSearch(Contract):
     )
     budget: RepairBudget | None = None
     hybrid: HybridPolicy | None = None
+    fixture_scope: Literal["stochastic_fixture"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @model_validator(mode="after")
     def distinct_targets(self) -> "NewRepairSearch":
@@ -196,6 +199,9 @@ class RepairSearchSpec(Contract):
     budget: RepairBudget
     intervention_ids: Annotated[tuple[Identifier, ...], Field(max_length=8)]
     hybrid: HybridPolicy | None = None
+    fixture_scope: Literal["stochastic_fixture"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class RepairSearchManifest(RepairSearchSpec):
