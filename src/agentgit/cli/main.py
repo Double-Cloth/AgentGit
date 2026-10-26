@@ -33,7 +33,7 @@ from agentgit.core.management import (
 )
 from agentgit.core.models import parse_contract
 from agentgit.core.repair import NewRepairSearch
-from agentgit.core.repair_pools import NewRepairValidationSuite
+from agentgit.core.repair_pools import NewPreparedRepairSearch, NewRepairValidationSuite
 from agentgit.core.repair_reviews import DecideRepairReview
 from agentgit.core.repair_studies import NewRepairStudy
 from agentgit.core.research import AgentConfig, BudgetLimits, ResearchGoal
@@ -465,6 +465,26 @@ def repair_search(
         emit(
             service.create_repair_search(
                 repository_id, parse_contract(payload, NewRepairSearch), key
+            )
+        )
+
+
+@app.command("repair-prepare")
+def repair_prepare(
+    repository_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """同一事务发布搜索及其确认/回归预注册，避免先行筛选。"""
+    with management(testing) as service:
+        with file.open("rb") as stream:
+            payload = stream.read(1_048_577)
+        if len(payload) > 1_048_576:
+            raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "修复预注册输入文件超过上限")
+        emit(
+            service.create_prepared_repair_search(
+                repository_id, parse_contract(payload, NewPreparedRepairSearch), key
             )
         )
 

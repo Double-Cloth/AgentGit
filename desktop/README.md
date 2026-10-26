@@ -1,10 +1,12 @@
 # AgentGit 桌面开发
 
-当前候选版本为 [Windows 0.1.4](../doc/acceptance/S7-package-014.md)，包含既有四页和 S7 受控实验；包内容审计、26 单元及 8 条打包 Electron 流程通过。原生保存和独立 Windows 环境仍待验收，S6/D1 阶段退出条件不变。既有安装生命周期证据对应历史候选，不能替代新包独立安装验收。操作步骤见 [D1 桌面离线指南](../doc/D1-desktop-demo.md)，剩余门槛见 [S6 清单](../doc/S6-windows-acceptance.md)。
+当前候选版本为 [Windows 0.1.5](../doc/acceptance/S8-package-015.md)，包含既有四页、S7 受控实验和 S8 故障报告/候选干预；包内容审计、30 单元及 10 条打包 Electron 流程通过。原生保存和独立 Windows 环境仍待验收，S6/D1 阶段退出条件不变。既有安装生命周期证据对应历史候选，不能替代新包独立安装验收。操作步骤见 [D1 桌面离线指南](../doc/D1-desktop-demo.md)，剩余门槛见 [S6 清单](../doc/S6-windows-acceptance.md)。
 
 S7 已接通验收器、实验/干预及实验列表共八个固定 IPC，以及来源冻结、A/B 表单、manifest、精确统计、trial、控制和重开查询。新 ZIP 的真实独立 API/Worker 流程验证 Live 9 通过/1 取消、Hybrid 各 5 全通过，recorded/synthetic 来源可区分。[S7 操作步骤](../doc/S7-desktop-demo.md)、[桌面记录](../doc/acceptance/S7-desktop.md)和[退出核对](../doc/acceptance/S7-gates.md)分别说明使用与证据范围。0.1.3 与 0.1.4 的分发文件均按摘要独立归档，不静默替换历史候选。
 
 ## 固定构建环境
+
+S10 源码已增加[原子准备与 14 项固定 IPC](../doc/acceptance/S10-prepared.md)，使用搜索与采样条件的单事务发布。当前可运行 `npx.cmd playwright test --config playwright.repair.config.ts` 核对真实 Electron preload 和主进程 HTTP 边界；这是受控 fixture，尚不代表 Repair Lab 可见页面或真实后端桌面闭环。后续见[桌面计划](../doc/S10-desktop-plan.md)，新接口未进入既有 0.1.5 分发候选。
 
 Windows x64，Node.js **24.19.0**，npm **12.1.0**。使用 `package-lock.json`，不隐式升级依赖。
 

@@ -37,9 +37,13 @@ from agentgit.services.repair_studies import RepairStudyService
 pytestmark = pytest.mark.integration
 
 
-def setup_pool(history, tmp_path, *, budget_transform=lambda value: value):
+def setup_pool(history, tmp_path, *, budget_transform=lambda value: value, adapter_binding=None):
     repo, search, research, _ = create_case(
-        history, tmp_path, mode="prompt", budget_transform=budget_transform
+        history,
+        tmp_path,
+        mode="prompt",
+        budget_transform=budget_transform,
+        adapter_binding=adapter_binding,
     )
     config = research.create_config(repo)
     origins = []

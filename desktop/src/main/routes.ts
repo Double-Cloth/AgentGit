@@ -314,6 +314,28 @@ export class BusinessController {
         return post('/validators', { source_run_id: id(input.sourceRunId), from_commit: digest(input.fromCommit), fixture_split: split });
       }
       case 'getValidator': input = fields(raw, ['validatorRef']); return get(`/validators/${digest(input.validatorRef)}`, 1048576);
+      case 'createPreparedRepairSearch': input = fields(raw, ['request', 'key']); return post('/repair-searches/prepared', jsonObject(input.request));
+      case 'getRepairSearch': input = fields(raw, ['searchId']); return get(`/repair-searches/${id(input.searchId)}`);
+      case 'listRepairSearches': input = fields(raw, [], ['afterId', 'limit']); return page(`/repositories/${this.state.repositoryId ?? ''}/repair-searches`);
+      case 'cancelRepairSearch': input = fields(raw, ['searchId', 'key']); return post(`/repair-searches/${id(input.searchId)}/cancel`, {});
+      case 'createRepairStudy': input = fields(raw, ['request', 'key']); return post('/repair-studies', jsonObject(input.request));
+      case 'getRepairStudy': input = fields(raw, ['studyId']); return get(`/repair-studies/${id(input.studyId)}`);
+      case 'cancelRepairStudy': input = fields(raw, ['studyId', 'key']); return post(`/repair-studies/${id(input.studyId)}/cancel`, {});
+      case 'getRepairValidationSuite': input = fields(raw, ['suiteId']); return get(`/repair-validation-suites/${id(input.suiteId)}`);
+      case 'openRepairValidation': input = fields(raw, ['studyId', 'suiteId', 'key']); return post(`/repair-studies/${id(input.studyId)}/open-validation`, { suite_id: id(input.suiteId) });
+      case 'getRepairValidation': input = fields(raw, ['studyId']); return get(`/repair-studies/${id(input.studyId)}/validation`);
+      case 'createRepairProposal': input = fields(raw, ['studyId', 'key']); return post(`/repair-studies/${id(input.studyId)}/proposal`, {});
+      case 'getRepairProposal': input = fields(raw, ['proposalId']); return get(`/repair-proposals/${id(input.proposalId)}`);
+      case 'beginRepairReview': input = fields(raw, ['proposalId', 'key']); return post(`/repair-proposals/${id(input.proposalId)}/review`, {});
+      case 'decideRepairReview': {
+        input = fields(raw, ['proposalId', 'reviewId', 'proposalRef', 'expectedConfigVersion', 'decision', 'key']);
+        const decision = text(input.decision, 30);
+        if (!['approve', 'reject', 'save_experiment'].includes(decision) || typeof input.expectedConfigVersion !== 'number') throw new DesktopError('validation', '修复审阅决定或配置版本无效');
+        return post(`/repair-proposals/${id(input.proposalId)}/${decision === 'reject' ? 'reject' : 'approve'}`, {
+          review_id: id(input.reviewId), proposal_ref: digest(input.proposalRef),
+          expected_config_version: number(input.expectedConfigVersion, 0, Number.MAX_SAFE_INTEGER, 1), decision,
+        });
+      }
       case 'createExperiment': input = fields(raw, ['request', 'key']); return post('/experiments', jsonObject(input.request));
       case 'getExperiment': input = fields(raw, ['experimentId']); return get(`/experiments/${id(input.experimentId)}`, 1048576);
       case 'listExperiments': input = fields(raw, [], ['afterId', 'limit']); return page(`/repositories/${this.state.repositoryId ?? ''}/experiments`);

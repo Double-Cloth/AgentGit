@@ -9,9 +9,11 @@ import sqlalchemy as sa
 from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.models import parse_contract
+from agentgit.core.repair import RepairSearchManifest
 from agentgit.core.repair_pools import (
     NewRepairValidationSuite,
     RegisteredValidationSample,
+    RegressionOrigin,
     RepairSamplingTicket,
     RepairValidationOpening,
     RepairValidationSuiteManifest,
@@ -214,6 +216,25 @@ class RepairValidationPoolService:
             if saved is not None:
                 return self._suite_response(saved)
             root, source = self._source_queued(connection, repository, search)
+        manifest = self.prepare(
+            repository, search, source, root["manifest_ref"], request.regression
+        )
+        with self.history.engine.begin() as connection:
+            result = self.publish(
+                connection, repository, manifest, actor=actor, key=key, digest=digest
+            )
+        self.fault("after_registration_commit")
+        return result
+
+    def prepare(
+        self,
+        repository: UUID,
+        search: UUID,
+        source: RepairSearchManifest,
+        source_manifest_ref: str,
+        regression: tuple[RegressionOrigin, ...],
+    ) -> RepairValidationSuiteManifest:
+        """事务前核对所有已提交来源，兼容单连接池及搜索的原子发布。"""
         if source.code_revision != source_revision():
             raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "旧代码搜索不能新增确认池")
         binding = source.space.binding
@@ -240,7 +261,7 @@ class RepairValidationPoolService:
                 config,
                 "live",
             )
-            for item in request.regression
+            for item in regression
         ]
         tasks = [conditions["task_ref"] for conditions in origins[6:]]
         if len(set(tasks)) != 4 or confirm["task_ref"] in tasks:
@@ -263,97 +284,112 @@ class RepairValidationPoolService:
             )
         manifest = RepairValidationSuiteManifest(
             search_id=str(search),
-            source_manifest_ref=root["manifest_ref"],
+            source_manifest_ref=source_manifest_ref,
             confirm=tuple(registered[:6]),
             regression=tuple(registered[6:]),
         )
-        identity = uuid4()
-        with self.history.engine.begin() as connection:
-            connection.execute(
-                sa.select(
-                    sa.func.pg_advisory_xact_lock(
-                        sa.func.hashtextextended(encode([actor, "repair-suite", key]).decode(), 0),
-                    )
+        return manifest
+
+    def publish(
+        self,
+        connection: sa.Connection,
+        repository: UUID,
+        manifest: RepairValidationSuiteManifest,
+        *,
+        actor: str,
+        key: str,
+        digest: str,
+    ) -> dict[str, Any]:
+        self._actor(actor, key)
+        table = TABLES["repair_validation_suites"]
+        search, identity = UUID(manifest.search_id), uuid4()
+        registered = (*manifest.confirm, *manifest.regression)
+        connection.execute(
+            sa.select(
+                sa.func.pg_advisory_xact_lock(
+                    sa.func.hashtextextended(encode([actor, "repair-suite", key]).decode(), 0),
                 )
             )
-            saved = self._cached(connection, table, actor, key, digest)
-            if saved is not None:
-                return self._suite_response(saved)
-            self._source_queued(connection, repository, search)
-            if source_revision() != source.code_revision:
-                raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "准备期间代码改变，未发布采样池")
-            if connection.execute(
-                sa.select(table.c.id).where(
-                    table.c.repository_id == repository,
-                    table.c.search_id == search,
-                )
-            ).first():
-                raise AgentGitError(ErrorCode.VERSION_CONFLICT, "该搜索已有固定确认/回归池")
-            body = self.history.objects.put_json(ObjectType.BLOB, manifest.model_dump(mode="json"))
-            self.history._ref(
-                connection, repository, body, "repair_validation_suite", str(identity), "manifest"
+        )
+        saved = self._cached(connection, table, actor, key, digest)
+        if saved is not None:
+            return self._suite_response(saved)
+        root, source = self._source_queued(connection, repository, search)
+        if root["manifest_ref"] != manifest.source_manifest_ref:
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "登记条件必须绑定同一冻结搜索")
+        if source_revision() != source.code_revision:
+            raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "准备期间代码改变，未发布采样池")
+        if connection.execute(
+            sa.select(table.c.id).where(
+                table.c.repository_id == repository,
+                table.c.search_id == search,
             )
-            values = dict(
-                id=identity,
-                repository_id=repository,
-                search_id=search,
-                manifest_ref=body.id,
-                actor=actor,
-                request_key=key,
-                request_digest=digest,
+        ).first():
+            raise AgentGitError(ErrorCode.VERSION_CONFLICT, "该搜索已有固定确认/回归池")
+        body = self.history.objects.put_json(ObjectType.BLOB, manifest.model_dump(mode="json"))
+        self.history._ref(
+            connection, repository, body, "repair_validation_suite", str(identity), "manifest"
+        )
+        values = dict(
+            id=identity,
+            repository_id=repository,
+            search_id=search,
+            manifest_ref=body.id,
+            actor=actor,
+            request_key=key,
+            request_digest=digest,
+        )
+        connection.execute(table.insert().values(**values))
+        for ordinal, item in enumerate(registered):
+            ticket_obj = self.history.objects.put_json(
+                ObjectType.BLOB, item.ticket.model_dump(mode="json")
             )
-            connection.execute(table.insert().values(**values))
-            for ordinal, item in enumerate(registered):
-                ticket_obj = self.history.objects.put_json(
-                    ObjectType.BLOB, item.ticket.model_dump(mode="json")
+            sample = self.history.objects.put_json(
+                ObjectType.BLOB, item.sample.model_dump(mode="json")
+            )
+            for role, obj in (("ticket", ticket_obj), ("sample", sample)):
+                self.history._ref(
+                    connection,
+                    repository,
+                    obj,
+                    "repair_validation_sample",
+                    item.ticket.generation_id,
+                    role,
                 )
-                sample = self.history.objects.put_json(
-                    ObjectType.BLOB, item.sample.model_dump(mode="json")
-                )
-                for role, obj in (("ticket", ticket_obj), ("sample", sample)):
-                    self.history._ref(
-                        connection,
-                        repository,
-                        obj,
-                        "repair_validation_sample",
-                        item.ticket.generation_id,
-                        role,
-                    )
-                for role in ("source_config_ref", "model_conditions_ref"):
-                    obj = self.history.objects.put(
+            for role in ("source_config_ref", "model_conditions_ref"):
+                obj = self.history.objects.put(
+                    ObjectType.BLOB,
+                    self.history.objects.get(
+                        getattr(item.ticket, role),
                         ObjectType.BLOB,
-                        self.history.objects.get(
-                            getattr(item.ticket, role),
-                            ObjectType.BLOB,
-                        ),
-                    )
-                    self.history._ref(
-                        connection,
-                        repository,
-                        obj,
-                        "repair_validation_sample",
-                        item.ticket.generation_id,
-                        role,
-                    )
-                connection.execute(
-                    TABLES["repair_validation_samples"]
-                    .insert()
-                    .values(
-                        id=UUID(item.ticket.generation_id),
-                        repository_id=repository,
-                        suite_id=identity,
-                        ordinal=ordinal,
-                        phase=item.sample.role,
-                        generation_ref=ticket_obj.id,
-                        sample_ref=sample.id,
-                        source_run_id=UUID(item.ticket.source_run_id),
-                        base_commit_id=item.ticket.from_commit,
-                        task_ref=item.ticket.task_ref,
-                        validator_ref=item.ticket.validator_ref,
-                    )
+                    ),
                 )
-            self.fault("before_registration_commit")
-        self.fault("after_registration_commit")
+                self.history._ref(
+                    connection,
+                    repository,
+                    obj,
+                    "repair_validation_sample",
+                    item.ticket.generation_id,
+                    role,
+                )
+            connection.execute(
+                TABLES["repair_validation_samples"]
+                .insert()
+                .values(
+                    id=UUID(item.ticket.generation_id),
+                    repository_id=repository,
+                    suite_id=identity,
+                    ordinal=ordinal,
+                    phase=item.sample.role,
+                    generation_ref=ticket_obj.id,
+                    sample_ref=sample.id,
+                    source_run_id=UUID(item.ticket.source_run_id),
+                    base_commit_id=item.ticket.from_commit,
+                    task_ref=item.ticket.task_ref,
+                    validator_ref=item.ticket.validator_ref,
+                )
+            )
+        self.fault("before_registration_commit")
         return self._suite_response(values)
 
     def _suite(

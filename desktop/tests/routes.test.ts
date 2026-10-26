@@ -12,6 +12,65 @@ const REPO = '00000000-0000-4000-8000-000000000001';
 const OTHER = '00000000-0000-4000-8000-000000000002';
 const FEATURES = ['run_pagination', 'historical_artifacts', 'execution_evidence', 'recorded', 'live', 'structural_diff'];
 const rejected = (code: string) => (error: unknown) => error instanceof DesktopError && error.code === code;
+
+test('S10 桥接固定搜索、缩减、复测及精确审阅路由，不提供任意 URL 或自动采纳', async () => {
+  const posts: { path: string; body: unknown; key: string | undefined; repository: string | undefined }[] = [];
+  const f = await fixture({ respond: (request, response) => {
+    if (request.method !== 'POST') return false;
+    const chunks: Buffer[] = [];
+    request.on('data', chunk => chunks.push(chunk));
+    request.on('end', () => {
+      posts.push({ path: request.url!, body: JSON.parse(Buffer.concat(chunks).toString()), key: request.headers['idempotency-key'] as string | undefined, repository: request.headers['x-repository-id'] as string | undefined });
+      response.end(JSON.stringify({ accepted: true, expected_config_version: 29 }));
+    }); return true;
+  } });
+  try {
+    await connect(f.controller);
+    for (const [operation, input, path] of [
+      ['getRepairSearch', { searchId: OTHER }, `/repair-searches/${OTHER}`],
+      ['listRepairSearches', { afterId: OTHER, limit: 100 }, `/repositories/${REPO}/repair-searches?after_id=${OTHER}&limit=100`],
+      ['getRepairStudy', { studyId: OTHER }, `/repair-studies/${OTHER}`],
+      ['getRepairValidationSuite', { suiteId: OTHER }, `/repair-validation-suites/${OTHER}`],
+      ['getRepairValidation', { studyId: OTHER }, `/repair-studies/${OTHER}/validation`],
+      ['getRepairProposal', { proposalId: OTHER }, `/repair-proposals/${OTHER}`],
+    ] as const) {
+      await f.controller.handle(operation, input); assert.equal(f.requests.at(-1)!.url, path);
+    }
+    const prepared = { search: { schema_version: 1 }, regression: [] };
+    await f.controller.handle('createPreparedRepairSearch', { request: prepared, key: 'prepared' });
+    await f.controller.handle('createRepairStudy', { request: { search_id: OTHER }, key: 'study' });
+    await f.controller.handle('cancelRepairSearch', { searchId: OTHER, key: 'cancel-search' });
+    await f.controller.handle('cancelRepairStudy', { studyId: OTHER, key: 'cancel-study' });
+    await f.controller.handle('openRepairValidation', { studyId: OTHER, suiteId: REPO, key: 'open' });
+    await f.controller.handle('createRepairProposal', { studyId: OTHER, key: 'proposal' });
+    await f.controller.handle('beginRepairReview', { proposalId: OTHER, key: 'review' });
+    for (const decision of ['approve', 'reject', 'save_experiment']) {
+      await f.controller.handle('decideRepairReview', { proposalId: OTHER, reviewId: REPO, proposalRef: 'a'.repeat(64), expectedConfigVersion: 29, decision, key: decision });
+    }
+    assert.equal(posts.length, 10);
+    assert.deepEqual(posts[0], { path: '/repair-searches/prepared', body: { schema_version: 1, ...prepared }, key: 'prepared', repository: REPO });
+    assert.deepEqual(posts[4]!.body, { schema_version: 1, suite_id: REPO });
+    assert.deepEqual(posts.slice(7).map(row => row.path), [`/repair-proposals/${OTHER}/approve`, `/repair-proposals/${OTHER}/reject`, `/repair-proposals/${OTHER}/approve`]);
+    assert.deepEqual(posts[9]!.body, { schema_version: 1, review_id: REPO, proposal_ref: 'a'.repeat(64), expected_config_version: 29, decision: 'save_experiment' });
+    assert.ok(posts.every(row => row.repository === REPO && row.key));
+  } finally { await f.close(); }
+});
+
+test('S10 修复决定拒绝不精确票据、越界版本、路径和附加执行字段，拒绝发生在 HTTP 前', async () => {
+  const f = await fixture();
+  try {
+    await connect(f.controller);
+    const before = f.requests.length;
+    const good = { proposalId: OTHER, reviewId: REPO, proposalRef: 'a'.repeat(64), expectedConfigVersion: 29, decision: 'approve', key: 'exact' };
+    for (const change of [{ reviewId: '../private' }, { proposalRef: 'A'.repeat(64) }, { expectedConfigVersion: 0 }, { expectedConfigVersion: true }, { expectedConfigVersion: undefined }, { expectedConfigVersion: Number.MAX_SAFE_INTEGER + 1 }, { decision: 'apply' }, { execute: true }, { url: 'http://evil.invalid' }]) {
+      await assert.rejects(f.controller.handle('decideRepairReview', { ...good, ...change }), rejected('validation'));
+    }
+    await assert.rejects(f.controller.handle('getRepairSearch', { searchId: '../private' }), rejected('validation'));
+    await assert.rejects(f.controller.handle('listRepairSearches', { limit: 101 }), rejected('validation'));
+    await assert.rejects(f.controller.handle('createPreparedRepairSearch', { request: {}, key: 'k', repositoryId: OTHER }), rejected('validation'));
+    assert.equal(f.requests.length, before);
+  } finally { await f.close(); }
+});
 async function fixture(options: {
   token?: string | null; version?: string; ready?: boolean;
   respond?: (request: IncomingMessage, response: ServerResponse) => boolean;

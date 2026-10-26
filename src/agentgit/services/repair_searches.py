@@ -1,7 +1,7 @@
 """事务外核验已发布补丁和失败条件，事务内冻结搜索及全部提案。"""
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
@@ -18,6 +18,7 @@ from agentgit.core.repair import (
     RepairSearchSpec,
     RepairSpace,
 )
+from agentgit.core.repair_pools import NewRepairValidationSuite, RegressionOrigin
 from agentgit.core.research import AgentConfig
 from agentgit.core.snapshots import StateSnapshot
 from agentgit.core.versions import RecordedRange
@@ -35,6 +36,9 @@ from agentgit.services.versions import VersionService
 from agentgit.storage.schema import build_metadata
 
 TABLES = build_metadata().tables
+
+if TYPE_CHECKING:
+    from agentgit.services.research import ResearchService
 
 
 @dataclass(frozen=True)
@@ -227,6 +231,8 @@ class RepairSearchService:
         hybrid: HybridPolicy | None = None,
         fixture_scope: Literal["stochastic_fixture"] | None = None,
         _request_identity: dict[str, Any] | None = None,
+        _regression: tuple[RegressionOrigin, ...] | None = None,
+        _research: "ResearchService | None" = None,
     ) -> dict[str, Any]:
         if not actor or len(actor) > 200 or not key or len(key) > 200:
             raise AgentGitError(ErrorCode.VALIDATION, "搜索操作者和幂等键必须是有界非空字符串")
@@ -249,6 +255,11 @@ class RepairSearchService:
         )
         if _request_identity is None and fixture_scope is not None:
             request = {**request, "fixture_scope": fixture_scope}
+        if _request_identity is None and _regression is not None:
+            request = {
+                **request,
+                "regression": [item.model_dump(mode="json") for item in _regression],
+            }
         digest = object_digest(ObjectType.BLOB, encode(request))
         with self.history.engine.connect() as connection:
             requested_at = connection.execute(sa.select(sa.func.clock_timestamp())).scalar_one()
@@ -260,6 +271,15 @@ class RepairSearchService:
         )
         manifest = compiled.manifest
         repository, identity = UUID(space.binding.repository_id), uuid4()
+        registration = None
+        if _regression is not None:
+            from agentgit.services.repair_pools import RepairValidationPoolService
+
+            if _research is None or _research.history is not self.history:
+                raise AgentGitError(ErrorCode.VALIDATION, "预注册必须使用同一历史服务")
+            pools = RepairValidationPoolService(_research)
+            manifest_ref = object_digest(ObjectType.BLOB, encode(manifest.model_dump(mode="json")))
+            registration = pools.prepare(repository, identity, manifest, manifest_ref, _regression)
         with self.history.engine.begin() as connection:
             scope = encode([actor, "POST /repair-searches", key]).decode()
             connection.execute(
@@ -349,4 +369,20 @@ class RepairSearchService:
                 "created",
                 {"actor": actor, "proposal_count": len(compiled.proposals)},
             )
+            if registration is not None:
+                assert _regression is not None
+                suite_request = NewRepairValidationSuite(
+                    search_id=str(identity), regression=_regression
+                )
+                pools.publish(
+                    connection,
+                    repository,
+                    registration,
+                    actor=actor,
+                    key="prepared-suite:" + digest,
+                    digest=object_digest(
+                        ObjectType.BLOB,
+                        encode([str(repository), suite_request.model_dump(mode="json")]),
+                    ),
+                )
             return self._response(values)

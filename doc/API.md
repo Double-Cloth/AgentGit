@@ -377,6 +377,14 @@ uv run --locked agentgit worker
 
 当前停止报告的 `decision.comparison` 冻结全部已探索候选的 trial/结果身份、安全和验收、补丁数、变更字节、实际计量与墙钟，按规定字典序排列；选中项必须是首个通过候选。旧报告没有比较表时返回 `null`，不补造历史结果。终态 `usage.elapsed_wall_ms` 取冻结决定或对应控制审计时刻，之后只读查询不再增长；活动任务仍按数据库时钟计入排队/重启/等待。逐项本机退出与安全拒绝审计见 [S9-gates.md](acceptance/S9-gates.md)。
 
+## 搜索与预注册的原子准备（S10）
+
+`POST /repair-searches/prepared`（202）供 Repair Lab 一次发布搜索与确认/回归条件；沿用认证、项目头、幂等键和 1 MiB 请求上限。请求为 `{"schema_version":1,"search":<完整 NewRepairSearch 请求>,"regression":[<四项来源>]}`，每项来源包含 `schema_version=1/source_run_id/from_commit`。四项须来自不同已终止 Run 和不同任务，配置、权限、语料及可执行起点沿用既有预注册校验。接口不接受 passed、结果、费用或执行指令。
+
+服务先核验冻结来源和采样条件，再在同一事务写入搜索、编排 Job、有限提案、suite 及十张采样票据。修复 Worker 无法领取尚未提交的搜索；登记任一步失败会回滚整项发布，不留下可领取的半准备搜索。固定模板或验收器的不可变准备引用可能已保存，但不会执行任务。无需暂停已有 Worker。既有两步 API 保留原协议，仍必须由调用方保证先登记、后首次领取。
+
+成功响应在原搜索响应之外增加 `validation_suite`，包含 `suite_id/search_id/manifest_ref/response_status=not_generated`；这不是已生成样本，也不自动打开确认池。原键重试返回相同搜索与 suite，即使搜索已运行或完成也不重新生成模板/票据；更换四项来源、参数或混用旧搜索请求会冲突。CLI 为 `agentgit repair-prepare <repository_id> --file prepared.json --key ...`。能力响应新增 `prepared_repair_search/repair_search/repair_validation/repair_reviews`，后端版本协议不变。
+
 ## 耐久逐补丁缩减（S10）
 
 `POST /repair-studies`（202）、`GET /repair-studies/{study_id}`、`POST /repair-studies/{study_id}/cancel` 复用原认证、项目头、幂等键和请求/输出上限。创建只接受 `schema_version=1`、`search_id` 及可选 `max_reduce_trials`、`field_policy`。来源必须是同一代码下已排空封存的 S9 `needs_confirmation`；一个来源只能建立一个 study，次数覆盖只能收紧原 reduce 额度。没有接收候选正文、用户 verdict、费用或确认结果的入口。

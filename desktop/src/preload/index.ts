@@ -25,6 +25,12 @@ const api: DesktopApi = {
   getBehavioralDiff: method('getBehavioralDiff'), listDebugReports: method('listDebugReports'),
   createDebugReport: method('createDebugReport'), getDebugReport: method('getDebugReport'),
   getDebugCandidateContext: method('getDebugCandidateContext'), getDebugCandidateExperiment: method('getDebugCandidateExperiment'),
+  createPreparedRepairSearch: method('createPreparedRepairSearch'), getRepairSearch: method('getRepairSearch'),
+  listRepairSearches: method('listRepairSearches'), cancelRepairSearch: method('cancelRepairSearch'),
+  createRepairStudy: method('createRepairStudy'), getRepairStudy: method('getRepairStudy'), cancelRepairStudy: method('cancelRepairStudy'),
+  getRepairValidationSuite: method('getRepairValidationSuite'), openRepairValidation: method('openRepairValidation'),
+  getRepairValidation: method('getRepairValidation'), createRepairProposal: method('createRepairProposal'),
+  getRepairProposal: method('getRepairProposal'), beginRepairReview: method('beginRepairReview'), decideRepairReview: method('decideRepairReview'),
   cancelReads: () => ipcRenderer.send('agentgit:cancel-reads'),
 };
 contextBridge.exposeInMainWorld('agentgit', Object.freeze(api));

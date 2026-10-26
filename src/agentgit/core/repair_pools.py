@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 from pydantic import Field, model_validator
 
 from agentgit.core.models import Contract, Digest, Identifier
+from agentgit.core.repair import NewRepairSearch
 from agentgit.core.repair_validation import RepairValidationPlan, ValidationSample, validation_ref
 
 
@@ -20,6 +21,19 @@ class NewRepairValidationSuite(Contract):
     @model_validator(mode="after")
     def distinct_origins(self) -> "NewRepairValidationSuite":
         if len({s.source_run_id for s in self.regression}) != 4:
+            raise ValueError("四个回归任务必须来自不同运行")
+        return self
+
+
+class NewPreparedRepairSearch(Contract):
+    """一次发布搜索与十张预注册票据，避免 Worker 抢先筛选。"""
+
+    search: NewRepairSearch
+    regression: Annotated[tuple[RegressionOrigin, ...], Field(min_length=4, max_length=4)]
+
+    @model_validator(mode="after")
+    def distinct_origins(self) -> "NewPreparedRepairSearch":
+        if len({item.source_run_id for item in self.regression}) != 4:
             raise ValueError("四个回归任务必须来自不同运行")
         return self
 

@@ -66,6 +66,20 @@ export interface Inputs {
   getDebugReport: { reportId: string };
   getDebugCandidateContext: { reportId: string; candidateEventId: number; validatorRef: string };
   getDebugCandidateExperiment: { reportId: string; candidateEventId: number; experimentId: string };
+  createPreparedRepairSearch: { request: JsonObject; key: string };
+  getRepairSearch: { searchId: string };
+  listRepairSearches: Page;
+  cancelRepairSearch: { searchId: string; key: string };
+  createRepairStudy: { request: JsonObject; key: string };
+  getRepairStudy: { studyId: string };
+  cancelRepairStudy: { studyId: string; key: string };
+  getRepairValidationSuite: { suiteId: string };
+  openRepairValidation: { studyId: string; suiteId: string; key: string };
+  getRepairValidation: { studyId: string };
+  createRepairProposal: { studyId: string; key: string };
+  getRepairProposal: { proposalId: string };
+  beginRepairReview: { proposalId: string; key: string };
+  decideRepairReview: { proposalId: string; reviewId: string; proposalRef: string; expectedConfigVersion: number; decision: 'approve' | 'reject' | 'save_experiment'; key: string };
   controlRun: { runId: string; action: 'pause' | 'resume' | 'cancel'; expectedVersion: number; key: string };
   decideApproval: { approvalId: string; decision: 'approve' | 'reject'; expectedVersion: number; key: string };
 }

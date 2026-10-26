@@ -46,6 +46,8 @@ S9 已提供[基础与台账](doc/S9-repair-plan.md)、[原子派发/结算](doc
 
 S10 已实现[耐久缩减](doc/acceptance/S10-reduction.md)、[预注册/一次性开启](doc/acceptance/S10-pools.md)、[实际六加四](doc/acceptance/S10-confirmation.md)、[三原子](doc/acceptance/S10-three-atoms.md)、[字段缩减](doc/acceptance/S10-fields.md)、[精确提案/审批后端](doc/acceptance/S10-reviews.md)及[随机拒绝/实际观测伪修复后端](doc/acceptance/S10-falsefix.md)。原子、字段和必要性复查共用原预算；确切派生内容在最终锁后独立验证。建议展示 before/after、任务/环境、用量和范围；票据绑定配置版本，批准只创建新版本，Plan 模板由新任务真实执行，保存实验只落定义。随机确认失败保留拒绝；观测补丁即使六加四通过也不能采纳为正式配置。仅在隔离测试库验证，业务配置未采纳；合成验证仍标 `verified_under_fixture`，预选随机向量不构成无偏成功率研究。当前测试范围见独立记录，旧版本结果不累加；S9 默认深度二和 reduce=6 不变。继续 Repair Lab、30 例/四基线和 D2，S10 尚未整体验收。
 
+Repair Lab 的[原子准备与桌面桥接基础](doc/acceptance/S10-prepared.md)现已实现：搜索和十张预注册票据同事务发布，避免 Worker 抢先筛选；14 项固定 IPC 保留项目、原键和精确审阅边界。可见页面、只读 workflow 关联、完整桌面用户操作及新包复验仍按[桌面计划](doc/S10-desktop-plan.md)推进，不能以桥接通过代替 Repair Lab 退出。
+
 ## Brand Commitments
 
 产品名称为 AgentGit。界面继承根目录 DESIGN.md 的视觉体系、允许的字体替代、组件和断点；不另外发明品牌配色或装饰体系。字体和其他资产须有授权并满足安装包离线使用要求；已取得本地 Inter、EB Garamond、JetBrains Mono 及 OFL，记录上游提交和摘要，没有把未提供的商业字体视为已具备。

@@ -29,7 +29,11 @@ from agentgit.core.management import (
 from agentgit.core.model_usage import OpenAIOptions, price_micro_usd
 from agentgit.core.models import CallIntent, parse_contract
 from agentgit.core.repair import NewRepairSearch
-from agentgit.core.repair_pools import NewRepairValidationSuite
+from agentgit.core.repair_pools import (
+    NewPreparedRepairSearch,
+    NewRepairValidationSuite,
+    RegressionOrigin,
+)
 from agentgit.core.repair_reviews import DecideRepairReview
 from agentgit.core.repair_studies import NewRepairStudy
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage
@@ -91,10 +95,53 @@ class ManagementService:
         payload: NewRepairSearch,
         key: str,
     ) -> dict[str, Any]:
+        return self._create_repair_search(repository_id, payload, key)
+
+    def create_prepared_repair_search(
+        self, repository_id: UUID, payload: NewPreparedRepairSearch, key: str
+    ) -> dict[str, Any]:
+        result = self._create_repair_search(
+            repository_id,
+            payload.search,
+            key,
+            regression=payload.regression,
+            request_identity={
+                "repository_id": str(repository_id),
+                "prepared_request": payload.model_dump(mode="json"),
+            },
+        )
+        table = TABLES["repair_validation_suites"]
+        with self.history.engine.connect() as connection:
+            row = (
+                connection.execute(
+                    sa.select(table).where(
+                        table.c.repository_id == repository_id,
+                        table.c.search_id == UUID(result["search_id"]),
+                    )
+                )
+                .mappings()
+                .first()
+            )
+        if row is None:
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "搜索缺少原子发布的预注册条件")
+        return {**result, "validation_suite": RepairValidationPoolService._suite_response(row)}
+
+    def _create_repair_search(
+        self,
+        repository_id: UUID,
+        payload: NewRepairSearch,
+        key: str,
+        *,
+        regression: tuple[RegressionOrigin, ...] | None = None,
+        request_identity: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         body = payload.model_dump(mode="json")
         # 原始请求身份先查缓存：进程在搜索提交后、返回前退出也不会重新生成模板。
         self._mutation_digest(key, repository_id, body)
-        request = {"repository_id": str(repository_id), "template_request": body}
+        request = request_identity or {
+            "repository_id": str(repository_id),
+            "template_request": body,
+        }
         digest = object_digest(ObjectType.BLOB, encode(request))
         searches = RepairSearchService(self.history)
         with self.history.engine.connect() as connection:
@@ -120,6 +167,8 @@ class ManagementService:
             hybrid=payload.hybrid,
             fixture_scope=payload.fixture_scope,
             _request_identity=request,
+            _regression=regression,
+            _research=self.research,
         )
 
     def repair_search(self, repository_id: UUID, search_id: UUID) -> dict[str, Any]:
@@ -378,6 +427,10 @@ class ManagementService:
                 "typed_interventions",
                 "experiment_statistics",
                 "static_debug_reports",
+                "prepared_repair_search",
+                "repair_search",
+                "repair_validation",
+                "repair_reviews",
             ],
             "worker": {"status": "unknown", "reason": "no_readiness_probe"},
             "execution_environment": {"status": "unknown", "reason": "policy_is_not_readiness"},

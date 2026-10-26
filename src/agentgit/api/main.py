@@ -34,7 +34,11 @@ from agentgit.core.management import (
 )
 from agentgit.core.models import Contract, parse_contract
 from agentgit.core.repair import NewRepairSearch
-from agentgit.core.repair_pools import NewRepairValidationSuite, OpenRepairValidationPool
+from agentgit.core.repair_pools import (
+    NewPreparedRepairSearch,
+    NewRepairValidationSuite,
+    OpenRepairValidationPool,
+)
 from agentgit.core.repair_reviews import DecideRepairReview
 from agentgit.core.repair_studies import NewRepairStudy
 from agentgit.core.versions import NewBranch, parse_replay
@@ -349,6 +353,17 @@ def create_app(
         service: Annotated[ManagementService, Depends(get_manager)],
     ) -> dict[str, Any]:
         return service.cancel_repair_study(repo, study_id, key)
+
+    @app.post("/repair-searches/prepared", status_code=202)
+    def repair_search_prepared(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_prepared_repair_search(
+            repo, parse_contract(encode(body), NewPreparedRepairSearch), key
+        )
 
     @app.post("/repair-searches", status_code=202)
     def repair_search_create(
