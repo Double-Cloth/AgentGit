@@ -59,7 +59,13 @@ class ConfirmationMock(MockResearchModel):
 
 
 def setup_confirmation(
-    history, tmp_path, *, policy="pass", mode="prompt", budget_transform=lambda value: value
+    history,
+    tmp_path,
+    *,
+    policy="pass",
+    mode="prompt",
+    budget_transform=lambda value: value,
+    field_policy=None,
 ):
     repo, search, research, _ = create_case(
         history,
@@ -98,7 +104,10 @@ def setup_confirmation(
     source = drive(research, repo, search)
     assert source["status"] == "needs_confirmation"
     made = RepairStudyService(history).submit(
-        repo, NewRepairStudy(search_id=str(search)), actor="operator", key="study"
+        repo,
+        NewRepairStudy(search_id=str(search), field_policy=field_policy),
+        actor="operator",
+        key="study",
     )
     study = UUID(made["study_id"])
     reduced = drive_study(research, repo)

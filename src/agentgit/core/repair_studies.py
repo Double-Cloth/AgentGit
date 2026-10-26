@@ -15,6 +15,9 @@ from agentgit.core.research import BudgetLimits
 class NewRepairStudy(Contract):
     search_id: Identifier
     max_reduce_trials: Annotated[int, Field(ge=0, le=100)] | None = None
+    field_policy: Literal["predefined-fields/v1"] | None = Field(
+        default="predefined-fields/v1", exclude_if=lambda value: value is None
+    )
 
 
 class RepairStudyManifest(Contract):
@@ -27,6 +30,9 @@ class RepairStudyManifest(Contract):
     selected_result_ref: Digest
     initial_state: ReductionState
     code_revision: Annotated[str, Field(pattern=r"^source-sha256:[0-9a-f]{64}$")]
+    field_policy: Literal["predefined-fields/v1"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class RepairStudyLease(Contract):

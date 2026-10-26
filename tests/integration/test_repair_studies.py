@@ -39,7 +39,10 @@ def begin(history, tmp_path, **kwargs):
     repo, search, research, source = screening(history, tmp_path, **kwargs)
     ledger = RepairStudyService(history)
     created = ledger.submit(
-        repo, NewRepairStudy(search_id=str(search)), actor="study-test", key="start-study"
+        repo,
+        NewRepairStudy(search_id=str(search), field_policy=None),
+        actor="study-test",
+        key="start-study",
     )
     return repo, UUID(created["study_id"]), search, research, ledger, source
 

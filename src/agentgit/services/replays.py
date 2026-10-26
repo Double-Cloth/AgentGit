@@ -54,6 +54,7 @@ class PreparedReplay:
     repair_proposal_id: UUID | None = None
     repair_reduction_trial_id: UUID | None = None
     repair_validation_trial_id: UUID | None = None
+    repair_field_trial_id: UUID | None = None
 
 
 class ReplayService:
@@ -113,6 +114,7 @@ class ReplayService:
         repair_proposal_id: UUID | None = None,
         repair_reduction_trial_id: UUID | None = None,
         repair_validation_trial_id: UUID | None = None,
+        repair_field_trial_id: UUID | None = None,
     ) -> PreparedReplay:
         request = parse_contract(encode(request.model_dump(mode="json")), type(request))
         if isinstance(request, RecordedReplay) and (
@@ -120,12 +122,14 @@ class ReplayService:
             or repair_proposal_id is not None
             or repair_reduction_trial_id is not None
             or repair_validation_trial_id is not None
+            or repair_field_trial_id is not None
         ):
             raise AgentGitError(ErrorCode.FORBIDDEN, "Recorded 不接受 Hybrid 干预")
         if (
             repair_proposal_id is not None
             or repair_reduction_trial_id is not None
             or repair_validation_trial_id is not None
+            or repair_field_trial_id is not None
         ) and hybrid_ref is None:
             raise AgentGitError(ErrorCode.VALIDATION, "Hybrid 提案归属必须绑定冻结 policy")
         if (
@@ -135,6 +139,7 @@ class ReplayService:
                     repair_proposal_id,
                     repair_reduction_trial_id,
                     repair_validation_trial_id,
+                    repair_field_trial_id,
                 )
             )
             > 1
@@ -275,6 +280,7 @@ class ReplayService:
             repair_proposal_id=repair_proposal_id,
             repair_reduction_trial_id=repair_reduction_trial_id,
             repair_validation_trial_id=repair_validation_trial_id,
+            repair_field_trial_id=repair_field_trial_id,
         )
 
     def publish(
@@ -348,6 +354,7 @@ class ReplayService:
                     repair_proposal_id=prepared.repair_proposal_id,
                     repair_reduction_trial_id=prepared.repair_reduction_trial_id,
                     repair_validation_trial_id=prepared.repair_validation_trial_id,
+                    repair_field_trial_id=prepared.repair_field_trial_id,
                 )
             for path, media_type, content in prepared.files:
                 obj = self.history.objects.put(ObjectType.BLOB, content, media_type=media_type)

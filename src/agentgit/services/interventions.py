@@ -1,5 +1,6 @@
 """将来源事件和安全检查点核验为不可变干预，拒绝任意规则或权限补丁。"""
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
@@ -413,12 +414,14 @@ class InterventionService:
         }
 
     def get(
-        self, repository: UUID, intervention_id: UUID
+        self, repository: UUID, intervention_id: UUID, *, connection: Connection | None = None
     ) -> tuple[Intervention, PromptPatch | PlanPatch | ToolResponsePatch]:
         table = TABLES["interventions"]
-        with self.history.engine.connect() as connection:
+        with (
+            self.history.engine.connect() if connection is None else nullcontext(connection)
+        ) as reading:
             row = (
-                connection.execute(
+                reading.execute(
                     sa.select(table).where(
                         table.c.repository_id == repository,
                         table.c.id == intervention_id,

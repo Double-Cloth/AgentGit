@@ -407,7 +407,13 @@ class RepairConfirmationService:
         if source.code_revision != source_revision():
             raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "不能用新代码继续旧确认")
         projection = prepare_projection(
-            self.research, repo, source, opening.plan.lock, item, source.budget.trial
+            self.research,
+            repo,
+            source,
+            opening.plan.lock,
+            item,
+            source.budget.trial,
+            study_id=study,
         )
         with self.history.engine.begin() as connection:
             job = self.ledger._leased(connection, lease)

@@ -79,7 +79,10 @@ def locked(history, tmp_path):
     source = drive(research, repo, search)
     assert source["status"] == "needs_confirmation"
     study = RepairStudyService(history).submit(
-        repo, NewRepairStudy(search_id=str(search)), actor="operator", key="study"
+        repo,
+        NewRepairStudy(search_id=str(search), field_policy=None),
+        actor="operator",
+        key="study",
     )
     result = drive_study(research, repo)
     return repo, UUID(study["study_id"]), UUID(made["suite_id"]), pools, request, result
@@ -361,7 +364,10 @@ def test_api_rejects_uploaded_results_foreign_suite_and_history_rewrite(
         )
         drive(research, repo, search)
         study = RepairStudyService(history).submit(
-            repo, NewRepairStudy(search_id=str(search)), actor="operator", key="study"
+            repo,
+            NewRepairStudy(search_id=str(search), field_policy=None),
+            actor="operator",
+            key="study",
         )
         identity = UUID(study["study_id"])
         assert (
@@ -429,7 +435,10 @@ def test_insufficient_frozen_confirmation_quota_does_not_open_or_expand_budget(h
     made = pools.submit(repo, request, actor="operator", key="suite")
     drive(research, repo, search)
     study = RepairStudyService(history).submit(
-        repo, NewRepairStudy(search_id=str(search)), actor="operator", key="study"
+        repo,
+        NewRepairStudy(search_id=str(search), field_policy=None),
+        actor="operator",
+        key="study",
     )
     identity = UUID(study["study_id"])
     drive_study(research, repo)

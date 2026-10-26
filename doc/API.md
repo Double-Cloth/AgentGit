@@ -377,7 +377,7 @@ uv run --locked agentgit worker
 
 ## 耐久逐补丁缩减（S10）
 
-`POST /repair-studies`（202）、`GET /repair-studies/{study_id}`、`POST /repair-studies/{study_id}/cancel` 复用原认证、项目头、幂等键和请求/输出上限。创建只接受 `schema_version=1`、`search_id` 及可选 `max_reduce_trials`。来源必须是同一代码下已排空封存的 S9 `needs_confirmation`；一个来源只能建立一个 study，次数覆盖只能收紧原 reduce 额度。没有接收候选正文、用户 verdict、费用或确认结果的入口。
+`POST /repair-studies`（202）、`GET /repair-studies/{study_id}`、`POST /repair-studies/{study_id}/cancel` 复用原认证、项目头、幂等键和请求/输出上限。创建只接受 `schema_version=1`、`search_id` 及可选 `max_reduce_trials`、`field_policy`。来源必须是同一代码下已排空封存的 S9 `needs_confirmation`；一个来源只能建立一个 study，次数覆盖只能收紧原 reduce 额度。没有接收候选正文、用户 verdict、费用或确认结果的入口。
 
 ```json
 {"schema_version":1,"search_id":"<已封存 S9 搜索 UUID>"}
@@ -398,7 +398,11 @@ uv run --locked agentgit repair-study-cancel $repo.repository_id $study.study_id
 
 查询返回冻结 manifest/state、逐删除 intent/dispatch/收据、待核对引用、共享总用量及 `final_lock`。未决 trial 仍占完整预留；用量包括原 S9 和本阶段实际调用，Mock 字节与供应商 Token 区分。墙钟从原搜索创建时起计算，候选锁定后仍计等待，原 S9 已封存的决定和查询不改写。新建代码版本不能继续旧 study。
 
-`awaiting_samples` 表示最终候选已经锁定，确认池尚未打开，不能把这个状态当作 verified；预注册、开启及实际执行入口见下节。正式配置批准 API 尚未提供。完整 fixture 删除测试只支持所声明原子语法的 1-minimal；预算不足、未测和非确定结果保持未证明，字段缩减仍未运行。详细范围及真实证据见 [S10-reduction.md](acceptance/S10-reduction.md)。
+新建 study 默认 `field_policy=predefined-fields/v1`：原子删除后、最终锁前，用固定规则缩短追加的 Prompt 子句或新增 Plan 结构；每次成功后重新测试当前候选的原子必要性。沿用同一控制器和普通 Worker，无额外执行入口。显式 `field_policy=null` 保持旧原子协议；旧 study 的缺省策略仍为空，不能事后加字段阶段。字段试验及必要性复查共同消耗原 `max_reduce_trials`，同时保护六加四预留。
+
+查询额外返回 `field_reduction`：未进入阶段或旧策略时为 `null`，否则包含独立 `state/summary/trials`、不可变引用、实际收据与本 Job 模型调用来源。原 `reduction` 保留字段之前的原子摘要；最终候选的必要性应读取字段摘要中的 `atomic_minimality` 和 `field_minimality`。即使预算停止后最后一个通过候选仍能锁定，也不能把未测试字段标为最小。所有派生内容按项目和具体 study 解析，相同来源摘要不能跨 study 借用；确认投影使用最终锁中的确切派生内容。
+
+`awaiting_samples` 表示最终候选已经锁定，确认池尚未打开，不能把这个状态当作 verified；预注册、开启及实际执行入口见下节。正式配置批准 API 尚未提供。完整 fixture 删除测试只支持所声明原子语法的 1-minimal；预算不足、未测和非确定结果保持未证明。历史原子协议证据见 [S10-reduction.md](acceptance/S10-reduction.md)，字段规则见[字段缩减方案](S10-field-reduction-plan.md)。
 
 ## 确认条件预注册与开启（S10）
 

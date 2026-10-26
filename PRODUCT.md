@@ -44,7 +44,7 @@ S8 已提供行为图、依赖对齐、失败硬断言及[不可变静态 Debug 
 
 S9 已提供[基础与台账](doc/S9-repair-plan.md)、[原子派发/结算](doc/acceptance/S9-trial-dispatch.md)、[自动搜索、模板 API/CLI 和 repair-worker](doc/acceptance/S9-search-loop.md)，完成[本机后端退出核对](doc/acceptance/S9-gates.md)。最新 569 单元 + 32 真实集成通过（不与历史重复累加）；五类安全拒绝均有关联审计且零新 trial，比较表完整保留失败/未知与实际成本，终态墙钟冻结。新 Mock 字节策略按预算摘要冻结、保护确认/回归额度；原生产 Mock 默认入口在两个 Prompt 失败后自动找到 Plan，总筛选 99,753 字节、最终试验 47,109 字节，来源不变。候选来源仍为完整有限模板降级，状态仅为待确认，不输出 verified 或最小性结论。[S10 实施计划](doc/S10-repair-plan.md)已建立；S6/D1 和 S8 待补项保持，尚无本轮桌面分发包，继续 S10–S12 的必选完整目标。
 
-S10 已实现[纯协议](doc/acceptance/S10-kernel.md)、[耐久缩减](doc/acceptance/S10-reduction.md)、[预注册/一次性确认池开启](doc/acceptance/S10-pools.md)及[实际六加四验证](doc/acceptance/S10-confirmation.md)。原搜索预算贯穿全部阶段；最终锁后从预注册票据派发独立 Job/Run，核对原始请求/响应与自身恢复链，再原子结算实际用量并封存统计。实际案例覆盖 Prompt、联合、Hybrid 和不同事实/顺序/资料/时钟；仅附条件报告 `verified_under_fixture`，保留小样本、失败和不完整结果，未创建正式配置。[三原子通用协议实测](doc/acceptance/S10-three-atoms.md)完成删 C 后对 A、B 的实际重新测试，全部配对对照计量，S9 默认深度二不变；同一源码下 735 项去重通过，旧版本结果不重复累加。继续[字段缩减](doc/S10-field-reduction-plan.md)、随机偶然通过、观测伪修复、[精确提案/审批](doc/S10-review-plan.md)、Repair Lab、30 例/四基线和 D2，S10 尚未整体验收。
+S10 已实现[纯协议](doc/acceptance/S10-kernel.md)、[耐久缩减](doc/acceptance/S10-reduction.md)、[预注册/一次性确认池开启](doc/acceptance/S10-pools.md)、[实际六加四验证](doc/acceptance/S10-confirmation.md)、[三原子实测](doc/acceptance/S10-three-atoms.md)和[耐久字段缩减](doc/acceptance/S10-fields.md)。新 study 在锁前缩短 Prompt/Plan，并以新 Job 复查变化后候选的原子必要性；原子、字段及复查共用原预算，未知保留预留。最终锁后按预注册票据执行确切派生内容的独立六加四，核对原始调用、自身恢复链、用量及统计。仅附条件报告 `verified_under_fixture`，未创建正式配置；旧协议与历史证据只读保留，S9 默认深度二和 reduce=6 不变。继续随机偶然通过、观测伪修复、[精确提案/审批](doc/S10-review-plan.md)、Repair Lab、30 例/四基线和 D2，S10 尚未整体验收。
 
 ## Brand Commitments
 

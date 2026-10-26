@@ -38,6 +38,8 @@ def prepare_projection(
     lock: FinalRepairLock,
     registered: RegisteredValidationSample,
     limits: BudgetLimits,
+    *,
+    study_id: UUID,
 ) -> RepairValidationProjection:
     history, ticket = research.history, registered.ticket
     view = VersionService(history).checkout(repository, ticket.from_commit)
@@ -66,7 +68,9 @@ def prepare_projection(
         generation="fresh_model_invocations/v1",
     ):
         raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "冻结模型生成条件不能被替换")
-    applied = RepairStudyService(history)._applied(repository, source, lock.candidate)
+    applied = RepairStudyService(history)._applied(
+        repository, source, lock.candidate, study_id=study_id
+    )
     if applied.config is not None:
         changed = evolve(config, prompt=applied.config.prompt)
         if changed != applied.config:

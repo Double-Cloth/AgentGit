@@ -24,9 +24,7 @@ from agentgit.services.repair_studies import RepairStudyService
 pytestmark = pytest.mark.integration
 
 
-def test_hybrid_six_confirmations_own_policy_and_fresh_model_calls_then_live_regressions(
-    history, tmp_path
-):
+def setup_hybrid_confirmation(history, tmp_path, *, field_policy=None):
     repo, old, research, failed = create_case(
         history, tmp_path, adapter_binding=adapter_binding("pass")
     )
@@ -112,11 +110,21 @@ def test_hybrid_six_confirmations_own_policy_and_fresh_model_calls_then_live_reg
     source = drive(research, repo, search)
     assert source["status"] == "needs_confirmation"
     made = RepairStudyService(history).submit(
-        repo, NewRepairStudy(search_id=str(search)), actor="operator", key="study"
+        repo,
+        NewRepairStudy(search_id=str(search), field_policy=field_policy),
+        actor="operator",
+        key="study",
     )
     study = UUID(made["study_id"])
     reduced = drive_study(research, repo)
     assert pools.open(repo, study, UUID(suite["suite_id"]), actor="operator", key="open")["opened"]
+    return repo, study, research, source, reduced
+
+
+def test_hybrid_six_confirmations_own_policy_and_fresh_model_calls_then_live_regressions(
+    history, tmp_path
+):
+    repo, study, research, source, reduced = setup_hybrid_confirmation(history, tmp_path)
     result = drive_confirmation(history, research, repo)
     assert result["status"] == "verified_under_fixture", result
     for trial in result["trials"]:

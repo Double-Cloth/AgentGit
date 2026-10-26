@@ -105,7 +105,10 @@ def test_fixed_regressions_follow_own_order_facts_untrusted_corpus_and_clock(his
     source = drive(research, repo, search)
     assert source["status"] == "needs_confirmation"
     created = RepairStudyService(history).submit(
-        repo, NewRepairStudy(search_id=str(search)), actor="operator", key="study"
+        repo,
+        NewRepairStudy(search_id=str(search), field_policy=None),
+        actor="operator",
+        key="study",
     )
     study = UUID(created["study_id"])
     reduced = drive_study(research, repo)

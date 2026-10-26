@@ -111,6 +111,7 @@ class RepairStudyService:
         )
         if (
             manifest.search_id != str(row["search_id"])
+            or manifest.field_policy != row["field_policy"]
             or manifest.selected_proposal_id != str(row["selected_proposal_id"])
             or manifest.selected_trial_id != str(row["selected_trial_id"])
             or validation_ref(manifest.initial_state) != row["initial_state_ref"]
@@ -365,6 +366,7 @@ class RepairStudyService:
             selected_result_ref=decision["selected_result_ref"],
             initial_state=state,
             code_revision=source_manifest.code_revision,
+            field_policy=request.field_policy,
         )
         identity = uuid4()
         with self.history.engine.begin() as connection:
@@ -421,6 +423,7 @@ class RepairStudyService:
                 actor=actor,
                 request_key=key,
                 request_digest=digest,
+                field_policy=request.field_policy,
             )
             connection.execute(table.insert().values(**values))
             connection.execute(
@@ -578,27 +581,62 @@ class RepairStudyService:
             .mappings()
             .all()
         )
+        fields, field_results = TABLES["repair_field_trials"], TABLES["repair_field_results"]
+        field_outcomes = (
+            connection.execute(
+                sa.select(field_results)
+                .select_from(fields.outerjoin(field_results, field_results.c.id == fields.c.id))
+                .where(
+                    fields.c.study_id == study["id"],
+                    fields.c.repository_id == study["repository_id"],
+                )
+            )
+            .mappings()
+            .all()
+        )
         return evolve(
             usage,
             started=evolve(
                 usage.started,
+                reduce=usage.started.reduce + len(field_outcomes),
                 confirm=usage.started.confirm + sum(row["phase"] == "confirm" for row in outcomes),
                 regression=usage.started.regression
                 + sum(row["phase"] == "regression" for row in outcomes),
             ),
-            active=usage.active + sum(row["id"] is None for row in outcomes),
+            active=usage.active + sum(row["id"] is None for row in (*outcomes, *field_outcomes)),
             **{
                 name: getattr(usage, name)
-                + sum(row[name] for row in outcomes if row["id"] is not None)
+                + sum(row[name] for row in (*outcomes, *field_outcomes) if row["id"] is not None)
                 for name in ("model_calls", "tool_calls", "tokens", "cost_micro_usd")
             },
         )
 
-    def _applied(self, repository: UUID, source: Any, candidate: RepairCandidate) -> Any:
+    def _applied(
+        self,
+        repository: UUID,
+        source: Any,
+        candidate: RepairCandidate,
+        *,
+        study_id: UUID | None = None,
+    ) -> Any:
+        if candidate.binding_ref != validation_ref(source):
+            raise AgentGitError(ErrorCode.FORBIDDEN, "缩减候选不能更换源搜索绑定")
         patches = {
             patch_ref(p): (p, identity)
             for p, identity in zip(source.space.patches, source.intervention_ids, strict=True)
         }
+        missing = tuple(atom.patch_ref for atom in candidate.atoms if atom.patch_ref not in patches)
+        if missing:
+            if study_id is None:
+                raise AgentGitError(ErrorCode.FORBIDDEN, "派生候选必须指定所属 study")
+            from agentgit.services.repair_fields import RepairFieldService
+
+            with self.history.engine.connect() as connection:
+                service = RepairFieldService(self.history)
+                for reference in missing:
+                    patches[reference] = service.resolve_patch(
+                        connection, repository, study_id, source, reference
+                    )
         if any(
             atom.patch_ref not in patches
             or atom.operator != patches[atom.patch_ref][0].intervention.operator
@@ -747,6 +785,10 @@ class RepairStudyService:
         with self.history.engine.begin() as connection:
             job = self._leased(connection, lease)
             study = self._root(connection, repository, identity)
+            if study["field_policy"] is not None:
+                raise AgentGitError(
+                    ErrorCode.CONTROL_REQUESTED, "启用字段策略的 study 必须先完成锁前字段阶段"
+                )
             state = self._state(connection, job)
             if job["cancel_requested"] or self._consumption(connection, study).active:
                 raise AgentGitError(ErrorCode.CONTROL_REQUESTED, "取消/未决项排空前不能锁定候选")
@@ -1021,6 +1063,12 @@ class RepairStudyService:
                 trials=details,
                 final_lock=lock_view,
             )
+            if manifest.field_policy is not None:
+                from agentgit.services.repair_fields import RepairFieldService
+
+                response["field_reduction"] = RepairFieldService(self.history).view(
+                    repository, study_id, connection=connection
+                )
             if len(encode(response)) > 8 * 1024 * 1024:
                 raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "缩减查询超出有界大小")
             return response

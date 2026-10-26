@@ -104,17 +104,39 @@ def register_inputs(
     repair_proposal_id: UUID | None = None,
     repair_reduction_trial_id: UUID | None = None,
     repair_validation_trial_id: UUID | None = None,
+    repair_field_trial_id: UUID | None = None,
 ) -> None:
     refs = TABLES["object_refs"]
     ownership = sa.and_(refs.c.owner_type == "experiment", refs.c.role.like("hybrid:%"))
     if (
         sum(
             value is not None
-            for value in (repair_proposal_id, repair_reduction_trial_id, repair_validation_trial_id)
+            for value in (
+                repair_proposal_id,
+                repair_reduction_trial_id,
+                repair_validation_trial_id,
+                repair_field_trial_id,
+            )
         )
         > 1
     ):
         raise AgentGitError(ErrorCode.VALIDATION, "Hybrid 输入不能同时属于不同试验")
+    if repair_field_trial_id is not None:
+        trials = TABLES["repair_field_trials"]
+        if (
+            connection.execute(
+                sa.select(trials.c.id).where(
+                    trials.c.repository_id == repository, trials.c.id == repair_field_trial_id
+                )
+            ).first()
+            is None
+        ):
+            raise AgentGitError(ErrorCode.NOT_FOUND, "Hybrid 字段意图不可访问")
+        ownership = sa.and_(
+            refs.c.owner_type == "repair_field_trial",
+            refs.c.owner_id == str(repair_field_trial_id),
+            refs.c.role == "hybrid",
+        )
     if repair_validation_trial_id is not None:
         trials = TABLES["repair_validation_trials"]
         if (

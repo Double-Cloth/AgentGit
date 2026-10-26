@@ -1,10 +1,10 @@
 # S10 字段缩减与原子必要性复查
 
-依据设计 5B.4-C.6 与实施方案 S10 第 1–3 项。[有限变换与纯协议](acceptance/S10-field-kernel.md)已实现并通过单元检查，字段缩减尚未接入持久 Worker。本文继续约束后续耐久执行。三原子行为用例另见验收记录；不借该用例扩大 S9 默认组合深度二，不重写既有原子删除协议或候选锁。
+依据设计 5B.4-C.6 与实施方案 S10 第 1–3 项。[有限变换与纯协议](acceptance/S10-field-kernel.md)已接入持久 Worker，新 study 默认冻结 `predefined-fields/v1`，旧 study 及显式空策略继续原子协议。本文约束耐久执行与验收范围。三原子行为用例另见验收记录；不借该用例扩大 S9 默认组合深度二，不重写既有原子删除协议或候选锁。
 
 ## 现有约束
 
-`RepairStudyService` 当前从 S9 的明确通过结果建立 study，逐项删除后直接写唯一 `repair_study_locks`。`RepairAtom.patch_ref` 指向原有 S7 补丁效果，`_applied` 只接受源搜索中的确切内容。因此字段修改不能通过原子删除收据冒名接入，也不能在锁定或打开确认池之后替换 payload。
+`RepairStudyService` 从 S9 的明确通过结果建立 study；旧策略逐项删除后直接写唯一 `repair_study_locks`，新策略先进入独立字段轨迹再锁定。`RepairAtom.patch_ref` 指向完整补丁效果；派生内容另外保存根、父补丁、S7 发布内容和 study 归属。字段修改不能通过原子删除收据冒名接入，也不能在锁定或打开确认池之后替换 payload。
 
 `ReductionSummary` 的最小性只针对有序原子删除，`field_reduction=not_run` 是历史事实。字段改变后，旧候选下的删除失败不再证明新候选中的原子必要；必须重新测试，或明确标注未证明。新实现保留旧摘要，另存字段轨迹和最终候选的必要性范围。
 

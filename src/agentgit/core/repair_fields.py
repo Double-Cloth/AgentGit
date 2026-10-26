@@ -5,13 +5,15 @@ from typing import Annotated, Literal
 from pydantic import Field, model_validator
 
 from agentgit.core.models import Contract, Digest, Identifier, NonNegative
-from agentgit.core.repair import RepairPatch
+from agentgit.core.repair import BudgetDecision, RepairPatch
+from agentgit.core.repair_confirmation import ValidationModelCall
+from agentgit.core.repair_studies import RepairReductionReceipt
 from agentgit.core.repair_validation import (
     RepairCandidate,
     ValidationSample,
     ValidationTrialEvidence,
 )
-from agentgit.core.research import AgentConfig, Plan
+from agentgit.core.research import AgentConfig, BudgetLimits, Plan
 
 AtomicMinimality = Literal[
     "not_proven", "one_minimal_under_fixture", "empirical", "empty_candidate"
@@ -33,9 +35,18 @@ class RepairFieldPlan(Contract):
     initial_atomic_minimality: AtomicMinimality
     max_trials: Annotated[int, Field(ge=0, le=100)]
     max_variants: Literal[128] = 128
+    parent_budget_stop: BudgetDecision | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @model_validator(mode="after")
     def fixed_origin(self) -> "RepairFieldPlan":
+        if self.parent_budget_stop is not None and (
+            self.parent_budget_stop.allowed
+            or self.parent_budget_stop.reason in ("available", "concurrency")
+            or self.max_trials != 0
+        ):
+            raise ValueError("原子阶段预算停止必须保留实际拒绝且不追加字段额度")
         if self.sample.role != "reduce" or self.sample.task_ref != self.initial.task_ref:
             raise ValueError("字段缩减只能使用同一任务的固定 reduce 验收器")
         if len(set(self.completed)) != len(self.completed):
@@ -143,3 +154,77 @@ class RepairFieldSummary(Contract):
         "bounded_predefined_fields_and_atomic_rechecks/v1"
     )
     global_optimum: Literal[False] = False
+
+
+class RepairFieldIntent(Contract):
+    kind: Literal["repair_field_intent/v1"] = "repair_field_intent/v1"
+    study_id: Identifier
+    ordinal: Annotated[int, Field(ge=0, le=99)]
+    phase: Literal["reduce"] = "reduce"
+    protocol_ref: Digest
+    source_manifest_ref: Digest
+    request: RepairFieldRequest
+    config: AgentConfig
+    plan: Plan | None
+    limits: BudgetLimits
+    hybrid_ref: Digest | None
+    branch_name: Annotated[str, Field(pattern=r"^field-[0-9a-f]{32}-[0-9]{1,2}$")]
+
+    @model_validator(mode="after")
+    def limits_match(self) -> "RepairFieldIntent":
+        if self.config.limits != self.limits:
+            raise ValueError("字段投影必须使用冻结的单 trial 预算")
+        return self
+
+
+class RepairFieldProof(Contract):
+    kind: Literal["repair_field_execution_proof/v1"] = "repair_field_execution_proof/v1"
+    trial_id: Identifier
+    protocol_ref: Digest
+    candidate_ref: Digest
+    job_id: Identifier
+    initial_run_id: Identifier
+    current_run_id: Identifier
+    run_ids: Annotated[tuple[Identifier, ...], Field(min_length=1, max_length=100)]
+    model_calls: Annotated[tuple[ValidationModelCall, ...], Field(max_length=1000)]
+
+    @model_validator(mode="after")
+    def owned_family(self) -> "RepairFieldProof":
+        if (
+            self.run_ids[0] != self.current_run_id
+            or self.run_ids[-1] != self.initial_run_id
+            or len(set(self.run_ids)) != len(self.run_ids)
+        ):
+            raise ValueError("字段调用只能属于本次独立 Job 的恢复链")
+        origins = {call.call_id: call.origin_call_id for call in self.model_calls}
+        if len(origins) != len(self.model_calls) or any(
+            call.run_id not in self.run_ids
+            or (call.origin_call_id is not None and call.origin_call_id not in origins)
+            for call in self.model_calls
+        ):
+            raise ValueError("字段不能借用其他 Job 的模型响应")
+        for call in self.model_calls:
+            seen, parent = {call.call_id}, call.origin_call_id
+            while parent is not None:
+                if parent in seen:
+                    raise ValueError("字段模型恢复来源不能成环")
+                seen.add(parent)
+                parent = origins[parent]
+        return self
+
+
+class RepairFieldReceipt(Contract):
+    kind: Literal["repair_field_receipt/v1"] = "repair_field_receipt/v1"
+    execution: RepairReductionReceipt
+    provenance_ref: Digest | None
+    fresh_model_calls: NonNegative
+
+    @model_validator(mode="after")
+    def actual_models(self) -> "RepairFieldReceipt":
+        if self.execution.not_started != (self.provenance_ref is None):
+            raise ValueError("实际字段试验必须保留来源证明，空取消不能伪造证明")
+        if self.fresh_model_calls != self.execution.usage.model_calls:
+            raise ValueError("字段物理模型用量必须与新调用来源一致")
+        if self.execution.category == "oracle" and not self.fresh_model_calls:
+            raise ValueError("字段验收不能用零新模型调用或旧产物充数")
+        return self

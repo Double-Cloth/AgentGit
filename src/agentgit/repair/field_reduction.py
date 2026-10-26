@@ -183,7 +183,7 @@ def summarize_fields(
     elif pending_atoms or pending_fields:
         status, reason = (
             ("budget_exhausted", "search_budget")
-            if budget_stopped
+            if budget_stopped or state.plan.parent_budget_stop is not None
             else ("budget_exhausted", "phase_trials")
             if len(state.steps) >= state.plan.max_trials
             else ("running", "declared_transformations_remain")

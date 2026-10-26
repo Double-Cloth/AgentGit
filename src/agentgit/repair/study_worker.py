@@ -7,7 +7,9 @@ from agentgit.core.canonical import encode
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.models import parse_contract
 from agentgit.core.repair import BudgetDecision
+from agentgit.core.repair_studies import RepairStudyLease
 from agentgit.core.repair_validation import ReductionState
+from agentgit.repair.field_worker import RepairFieldDriver
 from agentgit.repair.reduction import next_deletion, summarize_reduction
 from agentgit.services.repair_reductions import RepairReductionService
 from agentgit.services.repair_studies import RepairStudyService
@@ -22,6 +24,11 @@ class RepairStudyWorker:
             RepairReductionService(research),
         )
         self.name = name
+        self.field_driver = RepairFieldDriver(research)
+
+    def _fields(self, lease: RepairStudyLease, *, budget_stopped: bool = False) -> dict[str, Any]:
+        self.field_driver.fields.initialize(lease, budget_stopped=budget_stopped)
+        return self.field_driver.run_once(lease)
 
     def run_once(self, *, repository: UUID | None = None) -> dict[str, Any] | None:
         lease = self.ledger.claim(self.name, repository=repository)
@@ -30,6 +37,8 @@ class RepairStudyWorker:
         repo, identity = UUID(lease.repository_id), UUID(lease.study_id)
         try:
             view = self.ledger.view(repo, identity)
+            if view.get("field_reduction") is not None:
+                return self.field_driver.run_once(lease)
             if view["cancel_requested"]:
                 self.trials.cancel_children(lease)
                 view = self.ledger.view(repo, identity)
@@ -66,16 +75,22 @@ class RepairStudyWorker:
                             lease_until=None,
                         )
                     return self.ledger.view(repo, identity)
+                if view["manifest"].get("field_policy") is not None:
+                    return self._fields(lease)
                 return self.ledger.seal(lease)
             reserved = self.ledger.reserve(lease)
             if reserved["admitted"]:
                 self.trials.dispatch(lease, UUID(reserved["trial_id"]))
                 return self.ledger.view(repo, identity)
             if reserved.get("finished"):
+                if view["manifest"].get("field_policy") is not None:
+                    return self._fields(lease)
                 return self.ledger.seal(lease)
             decision = parse_contract(encode(reserved["decision"]), BudgetDecision)
             if decision.reason == "concurrency":
                 return self.ledger.view(repo, identity)
+            if view["manifest"].get("field_policy") is not None:
+                return self._fields(lease, budget_stopped=True)
             return self.ledger.seal(lease, budget_stop=decision)
         except AgentGitError as exc:
             if exc.code not in (ErrorCode.VERSION_CONFLICT, ErrorCode.CONTROL_REQUESTED):

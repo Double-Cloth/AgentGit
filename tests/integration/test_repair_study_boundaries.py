@@ -87,7 +87,11 @@ def test_http_and_cli_reduce_reuse_strict_input_and_only_worker_executes(
         study = UUID(created["study_id"])
         result = drive_study(research, repo)
         assert result["status"] == "awaiting_samples"
-        assert result["usage"]["started"]["reduce"] == 1
+        assert result["usage"]["started"]["reduce"] == 4
+        assert result["field_reduction"]["summary"]["accepted_fields"] == 1
+        assert result["field_reduction"]["summary"]["field_minimality"] == (
+            "one_step_minimal_under_fixture"
+        )
         assert result["usage"]["started"]["confirm"] == 0
 
         @contextmanager
@@ -240,7 +244,10 @@ def test_hybrid_reduction_freezes_own_policy_and_reports_logical_and_actual_sepa
     assert drive(research, repo, search)["status"] == "needs_confirmation"
     studies = RepairStudyService(history)
     made = studies.submit(
-        repo, NewRepairStudy(search_id=str(search)), actor="fixture", key="hybrid-reduce"
+        repo,
+        NewRepairStudy(search_id=str(search), field_policy=None),
+        actor="fixture",
+        key="hybrid-reduce",
     )
     result = drive_study(research, repo)
     assert result["study_id"] == made["study_id"] and result["status"] == "awaiting_samples"
