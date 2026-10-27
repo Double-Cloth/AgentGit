@@ -11,3 +11,5 @@
 `regressions-v1.json` 新增四套独立回归规格，包含框架顺序、精确数值和三个日期边界，与三十例来源全部不同。四项正常 Worker Run 已通过；正式评估仍须登记并实际执行候选的四次回归。公开合法起点与固定只读环境见[准备记录](../../../doc/acceptance/S10-benchmark-origins.md)，本目录仍无完整研究运行 release。
 
 `faults-v2.json` 是冻结前的运行故障草案，保留原输入/20/10/类别与分母。旧 13 家族提案中同源指令不能按目标改名跨 split；v2 合为 11 家族，所有外部指令只在保留集，开发路径是独立导出缺陷。正式驱动读取此文件；`condition_for` 仅保留 v1 构造兼容。机制契约与两个新开发源/对照已核对，仍无保留执行或完整运行 release。见[五方法原型及规格修正](../../../doc/acceptance/S10-dataset-driver.md)。
+
+后续 `declarations-v1.json` 与 `evaluation-release-v1.json` 已形成[完整运行冻结](../../../doc/acceptance/S10-evaluation-freeze.md)，绑定上述故障草案的确切字节及全部运行条件。开发集正式执行中，保留未开始；旧资产中的 not_started/null 是创建时事实，不回写覆盖。声明是评估元数据，不能作为 Agent 输入或预填成绩。

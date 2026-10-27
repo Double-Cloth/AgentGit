@@ -300,27 +300,37 @@ def execute_method(research, repository, validator, condition, regressions, reco
     return outcome
 
 
-def execute_development_case(history, data_root, case_id, folder: Path, *, methods=METHODS):
+def _execute_case(history, data_root, case_id, folder, methods, release=None):
     specifications, profiles, _ = load_inputs()
     case = next(case for case in specifications.cases if case.id == case_id)
     runtime_case = next(case for case in load_faults().cases if case.id == case_id)
-    assert case.split == "train", "原型禁止访问保留任务，必须先冻结完整运行 release"
+    if release is None:
+        assert case.split == "train", "原型禁止访问保留任务，必须先冻结完整运行 release"
+    else:
+        assert methods == METHODS
     assert methods and len(set(methods)) == len(methods) and all(m in METHODS for m in methods)
     research, repository, validator, condition, regressions, record = prepare_case(
         history, data_root, case, profiles, runtime_case.condition
     )
     record["runtime_case"] = runtime_case.model_dump(mode="json", exclude={"condition"})
-    print(f"prototype:{case_id}:prepared", flush=True)
+    record["method_order"] = list(methods)
+    prefix = "prototype" if release is None else "evaluation"
+    if release is not None:
+        record["scope"] = "frozen-evaluation/v1"
+        record["runtime_release_ref"] = release.identity()
+    print(f"{prefix}:{case_id}:prepared", flush=True)
     try:
         for method in methods:
-            print(f"prototype:{case_id}:{method}:started", flush=True)
+            if release is not None:
+                from repair_benchmark_release import load_release
+
+                assert load_release() == release
+            print(f"{prefix}:{case_id}:{method}:started", flush=True)
             record["active_method"] = method
             record["methods"][method] = execute_method(
                 research, repository, validator, condition, regressions, record, method
             )
-            print(
-                f"prototype:{case_id}:{method}:" + record["methods"][method]["status"], flush=True
-            )
+            print(f"{prefix}:{case_id}:{method}:" + record["methods"][method]["status"], flush=True)
         del record["active_method"]
     except Exception as error:
         record["driver_failure"] = dict(type=type(error).__name__, message=str(error))
@@ -339,4 +349,19 @@ def execute_development_case(history, data_root, case_id, folder: Path, *, metho
     assert record["source_before"] == record["source_after"]
     assert len({r["common_budget_ref"] for r in record["methods"].values()}) == 1
     archive = write_case(history, repository, folder, record)
+    return record, archive
+
+
+def execute_development_case(history, data_root, case_id, folder: Path, *, methods=METHODS):
+    return _execute_case(history, data_root, case_id, folder, methods)
+
+
+def execute_frozen_case(history, data_root, case_id, folder: Path):
+    from repair_benchmark_release import case_permission
+
+    release, binding = case_permission(case_id, folder)
+    record, archive = _execute_case(history, data_root, case_id, folder, METHODS, release)
+    assert record["public_input_ref"] == binding.public_input_ref
+    assert record["condition_ref"] == binding.condition_ref
+    assert record["fixture_model_ref"] == binding.fixture_ref
     return record, archive
