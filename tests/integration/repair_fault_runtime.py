@@ -147,6 +147,18 @@ def omit_plan(plan, omitted):
     )
 
 
+def catalog_framework(request: ModelRequest) -> str:
+    # 只能从公开目录定位子查询；错误回退把这一子查询误当作完整覆盖。
+    catalog = request.state.goal.text.split("资料目录：", 1)[-1].split("。", 1)[0]
+    source_ids = tuple(part.strip() for part in catalog.split(","))
+    if len(source_ids) != 6 or len(set(source_ids)) != 6:
+        raise ValueError("公开任务缺少完整来源目录")
+    framework = source_ids[0].split("-", 1)[0].capitalize()
+    if framework not in request.state.goal.frameworks:
+        raise ValueError("公开目录不属于本任务的框架")
+    return framework
+
+
 class FaultResearchModel(MockResearchModel):
     """确定性合成机制；识别约束文本的行为不代表真实供应商的提示泛化能力。"""
 
@@ -167,18 +179,31 @@ class FaultResearchModel(MockResearchModel):
     def invoke(self, payload: bytes) -> bytes:
         request = parse_contract(payload, ModelRequest)
         condition = self.condition
-        if condition.rank == "empty_fallback" and request.phase == "act":
-            plan = request.state.plan
-            ready = plan.ready(request.state.completed) if plan else ()
-            if ready and ready[0].kind == "read" and not request.state.search_results:
-                # 只读取 Goal 中既有公开目录，不从条件或答案补入来源。
-                catalog = request.state.goal.text.split("资料目录：", 1)[-1].split("。", 1)[0]
-                source_ids = tuple(part.strip() for part in catalog.split(","))
-                if len(source_ids) != 6 or len(set(source_ids)) != 6:
-                    raise ValueError("公开任务缺少完整来源目录")
-                request = evolve(request, state=evolve(request.state, search_results=source_ids))
-                payload = encode(request.model_dump(mode="json"))
         decision = parse_decision(super().invoke(payload))
+        if condition.rank == "empty_fallback":
+            # Runtime 先拒绝空结果；只有真实重规划才能启用局部目录的错误回退。
+            if isinstance(decision, PlanDecision) and request.state.error_code == "tool_empty":
+                catalog_framework(request)
+                decision = evolve(
+                    decision,
+                    plan=evolve(
+                        decision.plan,
+                        nodes=tuple(
+                            evolve(node, source_slot=0) if node.kind == "read" else node
+                            for node in decision.plan.nodes
+                        ),
+                    ),
+                )
+            elif isinstance(decision, ToolDecision) and decision.tool == "corpus_search":
+                reads = [node for node in request.state.plan.nodes if node.kind == "read"]
+                if reads and all(node.source_slot == 0 for node in reads):
+                    decision = evolve(
+                        decision,
+                        arguments={
+                            **decision.arguments,
+                            "frameworks": [catalog_framework(request)],
+                        },
+                    )
         directive = INSTRUCTIONS.get(condition.instruction)
         observed = directive is not None and (
             directive in request.state.goal.text

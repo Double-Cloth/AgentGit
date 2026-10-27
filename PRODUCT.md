@@ -60,6 +60,8 @@ Repair Lab 的[原子准备与桌面桥接基础](doc/acceptance/S10-prepared.md
 
 [二十个开发故障构造](doc/acceptance/S10-fault-construction.md)已接通既有 Runtime，37 项契约及 20 项真实集成分批通过；最终四十个 Run 为 20 失败、20 正常通过。两类越界写被拒绝且零产物，原始响应、硬验收及用量独立复核。此处仍无修复搜索或保留成绩；运行适配器是待补齐的构造草稿，完整评估协议与 D2 继续。
 
+[合法起点与四项独立回归](doc/acceptance/S10-benchmark-origins.md)补齐公开根/局部选择、首个 act 前失败的回退及原 Worker 上的只读观测环境，64 个不同节点分批通过。九个真实 Job/Run 的原始响应、硬验收及计量独立核对；晚期局部空间确实生成两项候选。仍须冻结完整运行 release 并执行五方法，不代替修复/保留成绩。
+
 ## Brand Commitments
 
 产品名称为 AgentGit。界面继承根目录 DESIGN.md 的视觉体系、允许的字体替代、组件和断点；不另外发明品牌配色或装饰体系。字体和其他资产须有授权并满足安装包离线使用要求；已取得本地 Inter、EB Garamond、JetBrains Mono 及 OFL，记录上游提交和摘要，没有把未提供的商业字体视为已具备。
