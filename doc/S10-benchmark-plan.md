@@ -33,3 +33,5 @@ Recorded 恢复检查同样占其实际阶段次数与计量，失败/超时/未
 [19 项契约与五方法真实接线](acceptance/S10-benchmark-methods.md)共 24 项通过；来源为明确的旧工程 Prompt 例，只验证选择、空局部空间、不缩减锁、原预算和实际六加四。冒烟模块为 `repair_benchmark_execution.py`，导出限定 `.agentgit/evidence/S10-benchmark-method-smoke-*`，文件只创建一次。方法资产 `tests/fixtures/repair/methods-v1.json` 明确不是数据集；新 30 例、全量执行和研究结论尚未完成，不能把这些通过数记入 10/12。
 
 [新输入规格](acceptance/S10-input-assets.md)现有 30 套公开任务和 13 个拟议家族，20/10 及五类配额固定；52 契约 + 20 个开发正常 Run 通过并独立审计。输入 release 不绑定故障 runtime，保留集没有真实 Run 或修复成绩；后续继续上述故障/回归/起点协议及全量执行，不能把正常控制算作修复成功。
+
+[开发故障构造](acceptance/S10-fault-construction.md)再完成 37 契约及 20 项真实故障/正常对照集成，最终 20 失败、20 正常通过，原始响应和硬验收独立复核。这里只验证开发机制，保留条件映射不等于已完成的注入器，空搜索工具环境尚未绑定；仍须补齐语义回归、正式起点和完整运行 release 后开展五方法计分，十二例可修复声明不因此改为已证实。
