@@ -64,8 +64,14 @@ def method_row(case, outcome):
         confirm_regression_records=len(attempted),
         patch_count=len(atoms) if atoms is not None else None,
         screen_change_bytes=outcome["source"].get("decision", {}).get("selected_change_bytes"),
-        atomic_minimality=reduction.get("minimality", "not_tested"),
+        pre_field_atomic_minimality=reduction.get("minimality", "not_tested"),
+        atomic_minimality=fields.get(
+            "atomic_minimality", reduction.get("minimality", "not_tested")
+        ),
+        atomic_minimality_scope=fields.get("minimality_scope")
+        or reduction.get("minimality_scope", "not_tested"),
         field_minimality=fields.get("field_minimality", "not_tested"),
+        minimality_stop_reason=fields.get("reason") or reduction.get("reason"),
         accepted_fields=fields.get("accepted_fields", 0),
         model_calls=usage["model_calls"],
         tool_calls=usage["tool_calls"],

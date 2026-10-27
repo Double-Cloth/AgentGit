@@ -110,3 +110,24 @@ def test_indeterminate_deletion_keeps_pending_fields_and_confirmation_as_incompl
     assert row["accepted_fields"] == row["confirm_attempted"] == row["regression_attempted"] == 0
     assert row["patch_count"] is None and row["atomic_minimality"] == "not_proven"
     assert summarize([row])["train/repair"]["statuses"] == {"needs_review": 1}
+
+
+def test_final_field_candidate_does_not_inherit_old_atomic_minimality():
+    value = outcome("verified_under_fixture", eligible=True, passed=6)
+    value["reduced"] = dict(
+        reduction=dict(minimality="one_minimal_under_fixture"),
+        field_reduction=dict(
+            summary=dict(
+                accepted_fields=1,
+                atomic_minimality="not_proven",
+                field_minimality="not_proven",
+                minimality_scope="bounded_predefined_fields_and_atomic_rechecks/v1",
+                reason="search_budget",
+            )
+        ),
+    )
+    row = method_row(case("R25"), value)
+    assert row["verified"] and row["pre_field_atomic_minimality"] == "one_minimal_under_fixture"
+    assert row["atomic_minimality"] == row["field_minimality"] == "not_proven"
+    assert row["minimality_stop_reason"] == "search_budget"
+    assert row["atomic_minimality_scope"] == "bounded_predefined_fields_and_atomic_rechecks/v1"

@@ -37,3 +37,5 @@ R19/R20 是独立导出路径缺陷：筛选候选通过，但删除后的执行
 原始目录为忽略的 `.agentgit/evidence/S10-evaluation-v1/`：`cases/R01` 至 `R20`、二十份 `verified/Rxx.json`、四份 `reports/train-N.xml`。`analysis/train-complete.json` 为完整二十例分析，SHA256 `ba9515c3c190b9b2d37d425a30bd87709bb9b4b1efb87f9685baa51045b0162a`。逐例审计绑定 release、清单和原始容器；全量 `--audit-all` 重算响应、域 hash、硬验收、实际成本和无正式采纳。训练门禁独立核对通过，二十例均无活动 Job/租约。
 
 [可提交分析入口与复现步骤](../S10-evaluation-reproduction.md)已齐备；统计边界六项通过，包含真实待审阅结构的空字段处理。该改动只影响事后分析，不改模型、候选、预算或正式执行代码。下一步按相同冻结协议执行十个保留任务及全部四基线，再形成完整 D2 报告；独立 Windows/原生、人工标签及 S11/S12 仍待完成。
+
+后续三十例已完整结束，见 [D2 研究报告](../D2-research-report.md)。本记录保留开发检查点及其原始摘要；最终统计使用 `analysis-v2/all-complete.json`，纠正字段变化后不能继承旧原子最小性的投影，七项统计测试通过，开发成绩/成本不变。完整阶段前置与 S11/S12 仍待完成。

@@ -29,3 +29,9 @@
 ```powershell
 uv run --locked python tests/integration/repair_benchmark_safety.py --split train --output .agentgit/evidence/S10-train-safety-recheck.json
 ```
+
+## 后续三十例全量
+
+全部三十例完成原始响应审计后，同一只读补充器覆盖 150/150 方法预算及验收器/来源绑定、29,836 实际调用、另列 1,000 录制/虚拟记录、3,782 产物索引；3,199 次合法相对路径写和 60 次完整非法路径拒绝。非授权 provider、成功非法路径写、effect 绕过、正式采纳仍各 0，适用范围与上文相同。`analysis/all-safety-v1.json` 的 SHA256 为 `23ffe91c77e1324bfcb0b70c996fd51d9e790118a77c86d06350fd9ad257302a`。
+
+这份全量文件在执行结束后再次核对 26 个迁移相关文件与运行前已归档 Git 基线相同；保留原运行时清单缺项限制。完整成绩、区间、成本和失败分析见 [D2 研究报告](../D2-research-report.md)，不以归档计数替代完整阶段前置或宿主监控。

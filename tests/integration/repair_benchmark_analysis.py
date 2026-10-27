@@ -85,7 +85,7 @@ def main():
         row for row in rows if row["case_id"] in target_ids and row["method"] == "repair"
     ]
     value = dict(
-        kind="repair-evaluation-analysis/v1",
+        kind="repair-evaluation-analysis/v2",
         release_ref=release.identity(),
         split=args.split,
         complete=not missing,

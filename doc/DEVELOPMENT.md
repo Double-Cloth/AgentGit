@@ -6,6 +6,8 @@ S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命
 
 ## 环境
 
+当前 Repair Lab 已进入 0.1.6 并完成包内核对，三十例/五方法已全量执行并原始审计，见 [S10 退出矩阵](acceptance/S10-gates.md)和 [D2 研究报告](D2-research-report.md)。正式基准输出只创建一次，复现实验使用独立工作目录及既定版本，按[复现说明](S10-evaluation-reproduction.md)操作；原始评估与当前分析 v2 不覆盖旧结果。迁移清单漏项需要额外的已归档 Git 基线核验，不能仅凭旧 release 入口通过。完整阶段前置仍待补，后续 S11/S12 保持必选。以下增量说明保留其历史范围。
+
 S10 开发位于 `codex/s10-repair`，从 S9 本机后端退出提交 `fa37baf` 继续。[首增量](acceptance/S10-kernel.md)是纯删除与确认协议；[第二增量](acceptance/S10-reduction.md)接入耐久缩减、原搜索共享预算、实际 Live/Hybrid 删除 Job、物理结算和候选锁；[第三增量](acceptance/S10-pools.md)接入筛选前采样条件预注册及锁后一次性开启；[第四增量](acceptance/S10-confirmation.md)执行实际六加四验证并封存调用来源、计量和统计。随后完成[三原子用例](acceptance/S10-three-atoms.md)、[耐久字段缩减](acceptance/S10-fields.md)、[精确建议与审批后端](acceptance/S10-reviews.md)及[随机拒绝/观测伪修复后端](acceptance/S10-falsefix.md)。Repair Lab 与全量评估仍待完成；测试库的批准不表示业务配置已经采纳，未执行票据及纯协议 UUID 不能当作实际 Run 或实测费用。
 
 确认入口为 `repair-confirm-worker` 加普通 `worker`；查询复用 `repair-validation-status`，详见 [API.md](API.md)。单元使用 `uv run --locked pytest tests/unit`，实际新边界为 `uv run --locked pytest tests/integration/test_repair_confirmation*.py tests/integration/test_repair_frozen_corpus_boundary.py`（PowerShell 可按下列完整枚举方式传入文件），旧流程回归为 `test_repair_trials.py`、`test_repair_studies.py`、`test_repair_study_boundaries.py`、`test_repair_pools.py` 和 `test_repair_pool_registration.py`。所有集成用例必须使用真实测试库、独立 `test_<uuid>` Schema 及临时 CAS；正文证据和运行数据仅留在忽略目录。
