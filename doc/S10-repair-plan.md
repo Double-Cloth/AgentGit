@@ -48,3 +48,5 @@
 [随机拒绝与实际观测伪修复](acceptance/S10-falsefix.md)现已补齐后端证据。Mock 可在筛选前冻结保守的 `stochastic_fixture` 范围，不能据少量随机删除结果声明严格 1-minimal；真实模型禁止借此改为 fixture。确认失败仍封存原锁和原池，不借旧筛选试验补通过或追加种子。观测替换即使六加四通过也仅可保存精确实验。后续继续 Repair Lab、30 例/四基线、D2 和必选 S11/S12；桌面禁用采纳动作尚待验收。
 
 [桌面计划](S10-desktop-plan.md)现已明确交接、精确审阅、重开只读和验收边界。[原子准备基础](acceptance/S10-prepared.md)在同一事务发布搜索与十张预注册票据，无需停 Worker，避免页面跨两次提交时先行筛选；14 项固定 IPC 已通过真实 Electron preload 核验。可见 Repair Lab、只读 workflow 发现、完整桌面用户操作和新包复验仍需继续，不据桥接或 HTTP fixture 宣告阶段退出。
+
+后续[0.1.6 候选](acceptance/S10-package-016.md)已补齐可见 Repair Lab、真实设施及包内边界验证。现在按[30 例/四基线计划](S10-benchmark-plan.md)继续：先固定五种方法与同预算接线，再建立新的任务家族和保留集，不把旧工程冒烟充作研究数据。完整 D2、用户暂缓项以及 S11/S12 主链保持。
