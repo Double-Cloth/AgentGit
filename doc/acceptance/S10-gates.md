@@ -13,6 +13,7 @@
 | Repair Lab 与候选交接 | [真实联合](S10-lab-real.md)、[候选交接](S10-candidate-handoff.md)、[取消/未知](S10-lab-boundaries.md)、[观测](S10-lab-observation.md)。第五页保留失败、用量、Diff、限制和精确决定，断连重开不重复修改 |
 | 包内可运行交付 | [Windows 0.1.6](S10-package-016.md)：35 单元和 17 包内 Electron 流程通过，三条真实修复原始链独立审计；安装/原生专项按用户指示保留待补 |
 | 三十例、四基线及复现 | [完整 release](S10-evaluation-freeze.md)、[开发全量](S10-development-evaluation.md)、[执行/复核说明](../S10-evaluation-reproduction.md)。开发二十例×五方法结束；保留十例×五方法正在执行，完整原始结果及 D2 报告待补 |
+| 原始安全及计量核对 | [开发全量补充计数](S10-evaluation-safety.md)：100 个方法预算/验收器绑定、19,899 实际调用和 2,470 产物记录核对；60 次非法路径完整拒绝，归档范围零成功越界写/正式采纳，八项分析反例通过 |
 | 数据恢复 | [D1 当前版本补验与 D2 研究记录](S10-backup-restore.md)：两次停止自己的写者后备份 PostgreSQL/CAS、恢复到空测试库；核对引用/hash/HEAD/checkpoint，未决写保持待核对、零重发 |
 
 ## T01–T08

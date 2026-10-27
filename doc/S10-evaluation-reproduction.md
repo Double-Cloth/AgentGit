@@ -27,6 +27,7 @@ uv run --locked python -u -m pytest tests/integration/test_repair_frozen_evaluat
 uv run --locked python tests/integration/repair_benchmark_analysis.py --split train --require-complete --audit-all --destination .agentgit/evidence/S10-reanalysis-train
 uv run --locked python -u -m pytest tests/integration/test_repair_frozen_evaluation.py -q --capture=tee-sys -p no:cacheprovider -k 'R21 or R22 or R23 or R24 or R25 or R26 or R27 or R28 or R29 or R30' --junitxml=.agentgit/evidence/S10-evaluation-v1/reports/heldout.xml
 uv run --locked python tests/integration/repair_benchmark_analysis.py --split all --require-complete --audit-all --destination .agentgit/evidence/S10-reanalysis-all
+uv run --locked python tests/integration/repair_benchmark_safety.py --split all --output .agentgit/evidence/S10-reanalysis-all/safety.json
 uv run --locked python tests/integration/repair_benchmark_migration_provenance.py --output .agentgit/evidence/S10-migration-check-after.json
 ```
 
