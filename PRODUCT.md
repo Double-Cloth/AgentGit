@@ -70,6 +70,8 @@ Repair Lab 的[原子准备与桌面桥接基础](doc/acceptance/S10-prepared.md
 
 S8 的[其余适用效果工程证据](doc/acceptance/S8-candidate-effects.md)现已补齐：原二十规格统一另建持久来源，每例同故障条件五加五，四例正差、十六例零差均经原始响应/硬验收重算；原报告与排名不变。早期两种来源构造拒绝保留，没有改产品或放宽 Replay 规则。人工标签和原 Top-3 4/8 未达标、独立 Windows/原生及整体阶段前置仍待补。
 
+S11 已按用户继续工程实现的授权进入[只读首增量](doc/acceptance/S11-artifact-preview.md)：共同祖先、有限 Markdown/研究报告 JSON 三方候选和同项目真实 CAS 预览已实现，全部 743 后端单元、3 新集成及 7 版本历史集成通过。候选始终保留状态/来源/任务约束/审批待办，不改变 HEAD、不执行外部动作；尚无双父 Commit、Merge Review、30 组正式评估或新合并桌面包。阶段前置保留，完整 S11/S12 主链继续。
+
 ## Brand Commitments
 
 产品名称为 AgentGit。界面继承根目录 DESIGN.md 的视觉体系、允许的字体替代、组件和断点；不另外发明品牌配色或装饰体系。字体和其他资产须有授权并满足安装包离线使用要求；已取得本地 Inter、EB Garamond、JetBrains Mono 及 OFL，记录上游提交和摘要，没有把未提供的商业字体视为已具备。
