@@ -6,15 +6,18 @@
 
 环境准备遵循 [DEVELOPMENT.md](DEVELOPMENT.md)，使用 Python 3.12、`uv run --locked` 和已准备的独立 PostgreSQL 测试库。本次实际 Python 补丁版本、依赖摘要、产品源码身份和逐文件摘要见 `tests/fixtures/repair/evaluation-release-v1.json`。不迁移业务库、不运行供应商调用、不需要外部模型密钥。测试会迁移自己新建的 `test_<uuid>` schema，退出后只清理该 schema；各例 CAS 位于独立 pytest 临时目录。
 
-复现实验应使用独立工作目录及隔离测试库，保持完整冻结版本的字节，包括设计/实施规范、所有产品 `.py/.json`、迁移、依赖和辅助代码。运行入口自动比较完整 release；不同字节会拒绝。原始试验首次启动前的 189 文件快照位于忽略目录 `.agentgit/evidence/S10-evaluation-v1/frozen/`，清单为 `snapshot.json`。冻结以后新增的分析代码不进入模型、搜索或候选选择路径。
+复现实验应使用独立工作目录及隔离测试库，保持冻结版本的字节，包括设计/实施规范、所有产品 `.py/.json`、迁移、依赖和辅助代码。运行入口比较 release 所列文件；迁移存在清单遗漏，必须另外核对，不能只靠入口通过。原始试验首次启动前的 189 文件快照位于忽略目录 `.agentgit/evidence/S10-evaluation-v1/frozen/`，清单为 `snapshot.json`，其中没有迁移。迁移须取首次运行前已归档 Git 基线 `bb04fa1d36f14b363272691d12e824c961c7f966` 的 tree，并在执行前后通过补充来源核验；没有这些 Git 对象时，单独复制 189 文件不足以完整复现。冻结以后新增的分析代码不进入模型、搜索或候选选择路径。
 
 输出固定为 `.agentgit/evidence/S10-evaluation-v1/cases/Rxx/`，逐例清单及原始容器使用只创建一次模式。不要在已留有这些结果的原目录重复执行，也不要删除旧结果后冒充首次执行。新复现使用另一个独立工作目录，保留旧数据和条件；不通过修改固定输出常量或覆盖 release 来复用当前目录。
+
+补充迁移核验还需要把原始 `S10-evaluation-freeze-summary-v1.json` 放在 `.agentgit/evidence/`；核验器固定检查该摘要的 SHA256 及其中的运行前 Git 基线，不接受另造摘要替代。迁移补充记录是后续来源核对，不能说成原 release 已经具备的检查。
 
 ## 执行顺序
 
 在根目录启动开发集入口。测试断言归档和执行完整性，不要求每个算法结果成功，`rejected`、`needs_review`、无解和预算停止均按真实状态保存。
 
 ```powershell
+uv run --locked python tests/integration/repair_benchmark_migration_provenance.py --output .agentgit/evidence/S10-migration-check-before.json
 uv run --locked python -u -m pytest tests/integration/test_repair_frozen_evaluation.py -q --capture=tee-sys -p no:cacheprovider -k 'R01 or R02 or R03 or R04 or R05 or R06 or R07 or R08 or R09 or R10 or R11 or R12 or R13 or R14 or R15 or R16 or R17 or R18 or R19 or R20' --junitxml=.agentgit/evidence/S10-evaluation-v1/reports/train.xml
 ```
 
@@ -24,6 +27,7 @@ uv run --locked python -u -m pytest tests/integration/test_repair_frozen_evaluat
 uv run --locked python tests/integration/repair_benchmark_analysis.py --split train --require-complete --audit-all --destination .agentgit/evidence/S10-reanalysis-train
 uv run --locked python -u -m pytest tests/integration/test_repair_frozen_evaluation.py -q --capture=tee-sys -p no:cacheprovider -k 'R21 or R22 or R23 or R24 or R25 or R26 or R27 or R28 or R29 or R30' --junitxml=.agentgit/evidence/S10-evaluation-v1/reports/heldout.xml
 uv run --locked python tests/integration/repair_benchmark_analysis.py --split all --require-complete --audit-all --destination .agentgit/evidence/S10-reanalysis-all
+uv run --locked python tests/integration/repair_benchmark_migration_provenance.py --output .agentgit/evidence/S10-migration-check-after.json
 ```
 
 如果任何条件需要修复，停止该版本的后续评估并保留失败；另建版本和未见保留资产，不能看到保留成绩后调整现有模型、预算、策略或标签再覆盖旧成绩。正在运行的试验不得修改被冻结的执行文件。

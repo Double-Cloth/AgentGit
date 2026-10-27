@@ -8,7 +8,7 @@
 
 `evaluation-release-v1.json` 同时绑定三十个派生公开输入、故障条件和 fixture_ref、固定 Mock 接口、四项独立回归、五方法顺序、原起点规则、共同预算/方法资产及规范/依赖/执行源码。版本身份为 `0f981aba918904366022c05373484be572cf36b96a5042d05304e6200a3524de`，文件 SHA256 为 `9998ddd09cf58d0b9ac73d89f3ac48205ff44d5368a332785eb3676f9676dcdc`。任一绑定变化使旧 release 拒绝执行，必须另建版本，不能覆盖旧记录。
 
-产品源码仍为 `source-sha256:f66ad3bbdd82a4b16a787bad17002d35827b240faf948aeb8a60748e276e54a9`、schema head `0023_repair_proposal_reviews`。忽略目录 `.agentgit/evidence/S10-evaluation-v1/frozen/` 在首次正式执行前保存了 189 个规范/源码/迁移/依赖/输入文件及 release；`snapshot.json` 记录逐文件摘要。旧工程原型、输入控制和改版构造均不计入正式结果。
+产品源码仍为 `source-sha256:f66ad3bbdd82a4b16a787bad17002d35827b240faf948aeb8a60748e276e54a9`、schema head `0023_repair_proposal_reviews`。忽略目录 `.agentgit/evidence/S10-evaluation-v1/frozen/` 在首次正式执行前保存了 189 个规范/源码/依赖/输入文件及 release；`snapshot.json` 记录逐文件摘要。后续核对发现迁移未被收录，具体缺陷及运行前 Git 基线的补充核验见下文。旧工程原型、输入控制和改版构造均不计入正式结果。
 
 ## 执行与门禁
 
@@ -19,3 +19,9 @@
 保留入口在任何模型启动前检查完整 release，以及所有二十个开发案例的五方法记录、冻结输入、来源不变、真实 Job/控制器停止状态和无活动租约。缺文件、伪造五个成功状态或仍有活动任务均拒绝。门禁不要求开发效果达标，未达目标也不能删例调分母；开发结束后先汇总审计，再按冻结规则运行保留集，不因结果不好修改模型、预算或策略。
 
 当前证据为 `S10-evaluation-freeze-contract-v2.xml`（85）、`snapshot.json`、四个实际开发批次及后续逐例二进制原始归档。完整原始统计、成功率/区间、改动规模、确认/回归、失败/无解/伪修复和 D2 报告将在全量结束后生成；S11/S12、用户暂缓的独立 Windows/原生验收及人工标签仍待完成。
+
+## 迁移清单缺陷及补充核对
+
+退出审查发现 `FROZEN` 误遍历不存在的 `alembic/`，实际迁移在 `migrations/`。因此 v1 的运行时 release 校验和 189 文件快照没有包含迁移；此前将其描述为已包含迁移不准确，已修正。原始 release/快照保持，不能事后加文件伪装成运行前完整快照。
+
+首次运行前已归档的 `S10-evaluation-freeze-summary-v1.json`（SHA256 `b5a07d268d165b9b1bb642e43a4bf72969d4ed0e62e423344c0a18ab0f2057b4`）明确绑定 Git 基线 `bb04fa1d36f14b363272691d12e824c961c7f966`。新增事后来源核验从该不可变 Git tree 读取 `alembic.ini`、23 个迁移、env 与模板共 26 文件，当前集合及字节全部相同；改变、缺失、新添文件的三个反例均被拒绝。该证据核对早期基线与当前文件，不倒填为 v1 原有运行时 guard。最终全量审计还须再次核对；冻结执行代码、模型、预算和原始结果均不改写。

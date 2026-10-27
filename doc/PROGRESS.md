@@ -47,4 +47,6 @@
 
 2026-10-27 备份恢复：[D1 当前版本补验及 D2 修复记录](acceptance/S10-backup-restore.md)各在新空测试库恢复 PostgreSQL 与 CAS，2 项真实集成通过。64 表内容、690 个物理对象、全部引用/HEAD/checkpoint 及中断写调用核对；恢复后保持 outcome_unknown、零新调用，D2 study 保持 queued。原源不变，自建数据库/schema 已清理，备份原始字节保留。此项不替代独立 Windows/原生验收。开发门禁已核对，十个保留任务按四组正式启动，完整报告及 D2/S11/S12 继续。
 
+2026-10-27 退出审查：[S10 逐项矩阵](acceptance/S10-gates.md)已建立，相关 179 项协议检查通过，T07/T08 仍等待保留全量。发现 v1 冻结器误扫不存在的 alembic 目录，189 文件快照没有迁移；[冻结说明](acceptance/S10-evaluation-freeze.md)及复现步骤已纠正。新增独立核验从首次运行前已归档 Git 基线读取配置/迁移/env/模板共 26 文件，当前集合及字节相同，三项改动/缺失/新增反例通过；不改写原快照或运行中协议。补充证据 `S10-migration-provenance-v2.json` SHA256 为 `f5a37ebf0986acca7b2e634f655475ae12a3c7f5c4871c31df43fb2109a4fea6`，明确原 release 没有迁移运行时 guard，最终全量审计前须再核对。
+
 2026-10-23 后续验收：[分发修正与新候选](acceptance/S6-package-hygiene.md)发现旧 ASAR 含测试状态文件/构建配置，撤回此前包审计的过宽结论；改为根白名单并实际拒绝旧包，重建 0.1.1 Setup/ZIP。20 项单元、2 条 Electron 边界、新 ZIP 真实五工具闭环（48.6s）、新 Setup MSIX 安装生命周期（43.6s）通过；27 个运行构建文件未改变。用户将独立 Windows 环境留待稍后。原生保存失败如实保留；S6-T11 的连接错误/恢复已有 UI 证据，Worker 停止、Docker/固定镜像缺失的专项仍待补充。S6 不提前验收或合并。
