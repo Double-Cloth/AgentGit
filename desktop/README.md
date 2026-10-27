@@ -1,12 +1,12 @@
 # AgentGit 桌面开发
 
-当前候选版本为 [Windows 0.1.5](../doc/acceptance/S8-package-015.md)，包含既有四页、S7 受控实验和 S8 故障报告/候选干预；包内容审计、30 单元及 10 条打包 Electron 流程通过。原生保存和独立 Windows 环境仍待验收，S6/D1 阶段退出条件不变。既有安装生命周期证据对应历史候选，不能替代新包独立安装验收。操作步骤见 [D1 桌面离线指南](../doc/D1-desktop-demo.md)，剩余门槛见 [S6 清单](../doc/S6-windows-acceptance.md)。
+当前候选版本为 [Windows 0.1.6](../doc/acceptance/S10-package-016.md)，包含既有四页、S7/S8 和 Repair Lab；包内容审计、35 单元及 17 条打包 Electron 流程通过。联合修复、候选交接、取消/未知和观测禁采纳均有同次真实设施证据。原生保存和独立 Windows 环境仍待验收，S6/D1 阶段退出条件不变。既有安装生命周期证据对应历史候选，不能替代新包独立安装验收。操作步骤见 [D1 桌面离线指南](../doc/D1-desktop-demo.md)，剩余门槛见 [S6 清单](../doc/S6-windows-acceptance.md)。
 
 S7 已接通验收器、实验/干预及实验列表共八个固定 IPC，以及来源冻结、A/B 表单、manifest、精确统计、trial、控制和重开查询。新 ZIP 的真实独立 API/Worker 流程验证 Live 9 通过/1 取消、Hybrid 各 5 全通过，recorded/synthetic 来源可区分。[S7 操作步骤](../doc/S7-desktop-demo.md)、[桌面记录](../doc/acceptance/S7-desktop.md)和[退出核对](../doc/acceptance/S7-gates.md)分别说明使用与证据范围。0.1.3 与 0.1.4 的分发文件均按摘要独立归档，不静默替换历史候选。
 
 ## 固定构建环境
 
-S10 源码已增加[原子准备与 14 项固定 IPC](../doc/acceptance/S10-prepared.md)，使用搜索与采样条件的单事务发布。可运行 `npx.cmd playwright test --config playwright.repair.config.ts` 核对真实 Electron preload、主进程 HTTP 和新增页面；桥接原专项使用受控 fixture，不能单独证明可见页面或真实后端桌面闭环。后续见[桌面计划](../doc/S10-desktop-plan.md)，新接口未进入既有 0.1.5 分发候选。
+S10 使用[原子准备](../doc/acceptance/S10-prepared.md)发布搜索与采样条件，加上只读 workflow 共 15 项固定 IPC；已进入 0.1.6。可运行 `npx.cmd playwright test --config playwright.repair.config.ts` 核对完整专项；其中桥接和页面 fixture 不单独证明真实设施闭环，真实部分分别保存原始 CAS。后续见[桌面计划](../doc/S10-desktop-plan.md)。
 
 随后已接入[Repair Lab 第五页与只读 workflow](../doc/acceptance/S10-lab.md)，页面专项包含原键、票据/版本、观测禁采纳、断连与重开流程，仍使用明确 HTTP fixture。真实 PostgreSQL/API/Worker 的同次桌面链路和新包待补。旧四页配置现也接受 `AGENTGIT_ELECTRON_EVIDENCE_PREFIX`；复验时设置独立前缀以免覆盖默认报告。
 
@@ -45,7 +45,7 @@ npm run package
 npm run make
 ```
 
-输出在 `out/`，包含 Windows x64 Squirrel 安装程序与 ZIP。当前版本 0.1.3，摘要、键盘修正和完整证据矩阵见[当前候选](../doc/acceptance/S6-keyboard-and-gates.md)。[0.1.2 环境异常](../doc/acceptance/S6-execution-environment.md)、[0.1.1 分发修正](../doc/acceptance/S6-package-hygiene.md)及更早安装记录保留历史事实。独立用户安装/升级/卸载尚待完成，不把 make 成功等同于完成 S6。
+输出在 `out/`，包含 Windows x64 Squirrel 安装程序与 ZIP。当前版本为 [0.1.6](../doc/acceptance/S10-package-016.md)。[0.1.3 键盘/逐项核对](../doc/acceptance/S6-keyboard-and-gates.md)、[0.1.2 环境异常](../doc/acceptance/S6-execution-environment.md)、[0.1.1 分发修正](../doc/acceptance/S6-package-hygiene.md)及更早安装记录保留历史事实。独立用户安装/升级/卸载尚待完成，不把 make 成功等同于完成 S6。
 
 ## 连接已有后端
 
@@ -122,7 +122,9 @@ npx.cmd playwright test --config playwright.experiments.config.ts
 
 ## S10 修复实验室
 
-第五页支持显式准备搜索及预注册来源、缩减、锁后六次确认/四项回归、完整配置对照及精确审阅。批准只创建配置版本；观测替换仅允许保存实验。未知提交保持原键，重开通过只读查询发现既有流程。[同次真实 Electron/API/Worker/CAS 用例](../doc/acceptance/S10-lab-real.md)已验证联合 Prompt/Plan、字段缩减、版本竞争和批准；其余边界另有明确 HTTP fixture，固定 Mock 不代表实际模型效果。当前 0.1.5 分发包不含该页，仍需更新候选并包内复验。
+第五页支持显式准备搜索及预注册来源、缩减、锁后六次确认/四项回归、完整配置对照及精确审阅。批准只创建配置版本；观测替换仅允许保存实验。未知提交保持原键，重开通过只读查询发现既有流程。[同次真实 Electron/API/Worker/CAS 用例](../doc/acceptance/S10-lab-real.md)已验证联合 Prompt/Plan、字段缩减、版本竞争和批准；[0.1.6 包内复验](../doc/acceptance/S10-package-016.md)再次覆盖真实流程及其余边界。固定 Mock 不代表实际模型效果。
+
+Repair Lab 需要已准备的 API、普通 Worker，以及分别启动的 repair-worker、repair-study-worker、repair-confirm-worker。它们使用同一数据库、CAS 和项目身份，控制器只编排、普通 Worker 执行；桌面不会自动启动或迁移后端，命令见 [API/CLI 说明](../doc/API.md)。
 
 在 `desktop` 下设置唯一证据前缀后，运行 `npx.cmd playwright test --config playwright.repair.config.ts repair-real.spec.ts` 验证真实设施；只运行页面/桥接 fixture 时明确选择 `repair-bridge.spec.ts repair-lab.spec.ts`。两次须使用不同前缀，避免覆盖报告。真实设施需要仓库测试配置及 PostgreSQL，保持运行中的 Python 包、fixture、helper 和锁文件不变；仅创建、删除自己的测试 schema，模型免费且离线。
 

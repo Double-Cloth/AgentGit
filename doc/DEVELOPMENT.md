@@ -2,7 +2,7 @@
 
 实现进度与阶段证据见 [PROGRESS.md](PROGRESS.md)。README 保留项目介绍；方案和设计的 S0 描述是规划时的历史基线。
 
-S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命令、身份预置和字体授权见 [desktop/README.md](../desktop/README.md)。当前候选 [0.1.5 的本机证据](acceptance/S8-package-015.md)已归档，独立用户/原生专项仍未验收；新增 S9/S10 后端未进入该包。用户已授权延后这些专项、先继续其他开发与本机验收；范围见实施方案第 1.2 节。
+S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命令、身份预置和字体授权见 [desktop/README.md](../desktop/README.md)。当前 [0.1.6 候选](acceptance/S10-package-016.md)包含 Repair Lab，35 单元及 17 条包内流程通过；Python 后端仍由独立操作者准备，桌面不打包或迁移后端。独立用户/原生专项仍未验收；用户已授权延后这些专项、先继续其他开发与本机验收，范围见实施方案第 1.2 节。
 
 ## 环境
 
