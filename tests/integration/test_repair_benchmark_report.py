@@ -93,3 +93,20 @@ def test_field_counts_and_checkpoint_usage_keep_separate_units():
     assert row["accepted_fields"] == 2 and row["model_calls"] == 1
     assert row["source_prefix_usage"]["model_calls"] == 7
     assert row["mock_utf8_bytes"] == 100
+
+
+def test_indeterminate_deletion_keeps_pending_fields_and_confirmation_as_incomplete():
+    value = outcome("needs_review")
+    value["source"]["status"] = "needs_confirmation"
+    value["reduced"] = dict(
+        usage=value["source"]["usage"],
+        reduction=dict(reason="indeterminate_deletions", minimality="not_proven"),
+        field_reduction=None,
+        final_lock=None,
+    )
+    row = method_row(case("R20"), value)
+    assert row["screened_candidate"] and not row["verified"]
+    assert row["stop_reason"] == "indeterminate_deletions"
+    assert row["accepted_fields"] == row["confirm_attempted"] == row["regression_attempted"] == 0
+    assert row["patch_count"] is None and row["atomic_minimality"] == "not_proven"
+    assert summarize([row])["train/repair"]["statuses"] == {"needs_review": 1}

@@ -15,17 +15,18 @@ from agentgit.repair.verification import wilson_95
 
 def method_row(case, outcome):
     final = outcome.get("validation")
-    verification = final.get("verification", {}) if final else {}
+    verification = (final.get("verification") or {}) if final else {}
     latest = final or outcome.get("reduced") or outcome["source"]
     usage = latest["usage"]
     screened = outcome["source"]["status"] == "needs_confirmation"
     eligible = bool(verification.get("production_eligible", False))
     status = outcome["status"]
     verified = status == "verified_under_fixture" and eligible
-    lock = outcome.get("reduced", {}).get("final_lock")
+    reduced = outcome.get("reduced") or {}
+    lock = reduced.get("final_lock")
     atoms = lock["lock"]["candidate"]["atoms"] if lock else None
-    reduction = outcome.get("reduced", {}).get("reduction", {})
-    fields = outcome.get("reduced", {}).get("field_reduction", {}).get("summary", {})
+    reduction = reduced.get("reduction") or {}
+    fields = (reduced.get("field_reduction") or {}).get("summary") or {}
     decision = outcome["source"].get("decision", {})
     attempted = (
         [trial["result"] for trial in final.get("trials", []) if trial["result"] is not None]
@@ -84,7 +85,7 @@ def method_row(case, outcome):
 
 
 def patch_metrics(archive, outcome):
-    lock = outcome.get("reduced", {}).get("final_lock")
+    lock = (outcome.get("reduced") or {}).get("final_lock")
     if not lock:
         return dict(
             final_prompt_bytes=None,

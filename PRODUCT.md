@@ -66,6 +66,8 @@ Repair Lab 的[原子准备与桌面桥接基础](doc/acceptance/S10-prepared.md
 
 [三十例五方法运行协议已冻结](doc/acceptance/S10-evaluation-freeze.md)，85 项契约通过，逐例解/无解声明与方法/输入/预算/源码共同绑定。正式开发集按四个隔离批次开始执行；保留集受二十个开发任务完整执行门禁保护。当前无全量成绩，不据启动或测试通过宣告算法目标、S10/D2 或完整项目完成。
 
+后续[二十例开发完整结果](doc/acceptance/S10-development-evaluation.md)已执行并经原始审计：主方法预声明目标 12/12，全任务 12/20；无排序同为 12/20，不缩减 14/20，失败/待审阅完整保留，不宣称定位或全面基线优势。[备份恢复补验](doc/acceptance/S10-backup-restore.md)两项通过，恢复中断写保持待核对且零重发。十个保留任务现已按冻结协议启动；三十例完整报告、D2、S11/S12 及用户暂缓项继续。
+
 ## Brand Commitments
 
 产品名称为 AgentGit。界面继承根目录 DESIGN.md 的视觉体系、允许的字体替代、组件和断点；不另外发明品牌配色或装饰体系。字体和其他资产须有授权并满足安装包离线使用要求；已取得本地 Inter、EB Garamond、JetBrains Mono 及 OFL，记录上游提交和摘要，没有把未提供的商业字体视为已具备。

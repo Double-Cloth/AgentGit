@@ -11,3 +11,5 @@
 当前 R01–R08 的五方法已完整结束，八份独立原始审计通过。忽略目录 `S10-evaluation-v1/verified/Rxx.json` 绑定案例清单与容器摘要；`analysis/train-partial-008.json` 明确 complete=false、缺十二例。全部实际准备和方法试验共 5,274 模型、4,295 工具、56,788,727 Mock UTF-8 字节，费用为零；原型及构造运行不计入这些数。
 
 十二个声明可修复开发目标中，已有八个完整案例的主方法验证通过，仍显示 evaluated=8、known_verified=8、fixed_denominator=12、status=pending，不据部分结果宣布达标。四个批次继续运行 R09–R12 及后续故障，完整失败/无解/伪修复、四基线、保留效果及置信区间将在全部结束后汇总。产品/依赖/运行代码未变，S10/D2 与 S11/S12、用户暂缓项保持未完成。
+
+后续更新：[完整二十例开发审计](S10-development-evaluation.md)已完成，以上八例为保留的历史检查点。新增待审阅案例的 `field_reduction=null` 处理，六项统计边界检查通过；没有改动生成条件。可提交的 `repair_benchmark_analysis.py` 支持完整重审和独立分析输出目录，旧部分分析不覆盖。开发目标现为 12/12、met，但全部二十例分母及落后于不缩减基线的结果仍保留；保留集及 D2 尚未完成。
