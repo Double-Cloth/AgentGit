@@ -129,7 +129,7 @@ def seed(history, root, *, mode="joint", frozen_policy=None):
     )
 
 
-def main(*, seed_case=seed, extra_command=None):
+def main(*, seed_case=seed, extra_command=None, evidence_case="S10-real-electron-joint-fields/v1"):
     settings = Settings.from_env()
     settings.assert_test_isolation()
     schema = "test_desktop_" + uuid4().hex
@@ -250,7 +250,7 @@ def main(*, seed_case=seed, extra_command=None):
                     validation,
                     source,
                     reduced,
-                    case="S10-real-electron-joint-fields/v1",
+                    case=evidence_case,
                     environment="AGENTGIT_S10_NATIVE_REPAIR_EVIDENCE",
                 )
                 with history.engine.connect() as connection:

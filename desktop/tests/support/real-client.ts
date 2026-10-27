@@ -7,8 +7,8 @@ import type { JsonObject, Reply } from '../../src/shared/bridge';
 export const TOKEN = 'fixture-real-desktop-token-000000000000000000000';
 export function data<T>(reply: Reply<T>): T { if (!reply.ok) throw new Error(`${reply.error.code}: ${reply.error.message}`); return reply.data; }
 export function objects(value: unknown): JsonObject[] { return Array.isArray(value) ? value as JsonObject[] : []; }
-export async function startBackend(kind: 'standard' | 'repair' | 'repair-boundaries' = 'standard') {
-  const script = kind === 'repair-boundaries' ? 'repair_boundaries_backend.py' : kind === 'repair' ? 'repair_backend.py' : 'real_backend.py';
+export async function startBackend(kind: 'standard' | 'repair' | 'repair-boundaries' | 'repair-observation' = 'standard') {
+  const script = kind === 'repair-observation' ? 'repair_observation_backend.py' : kind === 'repair-boundaries' ? 'repair_boundaries_backend.py' : kind === 'repair' ? 'repair_backend.py' : 'real_backend.py';
   const child = spawn('uv', ['run', '--locked', 'python', `desktop/tests/support/${script}`], {
     cwd: resolve('..'), windowsHide: true, env: { ...process.env, AGENTGIT_API_TOKEN: TOKEN, PYTHONIOENCODING: 'utf-8' },
     stdio: ['pipe', 'pipe', 'pipe'],

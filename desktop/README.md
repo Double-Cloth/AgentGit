@@ -129,3 +129,5 @@ npx.cmd playwright test --config playwright.experiments.config.ts
 故障候选核对上下文后可显式前往 Repair Lab，预填原来源/起点、screen 验收器及请求事件；confirm/regression 拒绝，四项回归和执行授权仍需填写。[交接验收](../doc/acceptance/S10-candidate-handoff.md)以 `repair-handoff-real.spec.ts` 实测没有搜索或新 Job/Run；不是自动采用候选补丁。
 
 `repair-boundaries-real.spec.ts` 在自己的测试 Worker 上验证[排队取消及确认结果未知](../doc/acceptance/S10-lab-boundaries.md)。未知试验保留预留，取消/重开不自动重发；页面显示核对要求、未知计量和未结算状态。该固定故障注入不调用供应商，独立于研究成功率评估。
+
+`repair-observation-real.spec.ts` 验证[真实观测禁采纳](../doc/acceptance/S10-lab-observation.md)：显式准备完整录制和 Hybrid 范围后实际六加四通过，仍不能批准正式配置；API 拒绝绕过，页面只保存精确实验定义且不执行。所有 Repair Lab spec 均可按需单独选择、设置唯一证据前缀运行，真实部分需测试数据库和冻结 helper。
