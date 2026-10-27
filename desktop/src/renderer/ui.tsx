@@ -46,7 +46,7 @@ export function useAction() {
 }
 const STATUS: Record<string, string> = { queued: '排队中', planning: '规划中', running: '运行中', completed: '已完成', failed: '失败',
   cancelled: '已取消', paused: '已暂停', waiting_approval: '等待审批', outcome_unknown: '结果未知', interrupted: '已中断',
-  pending: '待处理', approved: '已批准', rejected: '已拒绝', expired: '已过期', budget_exhausted: '预算耗尽', needs_confirmation: '筛选通过，待独立验证', awaiting_samples: '候选已锁，待开启样本', verified_under_fixture: '固定条件下验证通过', empirically_confirmed: '经验验证通过', needs_review: '证据不足，待审阅', needs_attention: '需要处理', validation_ready: '待执行独立复测' };
+  pending: '待处理', approved: '已批准', rejected: '已拒绝', expired: '已过期', budget_exhausted: '预算耗尽', needs_confirmation: '筛选通过，待独立验证', awaiting_samples: '候选已锁，待开启样本', verified_under_fixture: '固定条件下验证通过', empirically_confirmed: '经验验证通过', needs_review: '证据不足，待审阅', needs_attention: '需要处理', validation_ready: '待执行独立复测', waiting_reconciliation: '等待核对未知结果', cancelling: '取消中，等待安全结算' };
 export function Status({ value }: { value: Json | undefined }) {
   const state = str(value);
   return <span className={`status status-${state}`}><span aria-hidden="true" />{(STATUS[state] ?? state) || '未知'}</span>;

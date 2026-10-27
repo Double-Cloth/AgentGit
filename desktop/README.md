@@ -127,3 +127,5 @@ npx.cmd playwright test --config playwright.experiments.config.ts
 在 `desktop` 下设置唯一证据前缀后，运行 `npx.cmd playwright test --config playwright.repair.config.ts repair-real.spec.ts` 验证真实设施；只运行页面/桥接 fixture 时明确选择 `repair-bridge.spec.ts repair-lab.spec.ts`。两次须使用不同前缀，避免覆盖报告。真实设施需要仓库测试配置及 PostgreSQL，保持运行中的 Python 包、fixture、helper 和锁文件不变；仅创建、删除自己的测试 schema，模型免费且离线。
 
 故障候选核对上下文后可显式前往 Repair Lab，预填原来源/起点、screen 验收器及请求事件；confirm/regression 拒绝，四项回归和执行授权仍需填写。[交接验收](../doc/acceptance/S10-candidate-handoff.md)以 `repair-handoff-real.spec.ts` 实测没有搜索或新 Job/Run；不是自动采用候选补丁。
+
+`repair-boundaries-real.spec.ts` 在自己的测试 Worker 上验证[排队取消及确认结果未知](../doc/acceptance/S10-lab-boundaries.md)。未知试验保留预留，取消/重开不自动重发；页面显示核对要求、未知计量和未结算状态。该固定故障注入不调用供应商，独立于研究成功率评估。

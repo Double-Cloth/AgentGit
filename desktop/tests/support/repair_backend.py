@@ -80,12 +80,13 @@ def worker_main(schema, root):
         history.engine.dispose()
 
 
-def seed(history, root):
+def seed(history, root, *, mode="joint", frozen_policy=None):
+    frozen_policy = frozen_policy or policy()
     repo, legacy, research, failed = create_case(
         history,
         root / "seed",
-        mode="joint",
-        adapter_binding=adapter_binding(policy()),
+        mode=mode,
+        adapter_binding=adapter_binding(frozen_policy),
         budget_transform=lambda value: evolve(
             value, quotas=evolve(value.quotas, reduce=16), max_trials=40
         ),
@@ -99,10 +100,12 @@ def seed(history, root):
         task = research.create_task(
             repo,
             source["agent_config_id"],
-            ResearchGoal(text=f"regression-{index};{adapter_binding(policy())};固定框架语义回归"),
+            ResearchGoal(
+                text=f"regression-{index};{adapter_binding(frozen_policy)};固定框架语义回归"
+            ),
         )
         run = research.start(repo, task)
-        assert run.execute(ConfirmationMock(policy())).status.value == "completed"
+        assert run.execute(ConfirmationMock(frozen_policy)).status.value == "completed"
         with history.engine.connect() as connection:
             links = TABLES["run_commits"]
             first = connection.execute(
@@ -122,11 +125,11 @@ def seed(history, root):
         budget=original["manifest"]["budget"],
         regression=regression,
         source_fingerprint=source_fingerprint(history, repo, failed.run_id),
-        policy=policy(),
+        policy=frozen_policy,
     )
 
 
-def main():
+def main(*, seed_case=seed, extra_command=None):
     settings = Settings.from_env()
     settings.assert_test_isolation()
     schema = "test_desktop_" + uuid4().hex
@@ -193,7 +196,7 @@ def main():
             assert thread.is_alive() and time.monotonic() < deadline
             time.sleep(0.03)
         worker = subprocess.Popen(
-            [sys.executable, str(Path(__file__).resolve()), "--worker", schema, str(root)],
+            [sys.executable, str(Path(sys.argv[0]).resolve()), "--worker", schema, str(root)],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
@@ -220,7 +223,7 @@ def main():
                 break
             if name == "seed":
                 assert seeded is None
-                seeded = seed(history, root)
+                seeded = seed_case(history, root)
                 result = seeded
                 (root / "worker-gate").unlink()
             elif name == "audit":
@@ -284,7 +287,8 @@ def main():
             elif name == "mutations":
                 result = dict(mutations=mutations)
             else:
-                raise AssertionError("未知修复联调命令")
+                assert extra_command is not None, "未知修复联调命令"
+                result = extra_command(name, request, history, root, seeded, worker)
             print(json.dumps(dict(id=request["id"], result=result), ensure_ascii=False), flush=True)
     finally:
         (root / "worker-stop").write_text("stop")

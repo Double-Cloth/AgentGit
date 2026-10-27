@@ -50,6 +50,8 @@ Repair Lab 的[原子准备与桌面桥接基础](doc/acceptance/S10-prepared.md
 
 [故障候选到 Repair Lab 的显式交接](doc/acceptance/S10-candidate-handoff.md)已通过真实设施核对：只预填已核验来源、起点、screen 验收器及请求事件，不启动搜索或继承授权，confirm/regression 样本拒绝；回归来源、预算及授权须由操作者填写。该项补齐上文候选交接待办，其余真实桌面边界与新包仍待完成。
 
+[真实桌面取消和未知边界](doc/acceptance/S10-lab-boundaries.md)已核对：排队取消后零试验，确认未知在取消/重开后保持一项预留和一次调用，不自动重发或标为通过。界面明确显示未知计量和等待安全结算；真实观测边界、新分发包及完整研究评估继续。
+
 ## Brand Commitments
 
 产品名称为 AgentGit。界面继承根目录 DESIGN.md 的视觉体系、允许的字体替代、组件和断点；不另外发明品牌配色或装饰体系。字体和其他资产须有授权并满足安装包离线使用要求；已取得本地 Inter、EB Garamond、JetBrains Mono 及 OFL，记录上游提交和摘要，没有把未提供的商业字体视为已具备。
