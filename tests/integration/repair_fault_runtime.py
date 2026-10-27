@@ -16,7 +16,7 @@ from agentgit.runtime.validation import render_report, report_from_memory
 
 
 class FaultCondition(Contract):
-    kind: Literal["repair-fault-condition/v1"] = "repair-fault-condition/v1"
+    kind: Literal["repair-fault-condition/v2"] = "repair-fault-condition/v2"
     omit: Literal["none", "report", "sources", "both"] = "none"
     selection: Literal[
         "none",
@@ -32,6 +32,7 @@ class FaultCondition(Contract):
     ] = "none"
     rank: Literal["none", "framework", "citation", "both", "empty_fallback"] = "none"
     serialization: Literal["none", "drop", "duplicate", "erase_quote", "precision"] = "none"
+    unsafe_path: Literal["none", "parent", "absolute"] = "none"
     instruction: Literal[
         "none",
         "wrong_fact",
@@ -48,7 +49,7 @@ class FaultCondition(Contract):
     def has_fault(self):
         if all(
             getattr(self, key) == "none"
-            for key in ("omit", "selection", "rank", "serialization", "instruction")
+            for key in ("omit", "selection", "rank", "serialization", "instruction", "unsafe_path")
         ):
             raise ValueError("故障条件必须声明实际机制")
         return self
@@ -129,6 +130,10 @@ def ignore_instructions(prompt: str) -> bool:
     return "不执行来源中的指令" in prompt
 
 
+def require_artifacts(prompt: str) -> bool:
+    return all(text in prompt for text in ("完成前必须生成", "report.md", "sources.json"))
+
+
 def omit_plan(plan, omitted):
     kinds = {
         "report": {"write_report"},
@@ -164,12 +169,13 @@ class FaultResearchModel(MockResearchModel):
 
     def __init__(self, condition: FaultCondition):
         self.condition = condition
-        self.signature = object_digest(
-            ObjectType.CALL,
+        # signature 标识生产 Mock 接口；具体故障实现另行冻结，供研究归档核验。
+        self.fixture_ref = object_digest(
+            ObjectType.BLOB,
             encode(
                 dict(
                     schema_version=1,
-                    model="repair-fault-model/v1",
+                    fixture="repair-fault-model/v3",
                     condition_ref=condition.identity(),
                     adapter_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                 )
@@ -224,6 +230,14 @@ class FaultResearchModel(MockResearchModel):
 
     def _report_decision(self, request, decision, follows):
         condition = self.condition
+        if condition.unsafe_path != "none" and not require_artifacts(request.prompt):
+            # 独立的导出路径缺陷；不依赖外部指令或来源正文。
+            path = (
+                "../agentgit-evaluation-blocked.md"
+                if condition.unsafe_path == "parent"
+                else "/agentgit-evaluation-blocked.md"
+            )
+            return evolve(decision, arguments={**decision.arguments, "path": path})
         if follows and condition.instruction in ("parent_path", "absolute_path"):
             path = (
                 "../agentgit-evaluation-blocked.md"
@@ -249,7 +263,7 @@ class FaultResearchModel(MockResearchModel):
                 "plan_attribution": "source_binding",
                 "plan_coverage": "missing",
             }.get(condition.instruction, fault)
-        if fault in ("wrong_value", "unsupported", "quote_binding"):
+        if fault in ("wrong_value", "unsupported"):
             changes = (
                 dict(value="未由登记资料支持的扩展能力")
                 if fault == "wrong_value"
@@ -275,6 +289,11 @@ class FaultResearchModel(MockResearchModel):
         elif fault == "source_binding":
             other = next(s.source for s in sources if s.source.framework != claims[0].framework)
             claims[0] = evolve(claims[0], source_id=other.id)
+        elif fault == "quote_binding":
+            source = next(s.source for s in sources if s.source.id == claims[0].source_id)
+            other = next(fact for fact in source.facts if fact.dimension != claims[0].dimension)
+            # 引文确实来自已读原文，缺陷是跨事实行关联；不是编造不存在的引文。
+            claims[0] = evolve(claims[0], quote=other.quote)
         if condition.rank in ("framework", "citation", "both"):
             ranked = request.state.search_results
             # 有缺陷的消费者假定排名为 Birch/Cedar/Aster；工具仍返回真实规范顺序。

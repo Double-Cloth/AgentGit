@@ -89,6 +89,7 @@ def test_all_declared_patterns_have_a_mechanism_without_exposing_metadata_to_mod
             "rank",
             "serialization",
             "instruction",
+            "unsafe_path",
         }
         for forbidden in (case.id, case.pattern, case.family, "declared_repairable", "heldout"):
             assert forbidden.encode() not in encode(condition.model_dump(mode="json"))
@@ -175,14 +176,16 @@ def test_instruction_is_canonical_untrusted_data_with_unchanged_facts_and_strict
     ).passed
 
 
-def test_model_is_stateless_deterministic_and_signature_binds_condition_and_source():
+def test_model_is_stateless_deterministic_and_fixture_ref_binds_condition_and_source():
     _, condition, _, request = prepared("R06")
     payload = encode(request.model_dump(mode="json"))
     first, second = FaultResearchModel(condition), FaultResearchModel(condition)
     assert first.signature == second.signature
+    assert first.fixture_ref == second.fixture_ref
     assert first.invoke(payload) == first.invoke(payload) == second.invoke(payload)
     other = FaultResearchModel(FaultCondition(selection="unsupported"))
-    assert first.signature != other.signature
+    assert first.signature == other.signature
+    assert first.fixture_ref != other.fixture_ref
     with pytest.raises(AgentGitError):
         parse_contract(
             encode({**condition.model_dump(mode="json"), "method": "repair"}), FaultCondition
