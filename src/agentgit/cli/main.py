@@ -39,6 +39,7 @@ from agentgit.core.merge_proposals import (
     ReplaceMergeRevision,
     ValidateMergeRevision,
 )
+from agentgit.core.merge_runs import ForkMergedBranch, NewMergedRun
 from agentgit.core.models import Contract, parse_contract
 from agentgit.core.repair import NewRepairSearch
 from agentgit.core.repair_pools import NewPreparedRepairSearch, NewRepairValidationSuite
@@ -373,6 +374,32 @@ def _merge_request[T: Contract](file: Path, model: type[T]) -> T:
     if len(raw) > 1_048_576:
         raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "合并请求超过 1 MiB")
     return parse_contract(raw, model)
+
+
+@app.command("merge-fork")
+def merge_fork(
+    repository_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """从精确批准建立独立分支，不创建 Run 或继承授权。"""
+    request = _merge_request(file, ForkMergedBranch)
+    with management(testing) as service:
+        emit(service.fork_merged_branch(repository_id, request, key))
+
+
+@app.command("merge-run")
+def merge_run(
+    repository_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """显式选择配置、验收器和预算，提交独立合并分支的新任务。"""
+    request = _merge_request(file, NewMergedRun)
+    with management(testing) as service:
+        emit(service.start_merged_run(repository_id, request, key))
 
 
 @app.command("merge-propose")

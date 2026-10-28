@@ -40,6 +40,7 @@ from agentgit.core.merge_proposals import (
     ReplaceMergeRevision,
     ValidateMergeRevision,
 )
+from agentgit.core.merge_runs import ForkMergedBranch, NewMergedRun
 from agentgit.core.models import Contract, parse_contract
 from agentgit.core.repair import NewRepairSearch
 from agentgit.core.repair_pools import (
@@ -346,6 +347,24 @@ def create_app(
         return service.create_merge_proposal(
             repo, parse_contract(encode(body), NewMergeProposal), key
         )
+
+    @app.post("/merge-branches", status_code=201)
+    def merged_branch_create(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.fork_merged_branch(repo, parse_contract(encode(body), ForkMergedBranch), key)
+
+    @app.post("/merge-runs", status_code=202)
+    def merged_run_create(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.start_merged_run(repo, parse_contract(encode(body), NewMergedRun), key)
 
     @app.get("/merge-proposals/{proposal_id}")
     def merge_proposal_status(

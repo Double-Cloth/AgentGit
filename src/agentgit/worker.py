@@ -22,7 +22,7 @@ from agentgit.core.models import (
     RunStatus,
     parse_contract,
 )
-from agentgit.core.research import AgentConfig, AgentState, ResearchGoal, evolve
+from agentgit.core.research import AgentConfig, AgentState, BudgetUsage, ResearchGoal, evolve
 from agentgit.core.snapshots import EventPayload, StateSnapshot
 from agentgit.core.versions import HybridReplaySpec
 from agentgit.runtime.model_budget import call_budget, reserve_model
@@ -35,6 +35,7 @@ from agentgit.services.executions import ExecutionService
 from agentgit.services.history import TABLES, EventInput, HistoryService
 from agentgit.services.hybrid import HybridService
 from agentgit.services.jobs import JobService
+from agentgit.services.merge_runs import load_merged_input
 from agentgit.services.recorded_jobs import RecordedJobRunner
 from agentgit.services.recovery import prepare_recovery, recovery_origins
 from agentgit.services.research import ResearchService, ResearchSession
@@ -265,6 +266,13 @@ class Worker:
             if payload.replay is not None and payload.replay.mode in ("live", "hybrid")
             else None
         )
+        merged_snapshot = (
+            load_merged_input(
+                history, lease.repository_id, lease.job_id, payload.merged, config, corpus
+            )
+            if payload.merged is not None
+            else None
+        )
         if live is not None:
             with history.engine.connect() as connection:
                 request = (
@@ -299,6 +307,13 @@ class Worker:
                 history.objects.get(manifest.environment_ref, ObjectType.ENVIRONMENT),
                 EnvironmentManifest,
             )
+        elif merged_snapshot is not None and payload.merged is not None:
+            if run["checkpoint_commit_id"] != payload.merged.from_commit:
+                raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "合并新 Run 初始检查点不符")
+            snapshot = merged_snapshot
+            state = parse_contract(encode(snapshot.data), AgentState)
+            if state.goal != goal:
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "合并输入与新任务目标不符")
         elif live is not None:
             if run["checkpoint_commit_id"] != live.from_commit:
                 raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "Live 初始检查点与冻结来源不符")
@@ -366,6 +381,11 @@ class Worker:
                     "from_commit": live.from_commit,
                     "initial_state_ref": live.initial_state_ref,
                 }
+        if payload.merged is not None:
+            session.budget_baseline = BudgetUsage()
+            if not has_snapshot:
+                session.initialization_type = "merge.initialized"
+                session.initialization = payload.merged.model_dump(mode="json")
         if config.execution_policy is not None:
             session.bind_execution(
                 ExecutionService(

@@ -34,6 +34,7 @@ from agentgit.core.merge_proposals import (
     ReplaceMergeRevision,
     ValidateMergeRevision,
 )
+from agentgit.core.merge_runs import ForkMergedBranch, NewMergedRun
 from agentgit.core.model_usage import OpenAIOptions, price_micro_usd
 from agentgit.core.models import CallIntent, parse_contract
 from agentgit.core.repair import NewRepairSearch
@@ -57,6 +58,7 @@ from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.inspection import InspectionService
 from agentgit.services.jobs import JobService
 from agentgit.services.merge_proposals import MergeProposalService
+from agentgit.services.merge_runs import MergeRunService
 from agentgit.services.repair_confirmation import RepairConfirmationService
 from agentgit.services.repair_jobs import RepairJobService
 from agentgit.services.repair_pools import RepairValidationPoolService
@@ -98,6 +100,31 @@ class ManagementService:
         self.experiments = ExperimentService(research)
         self.debug_experiments = DebugExperimentService(self.debug_reports, self.experiments)
         self.merge_proposals = MergeProposalService(self.history)
+        self.merge_runs = MergeRunService(research)
+
+    def fork_merged_branch(
+        self, repository: UUID, request: ForkMergedBranch, key: str
+    ) -> dict[str, Any]:
+        return self._mutate(
+            "POST /merge-branches",
+            key,
+            repository,
+            request.model_dump(mode="json"),
+            lambda connection: self.merge_runs.fork(
+                repository, request, actor=self.actor, connection=connection
+            ),
+        )
+
+    def start_merged_run(self, repository: UUID, request: NewMergedRun, key: str) -> dict[str, Any]:
+        return self._mutate(
+            "POST /merge-runs",
+            key,
+            repository,
+            request.model_dump(mode="json"),
+            lambda connection: self.merge_runs.start(
+                repository, request, actor=self.actor, key=key, connection=connection
+            ),
+        )
 
     def create_merge_proposal(
         self, repository: UUID, request: NewMergeProposal, key: str
@@ -946,6 +973,10 @@ class ManagementService:
             state = parse_contract(encode(restored.data), AgentState)
             usage = state.usage
         limits = self.jobs.payload(job).limits if job is not None else None
+        if job is not None:
+            merged_input = self.jobs.payload(job).merged
+            if merged_input is not None:
+                result["merged_input"] = merged_input.model_dump(mode="json")
         limits = limits or config.limits
         baseline = BudgetUsage()
         if job is not None:
@@ -1082,6 +1113,8 @@ class ManagementService:
                 for key in ("control_request", "control_status", "state_version", "budget")
             }
         )
+        if "merged_input" in run:
+            result["merged_input"] = run["merged_input"]
         if "replay" in run:
             result["replay"] = run["replay"]
             result["mode"] = run["mode"]

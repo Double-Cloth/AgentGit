@@ -154,6 +154,14 @@ class VersionService:
         }
 
     def select_range(self, repository_id: UUID, request: RecordedRange) -> HistorySelection:
+        if (
+            self.history.restore(repository_id, request.from_commit).data.get("kind")
+            == "merged_research_state/v1"
+        ):
+            raise AgentGitError(
+                ErrorCode.RECORDING_MISSING,
+                "合并 Commit 没有录制路径，请显式选择新 Run 的初始化检查点",
+            )
         source = UUID(request.source_run_id)
         links, snapshots = TABLES["run_commits"], TABLES["snapshots"]
         with self.history.engine.connect() as connection:
@@ -451,6 +459,26 @@ class VersionService:
                 ).mappings()
             ]
         items = rows[:limit]
+        if items:
+            origins = TABLES["merge_branch_origins"]
+            with self.history.engine.connect() as connection:
+                merged = {
+                    item["branch_name"]: item
+                    for item in connection.execute(
+                        sa.select(origins).where(
+                            origins.c.repository_id == repository_id,
+                            origins.c.branch_name.in_([item["name"] for item in items]),
+                        )
+                    ).mappings()
+                }
+            for item in items:
+                if item["name"] in merged:
+                    origin = merged[item["name"]]
+                    item.update(
+                        origin_kind="merge",
+                        merge_approval_id=str(origin["approval_id"]),
+                        merge_commit_id=origin["commit_id"],
+                    )
         return {
             "items": items,
             "has_more": len(rows) > limit,

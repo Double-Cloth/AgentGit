@@ -10,6 +10,7 @@ from sqlalchemy.engine import Connection, RowMapping
 from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.jobs import TERMINAL_RUNS, JobPayload, Lease, Submission
+from agentgit.core.merge_runs import MergedRunSpec
 from agentgit.core.models import parse_contract
 from agentgit.core.research import AgentConfig, BudgetLimits
 from agentgit.core.snapshots import EventPayload
@@ -39,11 +40,16 @@ class JobService:
         branch_name: str = "main",
         budget: BudgetLimits | None = None,
         replay: RecordedReplaySpec | LiveReplaySpec | HybridReplaySpec | None = None,
+        merged: MergedRunSpec | None = None,
         connection: Connection | None = None,
         execution_wall_ms: int | None = None,
     ) -> Submission:
         if not actor or not key or len(actor) > 200 or len(key) > 200:
             raise AgentGitError(ErrorCode.VALIDATION, "操作者和幂等键必须为有界非空字符串")
+        if merged is not None:
+            merged = parse_contract(encode(merged.model_dump(mode="json")), MergedRunSpec)
+            if replay is not None:
+                raise AgentGitError(ErrorCode.VALIDATION, "合并新任务不能混入 Replay")
         route = f"POST /tasks/{task_id}/runs"
         submission_connection = connection
         request_payload = {
@@ -58,6 +64,8 @@ class JobService:
         }
         if replay is not None:
             request_payload["replay"] = replay.model_dump(mode="json")
+        if merged is not None:
+            request_payload["merged"] = merged.model_dump(mode="json")
         if execution_wall_ms is not None:
             if (
                 type(execution_wall_ms) is not int
@@ -120,6 +128,7 @@ class JobService:
             AgentConfig,
         )
         payload = JobPayload(
+            merged=merged,
             replay=replay,
             config_id=str(task["agent_config_id"]),
             goal_ref=task["goal_ref"],
@@ -235,6 +244,34 @@ class JobService:
             )
             if replay is None and fork is not None:
                 raise AgentGitError(ErrorCode.FORBIDDEN, "历史分支必须通过 Replay 明确选择执行模式")
+            merge_origins = TABLES["merge_branch_origins"]
+            merge_origin = (
+                connection.execute(
+                    sa.select(merge_origins).where(
+                        merge_origins.c.repository_id == repository_id,
+                        merge_origins.c.branch_name == branch_name,
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            approved = TABLES["merge_approvals"]
+            merge_head = connection.execute(
+                sa.select(approved.c.id).where(
+                    approved.c.repository_id == repository_id,
+                    approved.c.commit_id == expected_head,
+                )
+            ).first()
+            if merged is None and (merge_origin is not None or merge_head is not None):
+                raise AgentGitError(ErrorCode.FORBIDDEN, "合并分支须显式选择新配置、验收器和预算")
+            if merged is not None and (
+                merge_origin is None
+                or merge_origin["approval_id"] != UUID(merged.approval_id)
+                or merge_origin["commit_id"] != merged.from_commit
+                or expected_head != merged.from_commit
+                or current["active_run_id"] is not None
+            ):
+                raise AgentGitError(ErrorCode.FORBIDDEN, "新 Run 必须绑定独立合并分支和新任务")
             if replay is not None and (
                 fork is None
                 or fork["source_run_id"] != UUID(replay.source_run_id)
@@ -253,7 +290,7 @@ class JobService:
                     checkpoint_commit_id=expected_head,
                     origin_run_id=UUID(replay.source_run_id)
                     if replay
-                    else current["active_run_id"],
+                    else (None if merged is not None else current["active_run_id"]),
                     mode=replay.mode if replay else "live",
                     status="queued",
                 )

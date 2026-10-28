@@ -1,6 +1,6 @@
 # 本地服务与 CLI（S4–S11 耐久提案）
 
-当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。用户准备好业务环境后运行 `uv run --locked alembic upgrade head`，当前 head 为 `0025_merge_approval`；桌面不会自动迁移后端。
+当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。用户准备好业务环境后运行 `uv run --locked alembic upgrade head`，当前 head 为 `0026_merge_runs`；桌面不会自动迁移后端。
 
 ## S11 耐久合并提案
 
@@ -42,6 +42,17 @@ uv run --locked agentgit merge-reject $repositoryId $proposalId --file merge-rej
 ```
 
 ## CLI 离线流程
+
+S11 合并后的新任务见[独立执行记录](acceptance/S11-merged-runs.md)。`POST /merge-branches`（201）接收 `approval_id`、`commit_id`、`name`，仅建立独立来源分支；`POST /merge-runs`（202）接收 `branch_name`、`expected_head`、`expected_branch_version`、`config_id`、`config_version`、`validator_ref` 和完整 `budget`。两者沿用身份、项目及幂等头，不接受上传初始化状态或旧授权。配置/预算不扩大合并约束，当前验收器须匹配目标、语料和时钟；提交只排队，独立 Worker 执行。每个合并分支只初始化一次，同键确认返回原 Task/Job/Run 收据。
+
+```powershell
+uv run --locked agentgit merge-fork $repositoryId --file merged-branch.json --key merged-branch-001
+uv run --locked agentgit merge-run $repositoryId --file merged-run.json --key merged-run-001
+uv run --locked agentgit worker --once
+uv run --locked agentgit status $repositoryId $jobId --job
+```
+
+Run/Job 查询的 `merged_input` 保存批准 ID、合并来源 Commit、初始化 STATE 和验收器。进程接管可能创建新 Run，按原 Job ID 查询当前身份；原提交收据不跟随改写。标准任务提交拒绝绕过显式合并初始化，后续执行沿用预算/审批。合并点缺少录制路径，Recorded 返回 `recording_missing`；应显式选择新 Run 已产生的初始化检查点至终点，不能把双父的调用拼成一条记录。
 
 PowerShell 中，首次创建项目的主分支 HEAD 为空：
 
