@@ -32,6 +32,7 @@ from agentgit.core.management import (
     SubmitRun,
 )
 from agentgit.core.merge_proposals import (
+    ApproveMergeProposal,
     NewMergeProposal,
     PrepareMergeReview,
     RejectMergeProposal,
@@ -448,6 +449,20 @@ def merge_review(
     request = _merge_request(file, PrepareMergeReview)
     with management(testing) as service:
         emit(service.begin_merge_review(repository_id, proposal_id, request, key))
+
+
+@app.command("merge-approve")
+def merge_approve(
+    repository_id: UUID,
+    proposal_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """批准本人已审阅的精确候选，原子创建双父 Commit 并推进目标 HEAD。"""
+    request = _merge_request(file, ApproveMergeProposal)
+    with management(testing) as service:
+        emit(service.approve_merge_proposal(repository_id, proposal_id, request, key))
 
 
 @app.command("merge-reject")

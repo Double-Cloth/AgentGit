@@ -105,11 +105,17 @@ class EventRange(Contract):
 class CommitManifest(Contract):
     codec: Literal["AGJSON-v1"] = "AGJSON-v1"
     repository_id: Identifier
-    parents: Annotated[tuple[Digest, ...], Field(max_length=1)] = ()
+    parents: Annotated[tuple[Digest, ...], Field(max_length=2)] = ()
     state_ref: Digest
     environment_ref: Digest
     event_manifest_ref: Digest
     event_range: EventRange
+
+    @model_validator(mode="after")
+    def distinct_parents(self) -> "CommitManifest":
+        if len(set(self.parents)) != len(self.parents):
+            raise ValueError("Commit 父关系必须不同")
+        return self
 
 
 class EnvironmentManifest(Contract):

@@ -33,6 +33,7 @@ from agentgit.core.management import (
     SubmitRun,
 )
 from agentgit.core.merge_proposals import (
+    ApproveMergeProposal,
     NewMergeProposal,
     PrepareMergeReview,
     RejectMergeProposal,
@@ -398,6 +399,18 @@ def create_app(
     ) -> dict[str, Any]:
         return service.begin_merge_review(
             repo, proposal_id, parse_contract(encode(body), PrepareMergeReview), key
+        )
+
+    @app.post("/merge-proposals/{proposal_id}/approve", status_code=201)
+    def merge_proposal_approve(
+        proposal_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.approve_merge_proposal(
+            repo, proposal_id, parse_contract(encode(body), ApproveMergeProposal), key
         )
 
     @app.post("/merge-proposals/{proposal_id}/reject", status_code=201)

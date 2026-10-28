@@ -164,7 +164,7 @@ def test_http_cli_reopen_and_exact_inputs_have_no_execution(
                 json={"schema_version": 1},
                 headers={"Idempotency-Key": "no-approve"},
             ).status_code
-            == 404
+            == 422
         )
     assert history_fingerprint(history, repo) == before
     archive(

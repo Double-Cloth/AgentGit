@@ -76,6 +76,8 @@ S11 后续[结构化状态与完整候选验证](doc/acceptance/S11-state-valida
 
 S11 第三增量[耐久提案与精确审阅](doc/acceptance/S11-proposals.md)已实现不可变根/修订/验证/冲突/票据/拒绝及 API/CLI；完整编辑定义重新构造候选，旧版验证失效，重开/票据分页只读。当前 784 单元及 25 不同集成节点通过，六组原始 CAS 与四项篡改拒绝核对通过；合并服务零新调用/Job/Run，不更新历史。准备审阅不表示批准，正式批准/双父 Commit/CAS、历史兼容、Merge Review、30 组与新包继续，S11 整体验收及 S12 仍未完成。
 
+S11 第四增量[原子批准与双父后端](doc/acceptance/S11-approval.md)已实现本人精确票据/候选重查、独立合并 Commit、固定双父顺序和目标 HEAD CAS 同事务；重开/原键查询返回原提交，不启动 Run 或外部动作。Log/祖先支持稳定拓扑图，Diff 保留歧义，Recorded 仍核对显式单一来源。当前 784 单元及 88 不同集成节点通过，最终九组原始审计和四个篡改拒绝通过。独立合并状态的 Fork/新 Run/Recorded 完整兼容、实际进程崩溃、Merge Review、30 组/基线和新包待完成，未迁移业务库、未进入 S12。
+
 ## Brand Commitments
 
 产品名称为 AgentGit。界面继承根目录 DESIGN.md 的视觉体系、允许的字体替代、组件和断点；不另外发明品牌配色或装饰体系。字体和其他资产须有授权并满足安装包离线使用要求；已取得本地 Inter、EB Garamond、JetBrains Mono 及 OFL，记录上游提交和摘要，没有把未提供的商业字体视为已具备。

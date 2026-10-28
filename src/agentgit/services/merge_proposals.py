@@ -10,6 +10,8 @@ from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.merge import MergeConflict, MergeOrigin
 from agentgit.core.merge_proposals import (
+    ApproveMergeProposal,
+    MergeApproval,
     MergeArtifactDocument,
     MergeEdits,
     MergeProposalManifest,
@@ -23,9 +25,10 @@ from agentgit.core.merge_proposals import (
     ReplaceMergeRevision,
     ValidateMergeRevision,
 )
-from agentgit.core.models import Contract, parse_contract
+from agentgit.core.models import CommitManifest, Contract, parse_contract
 from agentgit.services.environment import source_revision
 from agentgit.services.history import TABLES, HistoryService
+from agentgit.services.merge_commits import publish_merge_commit
 from agentgit.services.merge_validation import ResearchMergePreview, preview_research_merge
 
 
@@ -194,12 +197,15 @@ class MergeProposalService:
 
     @staticmethod
     def _open(connection: Connection, proposal: UUID) -> None:
-        table = TABLES["merge_rejections"]
-        if (
-            connection.execute(sa.select(table.c.id).where(table.c.proposal_id == proposal)).first()
-            is not None
-        ):
-            raise AgentGitError(ErrorCode.VERSION_CONFLICT, "合并提案已经拒绝，不能继续修改")
+        for name in ("merge_rejections", "merge_approvals"):
+            table = TABLES[name]
+            if (
+                connection.execute(
+                    sa.select(table.c.id).where(table.c.proposal_id == proposal)
+                ).first()
+                is not None
+            ):
+                raise AgentGitError(ErrorCode.VERSION_CONFLICT, "合并提案已经关闭，不能继续修改")
 
     def _pins(
         self, connection: Connection, repo: UUID, value: MergeProposalManifest | NewMergeProposal
@@ -623,6 +629,180 @@ class MergeProposalService:
                 review_id=str(identity), ticket_ref=ref, ticket=ticket.model_dump(mode="json")
             )
 
+    def _approval(self, connection: Connection, repo: UUID, row: RowMapping) -> dict[str, Any]:
+        approval = self._owned(
+            connection, repo, row, "decision_ref", "merge_approval", "decision", MergeApproval
+        )
+        root, manifest = self._root(connection, repo, row["proposal_id"])
+        revision_row, candidate = self._revision(
+            connection, repo, row["proposal_id"], row["revision_id"]
+        )
+        commit = parse_contract(
+            self.history.objects.get(row["commit_id"], ObjectType.COMMIT), CommitManifest
+        )
+        parents = TABLES["commit_parents"]
+        indexed_parents = tuple(
+            connection.execute(
+                sa.select(parents.c.parent_id)
+                .where(
+                    parents.c.repository_id == repo,
+                    parents.c.commit_id == row["commit_id"],
+                )
+                .order_by(parents.c.parent_order)
+            ).scalars()
+        )
+        if (
+            approval.proposal_ref != root["manifest_ref"]
+            or approval.revision_ref != revision_row["revision_ref"]
+            or approval.candidate_digest != candidate.candidate_digest
+            or approval.commit_id != row["commit_id"]
+            or approval.actor != row["actor"]
+            or approval.ours != manifest.request.ours
+            or approval.theirs != manifest.request.theirs
+            or commit.repository_id != str(repo)
+            or commit.parents != (approval.ours.head, approval.theirs.head)
+            or indexed_parents != commit.parents
+        ):
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "合并批准与候选、父边或索引不符")
+        return dict(
+            decision_id=str(row["id"]),
+            decision_ref=row["decision_ref"],
+            commit_id=row["commit_id"],
+            decision=approval.model_dump(mode="json"),
+        )
+
+    def approve(
+        self, repo: UUID, proposal: UUID, request: ApproveMergeProposal, *, actor: str, key: str
+    ) -> dict[str, Any]:
+        request = parse_contract(encode(request.model_dump(mode="json")), ApproveMergeProposal)
+        digest = self._identity(repo, request, actor, key)
+        route = f"POST /merge-proposals/{proposal}/approve"
+        with self.history.engine.begin() as connection:
+            self._lock(connection, repo, actor, route, key)
+            cached = self._cached(connection, "merge_approvals", actor, route, key, digest)
+            if cached is not None:
+                return self._approval(connection, repo, cached)
+            root, manifest = self._root(connection, repo, proposal)
+            self._open(connection, proposal)
+            row, candidate = self._revision(connection, repo, proposal)
+            self._expected(row, request)
+            sessions = TABLES["merge_review_sessions"]
+            session = (
+                connection.execute(
+                    sa.select(sessions).where(
+                        sessions.c.repository_id == repo,
+                        sessions.c.proposal_id == proposal,
+                        sessions.c.id == UUID(request.review_id),
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if session is None:
+                raise AgentGitError(ErrorCode.NOT_FOUND, "合并审阅票据不可访问")
+            ticket = self._owned(
+                connection, repo, session, "ticket_ref", "merge_review", "ticket", MergeReviewTicket
+            )
+            if (
+                session["actor"] != actor
+                or ticket.actor != actor
+                or session["revision_id"] != row["id"]
+                or session["ticket_ref"] != request.ticket_ref
+                or ticket.proposal_ref != root["manifest_ref"]
+                or ticket.revision_ref != row["revision_ref"]
+                or ticket.candidate_digest != request.candidate_digest
+                or candidate.candidate_digest != request.candidate_digest
+                or ticket.ours != manifest.request.ours
+                or ticket.theirs != manifest.request.theirs
+                or UUID(ticket.validation_id) != session["validation_id"]
+            ):
+                raise AgentGitError(
+                    ErrorCode.VERSION_CONFLICT, "批准必须匹配本人审阅的确切候选与双分支"
+                )
+            validation, record = self._validation(
+                connection, repo, proposal, session["validation_id"]
+            )
+            if (
+                validation["revision_id"] != row["id"]
+                or not record.result.validated
+                or validation["validation_ref"] != ticket.validation_ref
+            ):
+                raise AgentGitError(ErrorCode.VERSION_CONFLICT, "合并批准需要当前通过的精确验证")
+            self._pins(connection, repo, manifest)
+            fresh = self._preview(repo, manifest, candidate.edits)
+            if fresh.validation != record.result:
+                raise AgentGitError(
+                    ErrorCode.VERSION_CONFLICT, "合并验证条件已变化，请重新验证和审阅"
+                )
+            identity = uuid4()
+            commit_id = publish_merge_commit(
+                self.history,
+                connection,
+                repo,
+                identity,
+                root["manifest_ref"],
+                row["revision_ref"],
+                request.ticket_ref,
+                manifest,
+                candidate,
+                actor,
+            )
+            approval = MergeApproval(
+                proposal_ref=root["manifest_ref"],
+                revision_ref=row["revision_ref"],
+                ticket_ref=request.ticket_ref,
+                validation_ref=validation["validation_ref"],
+                candidate_digest=candidate.candidate_digest,
+                commit_id=commit_id,
+                actor=actor,
+                ours=manifest.request.ours,
+                theirs=manifest.request.theirs,
+            )
+            ref = self._store(connection, repo, identity, "merge_approval", "decision", approval)
+            connection.execute(
+                TABLES["merge_approvals"]
+                .insert()
+                .values(
+                    id=identity,
+                    repository_id=repo,
+                    proposal_id=proposal,
+                    revision_id=row["id"],
+                    review_id=UUID(request.review_id),
+                    decision_ref=ref,
+                    commit_id=commit_id,
+                    actor=actor,
+                    route=route,
+                    request_key=key,
+                    request_digest=digest,
+                )
+            )
+            self.history.fault("merge.approval_stored")
+            branches = TABLES["branches"]
+            target = manifest.request.ours
+            updated = connection.execute(
+                branches.update()
+                .where(
+                    branches.c.repository_id == repo,
+                    branches.c.name == target.name,
+                    branches.c.head_commit_id == target.head,
+                    branches.c.version == target.version,
+                    branches.c.active_writer_run_id.is_(None),
+                )
+                .values(head_commit_id=commit_id, version=target.version + 1)
+                .returning(branches.c.version)
+            ).first()
+            if updated is None:
+                raise AgentGitError(ErrorCode.VERSION_CONFLICT, "目标分支 CAS 竞争失败")
+            self.history.fault("merge.head_updated")
+            receipt = dict(
+                decision_id=str(identity),
+                decision_ref=ref,
+                commit_id=commit_id,
+                decision=approval.model_dump(mode="json"),
+            )
+        self.history.fault("merge.after_commit")
+        return receipt
+
     def reject(
         self, repo: UUID, proposal: UUID, request: RejectMergeProposal, *, actor: str, key: str
     ) -> dict[str, Any]:
@@ -753,6 +933,18 @@ class MergeProposalService:
                 if rejected is not None
                 else None
             )
+            approvals = TABLES["merge_approvals"]
+            approved = (
+                connection.execute(
+                    sa.select(approvals).where(
+                        approvals.c.repository_id == repo,
+                        approvals.c.proposal_id == proposal,
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            approval = self._approval(connection, repo, approved) if approved is not None else None
             current = revision.code_revision == source_revision()
             for pin in (manifest.request.ours, manifest.request.theirs):
                 branches = TABLES["branches"]
@@ -772,7 +964,9 @@ class MergeProposalService:
                     and branch["active_writer_run_id"] is None
                 )
             status = (
-                "rejected"
+                "merged"
+                if approval
+                else "rejected"
                 if decision
                 else (
                     "stale"
@@ -874,6 +1068,7 @@ class MergeProposalService:
                         ticket=ticket.model_dump(mode="json"),
                         current=current
                         and decision is None
+                        and approval is None
                         and session["revision_id"] == row["id"],
                     )
                 )
@@ -889,6 +1084,7 @@ class MergeProposalService:
                 validation=record.model_dump(mode="json") if record else None,
                 requires_recheck=True,
                 rejection=decision.model_dump(mode="json") if decision else None,
+                approval=approval,
                 revisions=[self._revision_receipt(item) for item in revisions],
                 reviews=reviews,
                 reviews_truncated=len(sessions_rows) > 100,

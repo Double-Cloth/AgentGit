@@ -27,6 +27,7 @@ from agentgit.core.management import (
     SubmitRun,
 )
 from agentgit.core.merge_proposals import (
+    ApproveMergeProposal,
     NewMergeProposal,
     PrepareMergeReview,
     RejectMergeProposal,
@@ -134,6 +135,13 @@ class ManagementService:
         self, repository: UUID, proposal: UUID, request: RejectMergeProposal, key: str
     ) -> dict[str, Any]:
         return self.merge_proposals.reject(repository, proposal, request, actor=self.actor, key=key)
+
+    def approve_merge_proposal(
+        self, repository: UUID, proposal: UUID, request: ApproveMergeProposal, key: str
+    ) -> dict[str, Any]:
+        return self.merge_proposals.approve(
+            repository, proposal, request, actor=self.actor, key=key
+        )
 
     def create_repair_search(
         self,

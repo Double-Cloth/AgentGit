@@ -84,6 +84,12 @@ class RejectMergeProposal(ValidateMergeRevision):
     reason: Annotated[str, Field(min_length=1, max_length=4000)]
 
 
+class ApproveMergeProposal(ValidateMergeRevision):
+    review_id: Identifier
+    ticket_ref: Digest
+    candidate_digest: Digest
+
+
 class MergeProposalManifest(Contract):
     kind: Literal["merge_proposal/v1"] = "merge_proposal/v1"
     request: NewMergeProposal
@@ -169,3 +175,18 @@ class MergeRejection(Contract):
     reason: Annotated[str, Field(min_length=1, max_length=4000)]
     decision: Literal["reject"] = "reject"
     execution: Literal["not_started"] = "not_started"
+
+
+class MergeApproval(Contract):
+    kind: Literal["merge_approval/v1"] = "merge_approval/v1"
+    proposal_ref: Digest
+    revision_ref: Digest
+    ticket_ref: Digest
+    validation_ref: Digest
+    candidate_digest: Digest
+    commit_id: Digest
+    actor: Annotated[str, Field(min_length=1, max_length=200)]
+    ours: MergeBranchPin
+    theirs: MergeBranchPin
+    decision: Literal["approve"] = "approve"
+    execution: Literal["requires_new_run"] = "requires_new_run"

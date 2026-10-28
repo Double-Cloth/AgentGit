@@ -78,6 +78,13 @@ def test_ranges_parents_and_metadata():
         "event_range": {"first_seq": 1, "last_seq": 2},
     }
     assert CommitManifest.model_validate_json(json.dumps(value)).parents == ()
+    assert CommitManifest.model_validate_json(
+        json.dumps({**value, "parents": ["a" * 64, "b" * 64]})
+    ).parents == ("a" * 64, "b" * 64)
+    with pytest.raises(ValidationError):
+        CommitManifest.model_validate_json(
+            json.dumps({**value, "parents": ["a" * 64, "b" * 64, "c" * 64]})
+        )
     with pytest.raises(ValidationError):
         CommitManifest.model_validate_json(json.dumps({**value, "created_at": "now"}))
     with pytest.raises(ValidationError):

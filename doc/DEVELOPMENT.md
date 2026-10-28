@@ -6,10 +6,11 @@ S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命
 
 ## 环境
 
-当前开发分支为 `codex/s11-merge`。S11 的共同祖先、有限状态/产物验证和[耐久提案/修订/审阅准备/拒绝](acceptance/S11-proposals.md)已实现；当前 784 单元、7 新集成及 18 相关集成通过。正式批准/双父与历史兼容、桌面/30 组/新包继续，S12 仍待 S11 完整验收。以下阶段记录保留历史范围。
+当前开发分支为 `codex/s11-merge`。S11 的共同祖先、有限状态/产物验证、[耐久提案](acceptance/S11-proposals.md)及[精确批准/双父后端](acceptance/S11-approval.md)已实现；后续完整兼容/桌面/30 组/新包继续，S12 仍待 S11 完整验收。当前核对范围见各增量记录，以下阶段记录保留历史范围。
 
 ```powershell
 uv run --locked pytest tests/unit
+uv run --locked pytest tests/integration/test_merge_approval.py
 uv run --locked pytest tests/integration/test_merge_proposals.py tests/integration/test_merge_proposal_api.py tests/integration/test_merge_migration.py
 uv run --locked pytest tests/integration/test_merge_research_validation.py tests/integration/test_merge_unknown_input.py tests/integration/test_merge_preview.py tests/integration/test_versions.py tests/integration/test_validator_service.py
 uv run --locked ruff check src tests migrations
@@ -112,7 +113,7 @@ CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障�
 
 ## S3 离线研究演示
 
-S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 Schema head 为 `0024_merge_proposals`。S10 八张缩减控制/证据表、三张预注册/开启表、五张实际确认/结算/摘要表、七张字段状态/执行证据表及四张精确建议/审阅/实验定义/决定表，以及 S11 六张提案/修订/验证/冲突/审阅/拒绝表只在独立测试 Schema 验证，没有迁移业务库。字段阶段沿用原 study 租约和预算，旧原子协议记录保持原编码。用户自行准备业务环境后再运行：
+S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 Schema head 为 `0025_merge_approval`。S10 八张缩减控制/证据表、三张预注册/开启表、五张实际确认/结算/摘要表、七张字段状态/执行证据表及四张精确建议/审阅/实验定义/决定表，以及 S11 七张提案/修订/验证/冲突/审阅/拒绝/批准表只在独立测试 Schema 验证，没有迁移业务库。字段阶段沿用原 study 租约和预算，旧原子协议记录保持原编码。用户自行准备业务环境后再运行：
 
 ```powershell
 uv run --locked alembic upgrade head
