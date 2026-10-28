@@ -1,6 +1,41 @@
-# 本地服务与 CLI（S4–S10 耐久缩减）
+# 本地服务与 CLI（S4–S11 耐久提案）
 
-当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。用户准备好业务环境后运行 `uv run --locked alembic upgrade head`，当前 head 为 `0020_repair_validation_pools`；桌面不会自动迁移后端。
+当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。用户准备好业务环境后运行 `uv run --locked alembic upgrade head`，当前 head 为 `0024_merge_proposals`；桌面不会自动迁移后端。
+
+## S11 耐久合并提案
+
+当前实现提案→编辑→硬验证→准备审阅/拒绝，范围及证据见 [S11-proposals.md](acceptance/S11-proposals.md)。准备审阅不代表批准；正式 `approve`、双父 Commit/CAS 和桌面仍待实现。所有这些操作不启动 Run 或外部调用。
+
+HTTP 使用既有 Authorization、`X-Repository-ID`，写入还须 `Idempotency-Key`，actor 来自后端身份。项目、来源、版本和所有 JSON 契约均严格核对。下表 `id` 为提案 ID，全部 POST 返回 201：
+
+| 方法/路径 | 请求内容或用途 |
+|---|---|
+| `POST /merge-proposals` | `ours`、`theirs`、`validator_ref`、可选 `selected_base` |
+| `GET /merge-proposals/{id}` | 当前候选、全部修订摘要、当前验证、拒绝和票据页 |
+| `POST /merge-proposals/{id}/revisions` | `expected_revision`、`expected_revision_ref`、完整 `edits` |
+| `POST /merge-proposals/{id}/validate` | `expected_revision`、`expected_revision_ref` |
+| `POST /merge-proposals/{id}/review` | 上述确切修订及 `validation_id`，重查后准备票据 |
+| `POST /merge-proposals/{id}/reject` | 上述确切修订及 1–4000 字符 `reason` |
+| `GET /merge-proposals/{id}/reviews/{review_id}` | 精确只读票据，含过时票据 |
+
+两侧各为 `{ "name": "分支名", "source_run_id": "Run UUID", "head": "64位小写十六进制摘要", "version": 1 }`；需不同分支和不同 HEAD，分支无活动写入者。验收器必须属于同项目且绑定当前源码/锁，多个最佳共同祖先须显式选定其中之一。创建返回提案及第 1 版收据；后续请求使用收据中的确切版号和 ref，不能只传候选摘要。
+
+`edits` 是完整替换定义，例如 `{ "replace_plan": false, "sources": { "source-id": "ours" }, "artifacts": [] }`。省略字段恢复自动合并；来源选项为 base/ours/theirs/delete，计划替换须显式 `replace_plan: true` 并提交合法 `plan`。`artifacts` 使用既有 ArtifactPatch，仅支持两个研究文件的文本写入/删除，每个文件最多 1 MiB；不能上传权限、效果、来源原文或验证结论。编辑追加新版（上限 100），所有旧验证/票据过时。即使无冲突，仍须显式验证后准备审阅。
+
+查询票据最多 100 条，`reviews_truncated` 和 `reviews_next_cursor` 指明后续页，用 `?review_before=<cursor UUID>` 继续。`current` 是当前绑定提示，`requires_recheck` 始终为 true；任一 HEAD/version 变化使提案 stale。拒绝可关闭已过时提案。同键重试只返回原收据，不重新验证、不重新激活旧票据；未知提交结果应先原键确认及只读查询。
+
+CLI 对应 `merge-propose`、`merge-status`、`merge-edit`、`merge-validate`、`merge-review`、`merge-reject` 和 `merge-review-status`。写请求均从有界 UTF-8 JSON 文件读取，复用同一服务：
+
+```powershell
+uv run --locked agentgit merge-propose $repositoryId --file merge-create.json --key merge-create-001
+uv run --locked agentgit merge-status $repositoryId $proposalId
+uv run --locked agentgit merge-edit $repositoryId $proposalId --file merge-edit.json --key merge-edit-001
+uv run --locked agentgit merge-validate $repositoryId $proposalId --file merge-validate.json --key merge-validate-001
+uv run --locked agentgit merge-review $repositoryId $proposalId --file merge-review.json --key merge-review-001
+uv run --locked agentgit merge-status $repositoryId $proposalId --review-before $cursorId
+uv run --locked agentgit merge-review-status $repositoryId $proposalId $reviewId
+uv run --locked agentgit merge-reject $repositoryId $proposalId --file merge-reject.json --key merge-reject-001
+```
 
 ## CLI 离线流程
 

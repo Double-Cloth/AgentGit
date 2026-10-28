@@ -10,6 +10,7 @@ from agentgit.adapters.mock import research_plan
 from agentgit.core.canonical import encode
 from agentgit.core.errors import AgentGitError
 from agentgit.core.merge import ConflictKind, MergeEffect, MergeOrigin, MergeReadProof
+from agentgit.core.merge_proposals import MergeEdits
 from agentgit.core.models import EffectClass, RunStatus, parse_contract
 from agentgit.core.research import (
     AgentConfig,
@@ -269,3 +270,43 @@ def test_expired_source_and_unknown_dimension_are_not_accepted_as_new_facts():
             normal, incoming(2, memory={**normal.state.working_memory, key: strange}), incoming(3)
         )
     )
+
+
+def test_explicit_plan_edit_resolves_combined_cycle_but_not_pending_effects():
+    a = PlanNode(key="a", kind="search")
+    b = PlanNode(key="b", kind="write_report")
+    base = Plan(nodes=(a, b))
+    inputs = (
+        incoming(1, plan=base),
+        incoming(2, plan=Plan(nodes=(evolve(a, dependencies=("b",)), b))),
+        incoming(3, plan=Plan(nodes=(a, evolve(b, dependencies=("a",))))),
+    )
+    edits = MergeEdits(replace_plan=True, plan=base)
+    fixed = merge_state(*inputs, Corpus.bundled(), edits=edits)
+    assert fixed.proposed_state is not None and fixed.proposed_state.plan == base
+    unsafe = replace(inputs[1], effects=(effect(status="outcome_unknown", result_ref=None),))
+    assert ConflictKind.EFFECT_CONFLICT in kinds(
+        merge_state(inputs[0], unsafe, inputs[2], Corpus.bundled(), edits=edits)
+    )
+
+
+def test_source_choice_uses_existing_evidence_and_does_not_promote_rejected_proofs():
+    base = incoming(1)
+    key = next(iter(base.state.working_memory))
+    original = base.state.working_memory[key]
+    wrong = evolve(original, source=evolve(original.source, url="fixture://wrong"))
+    bad = incoming(3, memory={**base.state.working_memory, key: wrong})
+    result = merge_state(
+        base, incoming(2), bad, Corpus.bundled(), edits=MergeEdits(sources={key: "ours"})
+    )
+    assert (
+        result.proposed_state is not None and result.proposed_state.working_memory[key] == original
+    )
+    assert all(
+        proof.evidence.source.url != "fixture://wrong"
+        for proof in result.proposed_state.read_proofs
+    )
+    missing = merge_state(
+        base, incoming(2), bad, Corpus.bundled(), edits=MergeEdits(sources={"not-observed": "ours"})
+    )
+    assert ConflictKind.PROVENANCE_MISSING in kinds(missing)

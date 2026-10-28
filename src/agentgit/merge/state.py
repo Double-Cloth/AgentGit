@@ -19,6 +19,7 @@ from agentgit.core.merge import (
     MergeReadProof,
     MergeSourceUsage,
 )
+from agentgit.core.merge_proposals import MergeEdits
 from agentgit.core.models import EffectClass, RunStatus
 from agentgit.core.research import AgentConfig, AgentState, BudgetLimits, Evidence, Plan
 from agentgit.diff.structural import pointer_part
@@ -57,8 +58,14 @@ class StateCandidate:
 
 
 def merge_state(
-    base: StateMergeInput, ours: StateMergeInput, theirs: StateMergeInput, corpus: Corpus
+    base: StateMergeInput,
+    ours: StateMergeInput,
+    theirs: StateMergeInput,
+    corpus: Corpus,
+    *,
+    edits: MergeEdits | None = None,
 ) -> StateCandidate:
+    edits = edits or MergeEdits()
     inputs = (base, ours, theirs)
     refs = tuple(dict.fromkeys(item.state_ref for item in inputs))
     conflicts: list[MergeConflict] = []
@@ -114,6 +121,8 @@ def merge_state(
     ]
     merged_nodes = {}
     for key in sorted(set().union(*(set(table) for table in tables))):
+        if edits.replace_plan:
+            continue
         value = select(
             tuple(
                 table[key].model_dump(mode="json") if key in table else _ABSENT for table in tables
@@ -123,6 +132,8 @@ def merge_state(
             conflict("/state/plan/" + pointer_part(key), ConflictKind.WRITE_WRITE)
         elif value is not _ABSENT:
             merged_nodes[key] = value
+    if edits.replace_plan and edits.plan is not None:
+        merged_nodes = {node.key: node.model_dump(mode="json") for node in edits.plan.nodes}
     plan = None
     if merged_nodes:
         try:
@@ -149,25 +160,43 @@ def merge_state(
     memory: dict[str, Evidence] = {}
     all_proofs = tuple(proof for item in inputs for proof in item.read_proofs)
     memory_keys = set().union(*(set(item.state.working_memory) for item in inputs))
+    for key in set(edits.sources) - memory_keys:
+        conflict("/state/working_memory/" + pointer_part(key), ConflictKind.PROVENANCE_MISSING)
     if len(memory_keys) > 1000:
         raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "合并工作记忆超过上限")
     for key in sorted(memory_keys):
         evidence_options = [item.state.working_memory.get(key) for item in inputs]
+        choice = edits.sources.get(key)
+        if choice == "delete":
+            continue
         value = select(
             tuple(
                 item.source.model_dump(mode="json") if item is not None else _ABSENT
                 for item in evidence_options
             )
         )
+        if choice is not None:
+            chosen_input = evidence_options[("base", "ours", "theirs").index(choice)]
+            if chosen_input is None:
+                conflict(
+                    "/state/working_memory/" + pointer_part(key), ConflictKind.PROVENANCE_MISSING
+                )
+                continue
+            value = chosen_input.source.model_dump(mode="json")
         if value is _CLASH:
             conflict("/state/working_memory/" + pointer_part(key), ConflictKind.FACT_CONTRADICTION)
         elif value is not _ABSENT:
             # 相同来源可以有多条真实读取证明；选取一条完整 Evidence，不拼接 occurrence。
-            chosen = next(
-                item
-                for item in (evidence_options[1], evidence_options[2], evidence_options[0])
-                if item and item.source.model_dump(mode="json") == value
+            chosen = (
+                chosen_input
+                if choice is not None
+                else next(
+                    item
+                    for item in (evidence_options[1], evidence_options[2], evidence_options[0])
+                    if item and item.source.model_dump(mode="json") == value
+                )
             )
+            assert chosen is not None
             memory[key] = chosen
             if not any(
                 proof.evidence == chosen
@@ -248,7 +277,12 @@ def merge_state(
                 conflict("/state/effects/" + effect.call_id, ConflictKind.EFFECT_CONFLICT)
     if conflicts:
         return StateCandidate(None, tuple(conflicts))
-    proof_index = {encode(proof.model_dump(mode="json")): proof for proof in all_proofs}
+    proof_index = {
+        encode(proof.model_dump(mode="json")): proof
+        for proof in all_proofs
+        if proof.evidence.source.id in memory
+        and proof.evidence.source == memory[proof.evidence.source.id].source
+    }
     projected = MergedResearchState(
         goal=base.state.goal,
         plan=plan,

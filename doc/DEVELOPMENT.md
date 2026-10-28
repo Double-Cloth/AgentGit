@@ -6,6 +6,19 @@ S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命
 
 ## 环境
 
+当前开发分支为 `codex/s11-merge`。S11 的共同祖先、有限状态/产物验证和[耐久提案/修订/审阅准备/拒绝](acceptance/S11-proposals.md)已实现；当前 784 单元、7 新集成及 18 相关集成通过。正式批准/双父与历史兼容、桌面/30 组/新包继续，S12 仍待 S11 完整验收。以下阶段记录保留历史范围。
+
+```powershell
+uv run --locked pytest tests/unit
+uv run --locked pytest tests/integration/test_merge_proposals.py tests/integration/test_merge_proposal_api.py tests/integration/test_merge_migration.py
+uv run --locked pytest tests/integration/test_merge_research_validation.py tests/integration/test_merge_unknown_input.py tests/integration/test_merge_preview.py tests/integration/test_versions.py tests/integration/test_validator_service.py
+uv run --locked ruff check src tests migrations
+uv run --locked ruff format --check src tests migrations
+uv run --locked mypy src
+```
+
+集成套件只使用 `AGENTGIT_TEST_DATABASE_URL` 指定的测试库及独立 Schema/CAS；产品源字节、锁及实际驱动在相关 Runtime 全部终态前保持冻结。可设置 `AGENTGIT_MERGE_PROPOSAL_EVIDENCE` 归档原始证据，详情以 `tests/integration/merge_proposal_cases.py` 为准；每次使用新目录，不覆盖旧包。离线重审脚本 `tests/integration/merge_proposal_verify.py` 读取指定六组归档，不连接数据库，输出只能创建一次。原 S8/S10 冻结源码不等于当前产品，旧 release guard 拒绝不能通过修改旧协议规避。
+
 当前 Repair Lab 已进入 0.1.6 并完成包内核对，三十例/五方法已全量执行并原始审计，见 [S10 退出矩阵](acceptance/S10-gates.md)和 [D2 研究报告](D2-research-report.md)。正式基准输出只创建一次，复现实验使用独立工作目录及既定版本，按[复现说明](S10-evaluation-reproduction.md)操作；原始评估与当前分析 v2 不覆盖旧结果。迁移清单漏项需要额外的已归档 Git 基线核验，不能仅凭旧 release 入口通过。完整阶段前置仍待补，后续 S11/S12 保持必选。以下增量说明保留其历史范围。
 
 S10 开发位于 `codex/s10-repair`，从 S9 本机后端退出提交 `fa37baf` 继续。[首增量](acceptance/S10-kernel.md)是纯删除与确认协议；[第二增量](acceptance/S10-reduction.md)接入耐久缩减、原搜索共享预算、实际 Live/Hybrid 删除 Job、物理结算和候选锁；[第三增量](acceptance/S10-pools.md)接入筛选前采样条件预注册及锁后一次性开启；[第四增量](acceptance/S10-confirmation.md)执行实际六加四验证并封存调用来源、计量和统计。随后完成[三原子用例](acceptance/S10-three-atoms.md)、[耐久字段缩减](acceptance/S10-fields.md)、[精确建议与审批后端](acceptance/S10-reviews.md)及[随机拒绝/观测伪修复后端](acceptance/S10-falsefix.md)。Repair Lab 与全量评估仍待完成；测试库的批准不表示业务配置已经采纳，未执行票据及纯协议 UUID 不能当作实际 Run 或实测费用。
@@ -99,7 +112,7 @@ CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障�
 
 ## S3 离线研究演示
 
-S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 Schema head 为 `0023_repair_proposal_reviews`。S10 八张缩减控制/证据表、三张预注册/开启表、五张实际确认/结算/摘要表、七张字段状态/执行证据表及四张精确建议/审阅/实验定义/决定表只在独立测试 Schema 验证，没有迁移业务库。字段阶段沿用原 study 租约和预算，旧原子协议记录保持原编码。用户自行准备业务环境后再运行：
+S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 Schema head 为 `0024_merge_proposals`。S10 八张缩减控制/证据表、三张预注册/开启表、五张实际确认/结算/摘要表、七张字段状态/执行证据表及四张精确建议/审阅/实验定义/决定表，以及 S11 六张提案/修订/验证/冲突/审阅/拒绝表只在独立测试 Schema 验证，没有迁移业务库。字段阶段沿用原 study 租约和预算，旧原子协议记录保持原编码。用户自行准备业务环境后再运行：
 
 ```powershell
 uv run --locked alembic upgrade head

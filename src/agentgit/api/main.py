@@ -32,6 +32,13 @@ from agentgit.core.management import (
     NewTask,
     SubmitRun,
 )
+from agentgit.core.merge_proposals import (
+    NewMergeProposal,
+    PrepareMergeReview,
+    RejectMergeProposal,
+    ReplaceMergeRevision,
+    ValidateMergeRevision,
+)
 from agentgit.core.models import Contract, parse_contract
 from agentgit.core.repair import NewRepairSearch
 from agentgit.core.repair_pools import (
@@ -327,6 +334,83 @@ def create_app(
         if request.decision != "reject":
             raise AgentGitError(ErrorCode.VALIDATION, "采纳或保存实验必须使用 approve 入口")
         return service.decide_repair_review(repo, proposal_id, request, key)
+
+    @app.post("/merge-proposals", status_code=201)
+    def merge_proposal_create(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_merge_proposal(
+            repo, parse_contract(encode(body), NewMergeProposal), key
+        )
+
+    @app.get("/merge-proposals/{proposal_id}")
+    def merge_proposal_status(
+        proposal_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        review_before: UUID | None = None,
+    ) -> dict[str, Any]:
+        return service.merge_proposal(repo, proposal_id, review_before=review_before)
+
+    @app.get("/merge-proposals/{proposal_id}/reviews/{review_id}")
+    def merge_review_status(
+        proposal_id: UUID,
+        review_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.merge_review_status(repo, proposal_id, review_id)
+
+    @app.post("/merge-proposals/{proposal_id}/revisions", status_code=201)
+    def merge_revision_replace(
+        proposal_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.replace_merge_revision(
+            repo, proposal_id, parse_contract(encode(body), ReplaceMergeRevision), key
+        )
+
+    @app.post("/merge-proposals/{proposal_id}/validate", status_code=201)
+    def merge_revision_validate(
+        proposal_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.validate_merge_revision(
+            repo, proposal_id, parse_contract(encode(body), ValidateMergeRevision), key
+        )
+
+    @app.post("/merge-proposals/{proposal_id}/review", status_code=201)
+    def merge_review_prepare(
+        proposal_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.begin_merge_review(
+            repo, proposal_id, parse_contract(encode(body), PrepareMergeReview), key
+        )
+
+    @app.post("/merge-proposals/{proposal_id}/reject", status_code=201)
+    def merge_proposal_reject(
+        proposal_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.reject_merge_proposal(
+            repo, proposal_id, parse_contract(encode(body), RejectMergeProposal), key
+        )
 
     @app.post("/repair-studies", status_code=202)
     def repair_study_create(

@@ -26,6 +26,13 @@ from agentgit.core.management import (
     NewTask,
     SubmitRun,
 )
+from agentgit.core.merge_proposals import (
+    NewMergeProposal,
+    PrepareMergeReview,
+    RejectMergeProposal,
+    ReplaceMergeRevision,
+    ValidateMergeRevision,
+)
 from agentgit.core.model_usage import OpenAIOptions, price_micro_usd
 from agentgit.core.models import CallIntent, parse_contract
 from agentgit.core.repair import NewRepairSearch
@@ -48,6 +55,7 @@ from agentgit.services.experiments import ExperimentService
 from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.inspection import InspectionService
 from agentgit.services.jobs import JobService
+from agentgit.services.merge_proposals import MergeProposalService
 from agentgit.services.repair_confirmation import RepairConfirmationService
 from agentgit.services.repair_jobs import RepairJobService
 from agentgit.services.repair_pools import RepairValidationPoolService
@@ -88,6 +96,44 @@ class ManagementService:
         self.execution_views = ExecutionViewService(self.history)
         self.experiments = ExperimentService(research)
         self.debug_experiments = DebugExperimentService(self.debug_reports, self.experiments)
+        self.merge_proposals = MergeProposalService(self.history)
+
+    def create_merge_proposal(
+        self, repository: UUID, request: NewMergeProposal, key: str
+    ) -> dict[str, Any]:
+        return self.merge_proposals.create(repository, request, actor=self.actor, key=key)
+
+    def merge_proposal(
+        self, repository: UUID, proposal: UUID, *, review_before: UUID | None = None
+    ) -> dict[str, Any]:
+        return self.merge_proposals.show(repository, proposal, review_before=review_before)
+
+    def merge_review_status(self, repository: UUID, proposal: UUID, review: UUID) -> dict[str, Any]:
+        return self.merge_proposals.review_status(repository, proposal, review)
+
+    def replace_merge_revision(
+        self, repository: UUID, proposal: UUID, request: ReplaceMergeRevision, key: str
+    ) -> dict[str, Any]:
+        return self.merge_proposals.replace(
+            repository, proposal, request, actor=self.actor, key=key
+        )
+
+    def validate_merge_revision(
+        self, repository: UUID, proposal: UUID, request: ValidateMergeRevision, key: str
+    ) -> dict[str, Any]:
+        return self.merge_proposals.validate(
+            repository, proposal, request, actor=self.actor, key=key
+        )
+
+    def begin_merge_review(
+        self, repository: UUID, proposal: UUID, request: PrepareMergeReview, key: str
+    ) -> dict[str, Any]:
+        return self.merge_proposals.review(repository, proposal, request, actor=self.actor, key=key)
+
+    def reject_merge_proposal(
+        self, repository: UUID, proposal: UUID, request: RejectMergeProposal, key: str
+    ) -> dict[str, Any]:
+        return self.merge_proposals.reject(repository, proposal, request, actor=self.actor, key=key)
 
     def create_repair_search(
         self,

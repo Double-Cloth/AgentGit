@@ -12,6 +12,7 @@ from agentgit.core.merge import (
     MergeOrigin,
     MergeValidation,
 )
+from agentgit.core.merge_proposals import MergeEdits
 from agentgit.core.paths import validate_artifact_paths
 from agentgit.core.research import AgentState
 from agentgit.experiments.validation import frozen_inputs
@@ -41,7 +42,9 @@ def preview_research_merge(
     validator_ref: str,
     *,
     selected_base: str | None = None,
+    edits: MergeEdits | None = None,
 ) -> ResearchMergePreview:
+    edits = edits or MergeEdits()
     revision, lock = source_revision(), dependency_lock_digest()
     manifest = ValidatorService(history).manifest(repository, validator_ref)
     goal, corpus = frozen_inputs(history.objects, manifest)
@@ -55,11 +58,12 @@ def preview_research_merge(
     inputs = tuple(load_state_input(history, repository, origin, corpus) for origin in origins)
     if any(item.state.goal != goal for item in inputs):
         raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "合并任务与冻结验收器不一致")
-    state = merge_state(inputs[0], inputs[1], inputs[2], corpus)
+    state = merge_state(inputs[0], inputs[1], inputs[2], corpus, edits=edits)
     conflicts = list(state.conflicts)
     snapshots = tuple(history.restore(repository, origin.commit_id) for origin in origins)
     tables = [{item.path: item for item in snapshot.artifacts} for snapshot in snapshots]
-    paths = sorted(set().union(*(set(table) for table in tables)))
+    patches = {patch.path: patch for patch in edits.artifacts}
+    paths = sorted(set().union(*(set(table) for table in tables), set(patches)))
     if len(paths) > 1000:
         raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "合并产物数量超过上限")
     if set(paths) - {"report.md", "sources.json"}:
@@ -80,7 +84,20 @@ def preview_research_merge(
             versions.append(
                 ArtifactVersion(entry, content) if entry and content is not None else None
             )
-        candidate = merge_artifact(path, *versions)
+        if path in patches:
+            patch = patches[path]
+            candidate = ArtifactCandidate(
+                path=path,
+                media_type="application/json" if path == "sources.json" else "text/markdown",
+                status="deleted" if patch.operation == "delete" else "merged",
+                content=None if patch.operation == "delete" else patch.content(),
+                evidence_refs=tuple(
+                    dict.fromkeys(value.entry.object_ref for value in versions if value is not None)
+                ),
+                conflicts=(),
+            )
+        else:
+            candidate = merge_artifact(path, *versions)
         candidates.append(candidate)
         conflicts.extend(candidate.conflicts)
     projected = state.proposed_state

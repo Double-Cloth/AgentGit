@@ -31,7 +31,14 @@ from agentgit.core.management import (
     NewTask,
     SubmitRun,
 )
-from agentgit.core.models import parse_contract
+from agentgit.core.merge_proposals import (
+    NewMergeProposal,
+    PrepareMergeReview,
+    RejectMergeProposal,
+    ReplaceMergeRevision,
+    ValidateMergeRevision,
+)
+from agentgit.core.models import Contract, parse_contract
 from agentgit.core.repair import NewRepairSearch
 from agentgit.core.repair_pools import NewPreparedRepairSearch, NewRepairValidationSuite
 from agentgit.core.repair_reviews import DecideRepairReview
@@ -357,6 +364,104 @@ def repair_propose(
     """从封存确认生成唯一精确提案，不批准或执行。"""
     with management(testing) as service:
         emit(service.create_repair_proposal(repository_id, study_id, key))
+
+
+def _merge_request[T: Contract](file: Path, model: type[T]) -> T:
+    with file.open("rb") as stream:
+        raw = stream.read(1_048_577)
+    if len(raw) > 1_048_576:
+        raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "合并请求超过 1 MiB")
+    return parse_contract(raw, model)
+
+
+@app.command("merge-propose")
+def merge_propose(
+    repository_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """固定三方来源，建立耐久合并候选；不更新 HEAD。"""
+    request = _merge_request(file, NewMergeProposal)
+    with management(testing) as service:
+        emit(service.create_merge_proposal(repository_id, request, key))
+
+
+@app.command("merge-status")
+def merge_status(
+    repository_id: UUID,
+    proposal_id: UUID,
+    testing: bool = False,
+    review_before: Annotated[UUID | None, typer.Option()] = None,
+) -> None:
+    """只读查询候选各版本、硬验证和拒绝决定。"""
+    with management(testing) as service:
+        emit(service.merge_proposal(repository_id, proposal_id, review_before=review_before))
+
+
+@app.command("merge-review-status")
+def merge_review_status(
+    repository_id: UUID, proposal_id: UUID, review_id: UUID, testing: bool = False
+) -> None:
+    """按同项目精确票据 ID 只读查询，包括已过时审阅。"""
+    with management(testing) as service:
+        emit(service.merge_review_status(repository_id, proposal_id, review_id))
+
+
+@app.command("merge-edit")
+def merge_edit(
+    repository_id: UUID,
+    proposal_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """追加完整编辑定义；旧验证和审阅票据失效。"""
+    request = _merge_request(file, ReplaceMergeRevision)
+    with management(testing) as service:
+        emit(service.replace_merge_revision(repository_id, proposal_id, request, key))
+
+
+@app.command("merge-validate")
+def merge_validate(
+    repository_id: UUID,
+    proposal_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """从固定来源重新计算当前修订并保存硬验证。"""
+    request = _merge_request(file, ValidateMergeRevision)
+    with management(testing) as service:
+        emit(service.validate_merge_revision(repository_id, proposal_id, request, key))
+
+
+@app.command("merge-review")
+def merge_review(
+    repository_id: UUID,
+    proposal_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """重查来源和版本后准备确切审阅票据；不批准或提交。"""
+    request = _merge_request(file, PrepareMergeReview)
+    with management(testing) as service:
+        emit(service.begin_merge_review(repository_id, proposal_id, request, key))
+
+
+@app.command("merge-reject")
+def merge_reject(
+    repository_id: UUID,
+    proposal_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    key: Annotated[str, typer.Option()],
+    testing: bool = False,
+) -> None:
+    """记录对当前确切修订的拒绝；不更新分支。"""
+    request = _merge_request(file, RejectMergeProposal)
+    with management(testing) as service:
+        emit(service.reject_merge_proposal(repository_id, proposal_id, request, key))
 
 
 @app.command("repair-proposal-status")
