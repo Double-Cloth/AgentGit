@@ -6,13 +6,14 @@ S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命
 
 ## 环境
 
-当前开发分支为 `codex/s11-merge`。S11 的共同祖先、有限状态/产物验证、[耐久提案](acceptance/S11-proposals.md)、[精确批准/双父后端](acceptance/S11-approval.md)、[合并后的独立新任务](acceptance/S11-merged-runs.md)及[再次合并/交叉历史](acceptance/S11-remerge.md)已实现；桌面/30 组/新包继续，S12 仍待 S11 完整验收。当前核对范围见各增量记录，以下阶段记录保留历史范围。
+当前开发分支为 `codex/s11-merge`。S11 的共同祖先、有限状态/产物验证、[耐久提案](acceptance/S11-proposals.md)、[精确批准/双父后端](acceptance/S11-approval.md)、[合并后的独立新任务](acceptance/S11-merged-runs.md)及[再次合并/交叉历史](acceptance/S11-remerge.md)已实现。[三十组真实输入准备](acceptance/S11-merge-inputs.md)完成各十组构造/来源审计并修正单侧补读记录选择；正式三方法/批准后执行、桌面/新包继续，S12 仍待 S11 完整验收。当前核对范围见各增量记录，以下阶段记录保留历史范围。
 
 ```powershell
 uv run --locked pytest tests/unit
 uv run --locked pytest tests/integration/test_merge_approval.py
 uv run --locked pytest tests/integration/test_merge_runs.py tests/integration/test_merge_process_crash.py tests/integration/test_merge_runs_api.py
 uv run --locked pytest tests/integration/test_remerge.py
+uv run --locked pytest tests/integration/test_merge_benchmark_construction.py
 uv run --locked pytest tests/integration/test_merge_proposals.py tests/integration/test_merge_proposal_api.py tests/integration/test_merge_migration.py
 uv run --locked pytest tests/integration/test_merge_research_validation.py tests/integration/test_merge_unknown_input.py tests/integration/test_merge_preview.py tests/integration/test_versions.py tests/integration/test_validator_service.py
 uv run --locked ruff check src tests migrations

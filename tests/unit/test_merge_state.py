@@ -124,6 +124,22 @@ def test_unproven_memory_does_not_become_trusted_because_it_has_a_source_id():
     assert ConflictKind.PROVENANCE_MISSING in kinds(merge(incoming(1), left, incoming(3)))
 
 
+@pytest.mark.parametrize("side", ["ours", "theirs"])
+def test_one_sided_read_occurrence_change_is_preserved_as_complete_evidence(side):
+    base = incoming(1)
+    key = next(iter(base.state.working_memory))
+    updated = {
+        **base.state.working_memory,
+        key: evolve(base.state.working_memory[key], logical_step_id="reread"),
+    }
+    inputs = [base, incoming(2), incoming(3)]
+    inputs[1 if side == "ours" else 2] = incoming(2 if side == "ours" else 3, memory=updated)
+    result = merge(*inputs)
+    assert result.proposed_state is not None
+    assert result.proposed_state.working_memory[key] == updated[key]
+    assert any(proof.evidence == updated[key] for proof in result.proposed_state.read_proofs)
+
+
 def test_delete_vs_edit_same_source_is_a_fact_conflict():
     normal = incoming(1)
     key = next(iter(normal.state.working_memory))

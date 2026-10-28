@@ -188,14 +188,22 @@ def merge_state(
         if value is _CLASH:
             conflict("/state/working_memory/" + pointer_part(key), ConflictKind.FACT_CONTRADICTION)
         elif value is not _ABSENT:
-            # 相同来源可以有多条真实读取证明；选取一条完整 Evidence，不拼接 occurrence。
+            occurrence = select(
+                tuple(
+                    item.model_dump(mode="json") if item is not None else _ABSENT
+                    for item in evidence_options
+                )
+            )
+            # 相同来源可以有多条真实读取证明；先保留三方选中的完整读取记录。
             chosen = (
                 chosen_input
                 if choice is not None
                 else next(
                     item
                     for item in (evidence_options[1], evidence_options[2], evidence_options[0])
-                    if item and item.source.model_dump(mode="json") == value
+                    if item
+                    and item.source.model_dump(mode="json") == value
+                    and (occurrence is _CLASH or item.model_dump(mode="json") == occurrence)
                 )
             )
             assert chosen is not None
