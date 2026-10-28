@@ -66,6 +66,15 @@ class MergeOrigin(Contract):
     commit_id: Digest
 
 
+class ApprovedMergeOrigin(Contract):
+    kind: Literal["approved_merge"] = "approved_merge"
+    approval_id: Identifier
+    commit_id: Digest
+
+
+MergeSourceOrigin = MergeOrigin | ApprovedMergeOrigin
+
+
 class MergeReadProof(Contract):
     origin: MergeOrigin
     call_id: Identifier
@@ -98,8 +107,20 @@ class MergeCompletedClaim(Contract):
 
 
 class MergeSourceUsage(Contract):
-    origin: MergeOrigin
-    usage: BudgetUsage
+    origin: MergeSourceOrigin
+    usage: BudgetUsage | None
+    execution: Literal["not_executed"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+    @model_validator(mode="after")
+    def exact_usage_kind(self) -> "MergeSourceUsage":
+        if isinstance(self.origin, ApprovedMergeOrigin):
+            if self.usage is not None or self.execution != "not_executed":
+                raise ValueError("合并来源没有执行用量")
+        elif self.usage is None or self.execution is not None:
+            raise ValueError("实际 Run 来源须保留原用量")
+        return self
 
 
 class MergedResearchState(Contract):
@@ -116,7 +137,7 @@ class MergedResearchState(Contract):
 
 
 class MergeValidation(Contract):
-    origins: Annotated[tuple[MergeOrigin, ...], Field(min_length=3, max_length=3)]
+    origins: Annotated[tuple[MergeSourceOrigin, ...], Field(min_length=3, max_length=3)]
     validator_ref: Digest
     candidate_digest: Digest
     code_revision: str
@@ -128,6 +149,8 @@ class MergeValidation(Contract):
 
     @model_validator(mode="after")
     def valid_result(self) -> "MergeValidation":
+        if any(not isinstance(origin, MergeOrigin) for origin in self.origins[1:]):
+            raise ValueError("合并两侧必须绑定明确来源 Run")
         expected = (
             not self.conflicts
             and self.report_evaluation is not None

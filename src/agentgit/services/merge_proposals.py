@@ -246,10 +246,15 @@ class MergeProposalService:
         result = preview_research_merge(
             self.history,
             repo,
-            manifest.origins[1],
-            manifest.origins[2],
+            MergeOrigin(
+                run_id=manifest.request.ours.source_run_id, commit_id=manifest.request.ours.head
+            ),
+            MergeOrigin(
+                run_id=manifest.request.theirs.source_run_id, commit_id=manifest.request.theirs.head
+            ),
             manifest.request.validator_ref,
             selected_base=manifest.origins[0].commit_id,
+            selected_base_run_id=manifest.request.selected_base_run_id,
             edits=edits,
         )
         if result.validation.origins != manifest.origins:
@@ -369,6 +374,7 @@ class MergeProposalService:
                 MergeOrigin(run_id=request.theirs.source_run_id, commit_id=request.theirs.head),
                 request.validator_ref,
                 selected_base=request.selected_base,
+                selected_base_run_id=request.selected_base_run_id,
             )
             body = MergeProposalManifest(request=request, origins=preview.validation.origins)
             identity = uuid4()

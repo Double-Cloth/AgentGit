@@ -4,7 +4,13 @@ from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from agentgit.core.merge import MergeConflict, MergedResearchState, MergeOrigin, MergeValidation
+from agentgit.core.merge import (
+    MergeConflict,
+    MergedResearchState,
+    MergeOrigin,
+    MergeSourceOrigin,
+    MergeValidation,
+)
 from agentgit.core.models import Contract, Digest, Identifier
 from agentgit.core.research import Plan
 from agentgit.core.versions import ArtifactPatch, NewBranch
@@ -27,9 +33,14 @@ class NewMergeProposal(Contract):
     theirs: MergeBranchPin
     validator_ref: Digest
     selected_base: Digest | None = None
+    selected_base_run_id: Identifier | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @model_validator(mode="after")
     def distinct_sides(self) -> "NewMergeProposal":
+        if self.selected_base_run_id is not None and self.selected_base is None:
+            raise ValueError("显式 base Run 必须同时选择 base Commit")
         if self.ours.name == self.theirs.name or self.ours.head == self.theirs.head:
             raise ValueError("提案需要两个不同分支及不同 HEAD")
         return self
@@ -93,14 +104,23 @@ class ApproveMergeProposal(ValidateMergeRevision):
 class MergeProposalManifest(Contract):
     kind: Literal["merge_proposal/v1"] = "merge_proposal/v1"
     request: NewMergeProposal
-    origins: Annotated[tuple[MergeOrigin, ...], Field(min_length=3, max_length=3)]
+    origins: Annotated[tuple[MergeSourceOrigin, ...], Field(min_length=3, max_length=3)]
 
     @model_validator(mode="after")
     def exact_sources(self) -> "MergeProposalManifest":
+        if self.request.selected_base_run_id is not None and (
+            not isinstance(self.origins[0], MergeOrigin)
+            or self.origins[0].run_id != self.request.selected_base_run_id
+        ):
+            raise ValueError("显式 base Run 与实际来源不同")
         for pin, origin in zip(
             (self.request.ours, self.request.theirs), self.origins[1:], strict=True
         ):
-            if pin.source_run_id != origin.run_id or pin.head != origin.commit_id:
+            if (
+                not isinstance(origin, MergeOrigin)
+                or pin.source_run_id != origin.run_id
+                or pin.head != origin.commit_id
+            ):
                 raise ValueError("合并提案必须绑定确切两侧来源")
         if (
             self.request.selected_base is not None

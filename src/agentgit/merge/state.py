@@ -9,6 +9,7 @@ from agentgit.core.canonical import encode
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.execution import SANDBOX_PROVIDERS
 from agentgit.core.merge import (
+    ApprovedMergeOrigin,
     ConflictKind,
     MergeCompletedClaim,
     MergeConflict,
@@ -17,6 +18,7 @@ from agentgit.core.merge import (
     MergeEffect,
     MergeOrigin,
     MergeReadProof,
+    MergeSourceOrigin,
     MergeSourceUsage,
 )
 from agentgit.core.merge_proposals import MergeEdits
@@ -43,10 +45,10 @@ TOOLS = {
 class StateMergeInput:
     """只能由可信读取器建立；纯内核不把调用方声明变成持久证明。"""
 
-    origin: MergeOrigin
+    origin: MergeSourceOrigin
     state_ref: str
     state: AgentState
-    config: AgentConfig
+    config: AgentConfig | MergeConstraints
     read_proofs: tuple[MergeReadProof, ...] = ()
     effects: tuple[MergeEffect, ...] = ()
 
@@ -154,7 +156,7 @@ def merge_state(
                 or merged_nodes.get(key) != table[key].model_dump(mode="json")
             ):
                 conflict("/state/completed/" + pointer_part(key), ConflictKind.PLAN_DEPENDENCY)
-            else:
+            elif isinstance(item.origin, MergeOrigin):
                 completed.append(MergeCompletedClaim(origin=item.origin, node=table[key]))
 
     memory: dict[str, Evidence] = {}
@@ -297,7 +299,10 @@ def merge_state(
         read_proofs=tuple(proof_index.values()),
         effects_audit=tuple(effects[key] for key in sorted(effects)),
         source_usage=tuple(
-            MergeSourceUsage(origin=item.origin, usage=item.state.usage) for item in inputs
+            MergeSourceUsage(origin=item.origin, usage=None, execution="not_executed")
+            if isinstance(item.origin, ApprovedMergeOrigin)
+            else MergeSourceUsage(origin=item.origin, usage=item.state.usage)
+            for item in inputs
         ),
     )
     return StateCandidate(projected, ())

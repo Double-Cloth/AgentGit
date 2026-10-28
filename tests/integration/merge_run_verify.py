@@ -2,7 +2,6 @@
 
 import argparse
 import base64
-import copy
 import hashlib
 import json
 from pathlib import Path
@@ -17,14 +16,15 @@ from agentgit.core.merge_runs import ForkMergedBranch, NewMergedRun
 from agentgit.core.models import CallIntent, CommitManifest, parse_contract
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage, SavedCallOutcome, evolve
 from agentgit.core.snapshots import StateSnapshot
+from agentgit.core.versions import LiveOverrides
 from agentgit.merge.initialize import initialize_merged
+from agentgit.replay.live import prepare_live
 from agentgit.storage.roles import path_reference_role
 
 
 def verify_run_pair(source, final, revision, lock):
     rows = final["indexes"]
-    # 原执行记录不能被新任务改写；让既有审计器只审其所属执行集合，新增执行另行核对。
-    projection = copy.deepcopy(final)
+    # 原记录逐行保留，新增执行随后按不可变请求和真实来源逐项核对。
     for name, original in source["indexes"].items():
         if name.startswith("merge_") or name in (
             "object_refs",
@@ -35,8 +35,7 @@ def verify_run_pair(source, final, revision, lock):
         ):
             continue
         assert all(row in rows[name] for row in original), name
-        projection["indexes"][name] = original
-    summary = verify_approval_pair(source, projection, revision, lock)
+    summary = verify_approval_pair(source, final, revision, lock, additional_execution=True)
     refs = {
         (item["owner_type"], item["owner_id"], item["role"], item["object_id"])
         for item in rows["object_refs"]
@@ -157,17 +156,26 @@ def verify_run_pair(source, final, revision, lock):
         first = links.get(root, ())
         if first:
             assert snapshot(first[0]["commit_id"]) == actual
-    replayed = 0
+    replayed = live_jobs = 0
     for identifier, job in jobs.items():
         if identifier in old_jobs or identifier in requests:
             continue
         payload = typed(job["payload_ref"], JobPayload)
-        assert (
-            payload.merged is None
-            and payload.replay is not None
-            and payload.replay.mode == "recorded"
-        )
+        assert payload.merged is None and payload.replay is not None
         spec = payload.replay
+        if spec.mode == "live":
+            config = typed(configs[payload.config_id]["config_ref"], AgentConfig)
+            if payload.limits is not None:
+                config = evolve(config, limits=payload.limits)
+            original = snapshot(spec.from_commit)
+            expected = prepare_live(original, config, LiveOverrides(), read)
+            actual = typed(spec.initial_state_ref, StateSnapshot, ObjectType.STATE)
+            assert actual == expected.snapshot and spec.budget_baseline == expected.budget_baseline
+            assert job["status"] == runs[job["run_id"]]["status"] == "completed"
+            allowed_new_calls.add(job["run_id"])
+            live_jobs += 1
+            continue
+        assert spec.mode == "recorded"
         source_run = runs[spec.source_run_id]
         path = ([source_run["base_commit_id"]] if source_run["base_commit_id"] else []) + [
             item["commit_id"] for item in links[spec.source_run_id]
@@ -219,6 +227,7 @@ def verify_run_pair(source, final, revision, lock):
         merged_branches=len(origins),
         merged_jobs=len(requests),
         recorded_jobs=replayed,
+        live_jobs=live_jobs,
         new_calls=len(new_calls),
         models=models,
         tools=tools,

@@ -10,7 +10,7 @@ HTTP 使用既有 Authorization、`X-Repository-ID`，写入还须 `Idempotency-
 
 | 方法/路径 | 请求内容或用途 |
 |---|---|
-| `POST /merge-proposals` | `ours`、`theirs`、`validator_ref`、可选 `selected_base` |
+| `POST /merge-proposals` | `ours`、`theirs`、`validator_ref`、可选 `selected_base`、`selected_base_run_id` |
 | `GET /merge-proposals/{id}` | 当前候选、全部修订摘要、当前验证、拒绝和票据页 |
 | `POST /merge-proposals/{id}/revisions` | `expected_revision`、`expected_revision_ref`、完整 `edits` |
 | `POST /merge-proposals/{id}/validate` | `expected_revision`、`expected_revision_ref` |
@@ -26,6 +26,8 @@ HTTP 使用既有 Authorization、`X-Repository-ID`，写入还须 `Idempotency-
 查询票据最多 100 条，`reviews_truncated` 和 `reviews_next_cursor` 指明后续页，用 `?review_before=<cursor UUID>` 继续。`current` 是当前绑定提示，`requires_recheck` 始终为 true；任一 HEAD/version 变化使提案 stale。拒绝可关闭已过时提案。同键重试只返回原收据，不重新验证、不重新激活旧票据；未知提交结果应先原键确认及只读查询。
 
 批准请求的操作者必须与票据一致。服务在锁内重查当前修订、两分支、验收器和全部硬规则，任一变化须重新验证/审阅。成功返回 `decision_id`、`decision_ref`、`commit_id` 和不可变 `decision`，查询状态为 `merged` 并带 `approval`；已合并提案不能继续编辑、验证、拒绝或用新键再次批准。相同成功键仍返回原收据，即使随后 HEAD 已变化。合并状态是 `MergedResearchState`，没有调用轨迹、待执行动作或继承授权，不表示完成了新任务。
+
+再次合并时，已批准双父 Commit 可作为 base，其来源为 `{ "kind": "approved_merge", "approval_id": "<UUID>", "commit_id": "<SHA256>" }`。该来源的 `source_usage` 为 `usage: null`、`execution: "not_executed"`；先前执行用量继续沿原 Commit 查证，不能当作零成本 Run。两侧仍须选定真实 Run。存在多个最佳共同祖先时必须提供 `selected_base`；若该 Commit 在非家族中对应多个实际 Run，还须提供 `selected_base_run_id`。这个字段必须与 `selected_base` 同时使用，服务核对所选 Run 的真实路径，不能通过摘要排序替用户选择执行来源。
 
 CLI 对应 `merge-propose`、`merge-status`、`merge-edit`、`merge-validate`、`merge-review`、`merge-reject` 和 `merge-review-status`。写请求均从有界 UTF-8 JSON 文件读取，复用同一服务：
 

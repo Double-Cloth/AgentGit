@@ -22,7 +22,7 @@ from agentgit.runtime.validation import validate_report
 from agentgit.services.environment import dependency_lock_digest, source_revision
 from agentgit.services.history import HistoryService
 from agentgit.services.merge import MergePreviewService
-from agentgit.services.merge_inputs import base_origin, load_state_input
+from agentgit.services.merge_inputs import base_origin, load_state_inputs
 from agentgit.services.validators import ValidatorService
 
 
@@ -42,6 +42,7 @@ def preview_research_merge(
     validator_ref: str,
     *,
     selected_base: str | None = None,
+    selected_base_run_id: str | None = None,
     edits: MergeEdits | None = None,
 ) -> ResearchMergePreview:
     edits = edits or MergeEdits()
@@ -53,9 +54,15 @@ def preview_research_merge(
     )
     if selection.selected is None:
         raise AgentGitError(ErrorCode.VALIDATION, selection.status)
-    base = base_origin(history, repository, UUID(ours.run_id), selection.selected)
+    base = base_origin(
+        history,
+        repository,
+        UUID(ours.run_id),
+        selection.selected,
+        selected_run=UUID(selected_base_run_id) if selected_base_run_id else None,
+    )
     origins = (base, ours, theirs)
-    inputs = tuple(load_state_input(history, repository, origin, corpus) for origin in origins)
+    inputs = load_state_inputs(history, repository, origins, corpus)
     if any(item.state.goal != goal for item in inputs):
         raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "合并任务与冻结验收器不一致")
     state = merge_state(inputs[0], inputs[1], inputs[2], corpus, edits=edits)

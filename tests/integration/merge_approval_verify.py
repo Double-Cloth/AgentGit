@@ -21,8 +21,8 @@ from agentgit.core.models import CommitManifest, EnvironmentManifest, parse_cont
 from agentgit.core.snapshots import EventManifest, EventPayload, StateSnapshot
 
 
-def verify_approval_pair(source, final, revision, lock):
-    result = verify_pair(source, final, revision, lock)
+def verify_approval_pair(source, final, revision, lock, *, additional_execution=False):
+    result = verify_pair(source, final, revision, lock, additional_execution=additional_execution)
     rows = final["indexes"]
     repo = final["repository_id"]
     refs = {
@@ -168,7 +168,7 @@ def verify_approval_pair(source, final, revision, lock):
     for name, original in source["indexes"].items():
         if name.startswith("merge_") or name in ("object_refs", "branches"):
             continue
-        if name in ("commits", "commit_parents", "artifacts"):
+        if additional_execution or name in ("commits", "commit_parents", "artifacts"):
             assert all(row in rows[name] for row in original)
         elif changed_head_fixture and name in ("runs", "run_commits", "snapshots", "events"):
             continue

@@ -9,7 +9,9 @@ from pathlib import Path
 from agentgit.adapters.corpus import Corpus
 from agentgit.core.canonical import ObjectType, decode, encode, object_digest
 from agentgit.core.experiments import FrozenCorpus, ValidatorManifest
+from agentgit.core.merge import ApprovedMergeOrigin, MergedResearchState
 from agentgit.core.merge_proposals import (
+    MergeApproval,
     MergeProposalManifest,
     MergeRejection,
     MergeReviewTicket,
@@ -39,7 +41,7 @@ MODELS = {
 }
 
 
-def verify_pair(source, final, revision, lock):
+def verify_pair(source, final, revision, lock, *, additional_execution=False):
     assert source["repository_id"] == final["repository_id"]
     assert source["source_revision"] == final["source_revision"] == revision
     repo = final["repository_id"]
@@ -100,8 +102,23 @@ def verify_pair(source, final, revision, lock):
             encode(dict(repository_id=repo, request=request.model_dump(mode="json"))),
         )
 
+    def run_state(origin):
+        run = next(item for item in rows["runs"] if item["id"] == origin.run_id)
+        assert origin.commit_id == run["base_commit_id"] or any(
+            item["run_id"] == origin.run_id and item["commit_id"] == origin.commit_id
+            for item in rows["run_commits"]
+        )
+        commit = parse_contract(get(origin.commit_id, ObjectType.COMMIT), CommitManifest)
+        snapshot = parse_contract(get(commit.state_ref, ObjectType.STATE), StateSnapshot)
+        return parse_contract(encode(snapshot.data), AgentState)
+
     for identifier, row in roots.items():
         manifest = typed["merge_proposals"][identifier]
+        common = ancestors(manifest.request.ours.head) & ancestors(manifest.request.theirs.head)
+        dominated = {parent for node in common for parent in parents.get(node, ())}
+        best = common - dominated
+        assert manifest.origins[0].commit_id in best
+        assert len(best) == 1 or manifest.request.selected_base in best
         assert row["request_digest"] == identity(manifest.request)
         assert (
             row["base_commit_id"] == manifest.origins[0].commit_id
@@ -131,9 +148,27 @@ def verify_pair(source, final, revision, lock):
             commit = parse_contract(get(origin.commit_id, ObjectType.COMMIT), CommitManifest)
             assert commit.repository_id == repo
             snapshot = parse_contract(get(commit.state_ref, ObjectType.STATE), StateSnapshot)
-            inputs[(origin.run_id, origin.commit_id)] = parse_contract(
-                encode(snapshot.data), AgentState
-            )
+            if isinstance(origin, ApprovedMergeOrigin):
+                approved = next(
+                    item for item in rows["merge_approvals"] if item["id"] == origin.approval_id
+                )
+                assert approved["commit_id"] == origin.commit_id
+                assert (
+                    "merge_approval",
+                    approved["id"],
+                    "decision",
+                    approved["decision_ref"],
+                ) in refs
+                decision = parse_contract(get(approved["decision_ref"]), MergeApproval)
+                assert decision.commit_id == origin.commit_id
+                merged = parse_contract(encode(snapshot.data), MergedResearchState)
+                inputs[encode(origin.model_dump(mode="json"))] = AgentState(
+                    goal=merged.goal, plan=merged.plan, working_memory=merged.working_memory
+                )
+                configs.append(merged.constraints)
+                assert merged.constraints.evaluation_time == corpus.evaluation_time
+                continue
+            inputs[encode(origin.model_dump(mode="json"))] = run_state(origin)
             environment = parse_contract(
                 get(commit.environment_ref, ObjectType.ENVIRONMENT), EnvironmentManifest
             )
@@ -175,12 +210,16 @@ def verify_pair(source, final, revision, lock):
                 )
                 assert [entry.origin for entry in state.source_usage] == list(manifest.origins)
                 for usage in state.source_usage:
-                    assert (
-                        usage.usage == inputs[(usage.origin.run_id, usage.origin.commit_id)].usage
-                    )
+                    if isinstance(usage.origin, ApprovedMergeOrigin):
+                        assert usage.usage is None and usage.execution == "not_executed"
+                    else:
+                        assert (
+                            usage.usage
+                            == inputs[encode(usage.origin.model_dump(mode="json"))].usage
+                        )
                 for proof in state.read_proofs:
                     origin = proof.origin
-                    original = inputs[(origin.run_id, origin.commit_id)]
+                    original = run_state(origin)
                     assert proof.evidence == original.working_memory[proof.evidence.source.id]
                     assert (
                         proof.evidence.source == corpus.read(proof.evidence.source.id)
@@ -339,10 +378,11 @@ def verify_pair(source, final, revision, lock):
                 reason=decision.reason,
             )
         )
-    assert (
-        rows["external_calls"] == source["indexes"]["external_calls"]
-        and rows["jobs"] == source["indexes"]["jobs"]
-    )
+    for name in ("external_calls", "jobs"):
+        if additional_execution:
+            assert all(row in rows[name] for row in source["indexes"][name]), name
+        else:
+            assert rows[name] == source["indexes"][name], name
     assert all(
         row["status"] in ("completed", "failed") and row["lease_until"] is None
         for row in rows["jobs"]

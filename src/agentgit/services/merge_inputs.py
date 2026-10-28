@@ -1,5 +1,6 @@
 """从明确来源路径和录制调用构造可信合并输入；不执行 Adapter 或写 CAS。"""
 
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
@@ -10,7 +11,14 @@ from agentgit.adapters.tools import ReadArguments, ToolRegistry
 from agentgit.core.canonical import ObjectType, decode, encode
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.execution import SANDBOX_PROVIDERS, ExecutionResult
-from agentgit.core.merge import MergeEffect, MergeOrigin, MergeReadProof
+from agentgit.core.merge import (
+    ApprovedMergeOrigin,
+    MergedResearchState,
+    MergeEffect,
+    MergeOrigin,
+    MergeReadProof,
+    MergeSourceOrigin,
+)
 from agentgit.core.models import (
     CallIntent,
     CommitManifest,
@@ -32,14 +40,29 @@ from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.versions import VersionService
 
 MAX_CALLS = 1000
+MAX_INPUTS = 1000
+MAX_MERGE_DEPTH = 32
+
+
+@dataclass
+class _InputContext:
+    cache: dict[bytes, StateMergeInput] = field(default_factory=dict)
+    active: set[bytes] = field(default_factory=set)
+    merge_depth: int = 0
 
 
 def base_origin(
-    history: HistoryService, repository: UUID, source: UUID, commit: str
-) -> MergeOrigin:
+    history: HistoryService,
+    repository: UUID,
+    source: UUID,
+    commit: str,
+    *,
+    selected_run: UUID | None = None,
+) -> MergeSourceOrigin:
     versions = VersionService(history)
     with history.engine.connect() as connection:
         family = versions._family(connection, repository, source)
+        source_run = history._run(connection, repository, source)
         links = TABLES["run_commits"]
         owners = set(
             connection.execute(
@@ -50,13 +73,141 @@ def base_origin(
                 )
             ).scalars()
         )
+    if selected_run is not None:
+        if source_run["checkpoint_commit_id"] is None or commit not in versions.ancestors(
+            repository, source_run["checkpoint_commit_id"]
+        ):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "显式 base 不在来源祖先内")
+        versions.select_range(
+            repository,
+            RecordedRange(source_run_id=str(selected_run), from_commit=commit, until_commit=commit),
+        )
+        return MergeOrigin(run_id=str(selected_run), commit_id=commit)
     for run in family:
         if run in owners:
             return MergeOrigin(run_id=str(run), commit_id=commit)
-    raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "共同祖先不在明确来源 Run 链内")
+    if source_run["checkpoint_commit_id"] is None or commit not in versions.ancestors(
+        repository, source_run["checkpoint_commit_id"]
+    ):
+        raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "共同祖先不在明确来源历史内")
+    with history.engine.connect() as connection:
+        approvals = TABLES["merge_approvals"]
+        approval = connection.execute(
+            sa.select(approvals.c.id).where(
+                approvals.c.repository_id == repository,
+                approvals.c.commit_id == commit,
+            )
+        ).scalar_one_or_none()
+        if approval is not None:
+            return ApprovedMergeOrigin(approval_id=str(approval), commit_id=commit)
+        owners = set(
+            connection.execute(
+                sa.select(links.c.run_id)
+                .where(
+                    links.c.repository_id == repository,
+                    links.c.commit_id == commit,
+                )
+                .limit(2)
+            ).scalars()
+        )
+    if len(owners) != 1:
+        raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "共同祖先缺少唯一明确的 Run 或批准来源")
+    return MergeOrigin(run_id=str(next(iter(owners))), commit_id=commit)
 
 
 def load_state_input(
+    history: HistoryService,
+    repository: UUID,
+    origin: MergeSourceOrigin,
+    corpus: Corpus,
+    *,
+    _context: _InputContext | None = None,
+) -> StateMergeInput:
+    context = _context or _InputContext()
+    key = encode(dict(repository_id=str(repository), origin=origin.model_dump(mode="json")))
+    if key in context.cache:
+        return context.cache[key]
+    if key in context.active:
+        raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "合并来源包含循环")
+    if len(context.cache) + len(context.active) >= MAX_INPUTS:
+        raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "合并来源超过有界数量")
+    approved = isinstance(origin, ApprovedMergeOrigin)
+    if approved and context.merge_depth >= MAX_MERGE_DEPTH:
+        raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "批准来源超过有界深度")
+    context.active.add(key)
+    context.merge_depth += int(approved)
+    try:
+        result = (
+            _load_approved_input(history, repository, origin, corpus, context)
+            if isinstance(origin, ApprovedMergeOrigin)
+            else _load_run_input(history, repository, origin, corpus)
+        )
+        context.cache[key] = result
+        return result
+    finally:
+        context.active.remove(key)
+        context.merge_depth -= int(approved)
+
+
+def load_state_inputs(
+    history: HistoryService,
+    repository: UUID,
+    origins: tuple[MergeSourceOrigin, ...],
+    corpus: Corpus,
+) -> tuple[StateMergeInput, ...]:
+    context = _InputContext()
+    return tuple(
+        load_state_input(history, repository, origin, corpus, _context=context)
+        for origin in origins
+    )
+
+
+def _load_approved_input(
+    history: HistoryService,
+    repository: UUID,
+    origin: ApprovedMergeOrigin,
+    corpus: Corpus,
+    context: _InputContext,
+) -> StateMergeInput:
+    # 延迟导入，避免提案编译器与已批准快照读取器在加载阶段互相依赖。
+    from agentgit.services.merge_runs import approved_snapshot
+
+    with history.engine.connect() as connection:
+        snapshot = approved_snapshot(
+            history, connection, repository, UUID(origin.approval_id), origin.commit_id
+        )
+    state = parse_contract(encode(snapshot.data), MergedResearchState)
+    if state.constraints.evaluation_time != corpus.evaluation_time:
+        raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "合并基点的评估时间不符")
+    prior = tuple(
+        load_state_input(history, repository, source.origin, corpus, _context=context)
+        for source in state.source_usage
+    )
+    ancestors = set(VersionService(history).ancestors(repository, origin.commit_id))
+    if any(item.origin.commit_id not in ancestors for item in prior):
+        raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "批准来源不在合并基点祖先内")
+    proofs = {encode(proof.model_dump(mode="json")) for item in prior for proof in item.read_proofs}
+    if any(encode(proof.model_dump(mode="json")) not in proofs for proof in state.read_proofs):
+        raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "合并基点的读取证明缺少原始来源")
+    effects = {effect.call_id: effect for item in prior for effect in item.effects}
+    if any(effects.get(effect.call_id) != effect for effect in state.effects_audit):
+        raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "合并基点的效果审计与实际来源不同")
+    manifest = parse_contract(
+        history.objects.get(origin.commit_id, ObjectType.COMMIT), CommitManifest
+    )
+    # 只用于比较；用量与完成均不声明为此合并 Commit 的执行事实。
+    projection = AgentState(goal=state.goal, plan=state.plan, working_memory=state.working_memory)
+    return StateMergeInput(
+        origin,
+        manifest.state_ref,
+        projection,
+        state.constraints,
+        state.read_proofs,
+        tuple(effects[key] for key in sorted(effects)),
+    )
+
+
+def _load_run_input(
     history: HistoryService, repository: UUID, origin: MergeOrigin, corpus: Corpus
 ) -> StateMergeInput:
     versions = VersionService(history)
