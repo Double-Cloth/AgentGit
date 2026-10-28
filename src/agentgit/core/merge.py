@@ -5,7 +5,18 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
-from agentgit.core.models import Contract, Digest
+from agentgit.core.execution import ExecutionPolicy
+from agentgit.core.models import Contract, Digest, EffectClass, Identifier
+from agentgit.core.research import (
+    BudgetLimits,
+    BudgetUsage,
+    CallTrace,
+    Evaluation,
+    Evidence,
+    Plan,
+    PlanNode,
+    ResearchGoal,
+)
 
 
 class ConflictKind(StrEnum):
@@ -47,4 +58,81 @@ class MergeBases(Contract):
         )
         if self.status != expected or (len(self.bases) == 1 and self.selected is None):
             raise ValueError("共同祖先状态与选定结果不一致")
+        return self
+
+
+class MergeOrigin(Contract):
+    run_id: Identifier
+    commit_id: Digest
+
+
+class MergeReadProof(Contract):
+    origin: MergeOrigin
+    call_id: Identifier
+    call_run_id: Identifier
+    evidence: Evidence
+    trace: CallTrace
+
+
+class MergeEffect(Contract):
+    call_id: Identifier
+    run_id: Identifier
+    provider: str
+    effect: EffectClass
+    status: Literal["proposed", "started", "succeeded", "failed", "outcome_unknown"]
+    intent_ref: Digest
+    result_ref: Digest | None
+    cleanup_confirmed: bool = False
+
+
+class MergeConstraints(Contract):
+    tools: Annotated[tuple[str, ...], Field(max_length=5)]
+    limits: BudgetLimits
+    execution_policy: ExecutionPolicy | None = None
+    evaluation_time: str
+
+
+class MergeCompletedClaim(Contract):
+    origin: MergeOrigin
+    node: PlanNode
+
+
+class MergeSourceUsage(Contract):
+    origin: MergeOrigin
+    usage: BudgetUsage
+
+
+class MergedResearchState(Contract):
+    kind: Literal["merged_research_state/v1"] = "merged_research_state/v1"
+    execution: Literal["requires_new_run"] = "requires_new_run"
+    goal: ResearchGoal
+    plan: Plan | None
+    working_memory: Annotated[dict[str, Evidence], Field(max_length=1000)]
+    constraints: MergeConstraints
+    completed_audit: Annotated[tuple[MergeCompletedClaim, ...], Field(max_length=192)]
+    read_proofs: Annotated[tuple[MergeReadProof, ...], Field(max_length=3000)]
+    effects_audit: Annotated[tuple[MergeEffect, ...], Field(max_length=3000)]
+    source_usage: Annotated[tuple[MergeSourceUsage, ...], Field(min_length=3, max_length=3)]
+
+
+class MergeValidation(Contract):
+    origins: Annotated[tuple[MergeOrigin, ...], Field(min_length=3, max_length=3)]
+    validator_ref: Digest
+    candidate_digest: Digest
+    code_revision: str
+    dependency_lock_digest: Digest
+    conflicts: Annotated[tuple[MergeConflict, ...], Field(max_length=1000)]
+    report_evaluation: Evaluation | None
+    validated: bool
+    approval_required: Literal[True] = True
+
+    @model_validator(mode="after")
+    def valid_result(self) -> "MergeValidation":
+        expected = (
+            not self.conflicts
+            and self.report_evaluation is not None
+            and self.report_evaluation.passed
+        )
+        if self.validated != expected:
+            raise ValueError("合并验证状态与冲突及硬规则结果不一致")
         return self

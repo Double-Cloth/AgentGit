@@ -209,7 +209,9 @@ def merge_artifact(
                 prefix + "/" + name,
                 ConflictKind.FACT_CONTRADICTION if name == "claims" else ConflictKind.WRITE_WRITE,
             )
-            merged[name] = list(entities.values())
+            order = [key for key in tables[0] if key in entities]
+            order += sorted(set(entities) - set(tables[0]))
+            merged[name] = [entities[key] for key in order]
         content = encode(parse_contract(encode(merged), ResearchReport).model_dump(mode="json"))
     if conflicts:
         return ArtifactCandidate(path, media, "conflict", None, refs, tuple(conflicts))

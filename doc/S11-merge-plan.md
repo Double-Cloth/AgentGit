@@ -17,12 +17,28 @@
 
 Markdown 只支持严格 UTF-8、以列首 `## ` 分隔的唯一二级标题及其前言；代码围栏内的标题保留为正文。不解释嵌套章节或任意 Markdown AST；重复/空标题、未闭合围栏、已有章节重排明确不支持。原章节按 base 顺序保留，新章节按标题稳定排序。章节是完整原字节块，不逐行调和双侧修改。相同修改或单侧修改/删除可选取；删除与编辑、同章不同编辑返回 `WRITE_WRITE`，冲突时不输出可用文件。
 
-`sources.json` 仅接受项目 `ResearchReport` v1：固定 fixture、evaluation_time 和 frameworks；claims 以 `(framework, dimension)`、sources 以 `source.id` 对齐并整体三方选择，保留完整 Evidence，重复身份拒绝。事实双侧异改报 `FACT_CONTRADICTION`，时间不一致报 `TEMPORAL_MISMATCH`，来源异改保守报冲突；不拆开同一条证据拼接字段。合并结果按稳定身份排序并重新通过 Schema。原始缺失与 JSON null、bool 与 int 均按项目严格编码区分。
+`sources.json` 仅接受项目 `ResearchReport` v1：固定 fixture、evaluation_time 和 frameworks；claims 以 `(framework, dimension)`、sources 以 `source.id` 对齐并整体三方选择，保留完整 Evidence，重复身份拒绝。事实双侧异改报 `FACT_CONTRADICTION`，时间不一致报 `TEMPORAL_MISMATCH`，来源异改保守报冲突；不拆开同一条证据拼接字段。当前保留 base 中仍存在实体的顺序，新实体按稳定身份追加，再通过 Schema；这样不改变现有 Markdown 渲染器依赖的事实顺序（首增量原身份排序保留为历史实现）。原始缺失与 JSON null、bool 与 int 均按项目严格编码区分。
 
 每个输入文件上限 1 MiB、Markdown 上限 1,000 章节。候选保留三方 BLOB 摘要作为证据；只读预览从 `HistoryService.restore` 与 CAS 获取真实字节，重算 BLOB 域摘要。即使产物无冲突，也始终标记结构化状态、任务/来源核验和人工审批待办，不能据此落地 Merge Commit。首增量不提供批准、双父写入或外部执行权限。
+
+## 结构化状态与验证协议
+
+状态候选使用独立的 `merged_research_state/v1` Schema，保存 goal、按 `PlanNode.key` 三方选择并重新验证的计划、按 `Evidence.source.id` 对齐的工作记忆、三方原用量、完成声明、来源读取证明和效果审计。它不是 `AgentState`，不复制 messages、pending_tool、执行容器、审批或活动状态；后续启动任务必须显式建立新 Run。已完成节点只能保留原节点和依赖语义，完成声明仅审计，不能代替新 Run 的执行。
+
+当前 Fact 支持既有 `SourceFact` 的文本值及固定三类维度，以 `(framework, dimension)` 对齐；值按原文比较，不从自然语言推断单位转换，不接受未知数值/单位 Schema。正文、引文、有效区间、采集时间和完整来源须与冻结语料一致；同一主体/维度的相异值阻断。事实证明还必须匹配同项目、明确来源 Run/Commit 的实际 source_read occurrence、请求和响应，不能只采信 working_memory 或报告中自称的来源。
+
+约束采用三方工具授权的交集及每项预算上限的最小值，不合并为更大权限；固定执行策略不一致阻断。检查 DAG、完成前置、计划所需工具、完整计划的最低工具/模型调用量、文件数及单文件大小。历史用量按来源分列，不相加为新 Run 预算，也不声称静态检查保证未来 Token/费用/墙钟足够；真实新 Run 仍由既有预算与审批执行层约束。
+
+效果仅留审计；未知、未决或未清理的执行阻断。来源 trace 中的写入及检查点祖先上未决意图均需检查，不能只看状态 status。分支新增的不可逆/非幂等外部动作须作为 EFFECT_CONFLICT 审阅，不能选择来源后自动重发。既有本地 artifact_write 的已知完成记录可审计；容器执行需要已有清理证据，本增量不合并容器状态。
+
+完整只读预览绑定三方来源、真实 state/environment、当前源码和锁、固定验收器、候选状态及全部候选产物摘要。使用冻结验收器的输入/语料执行既有 report 硬规则，但单独标为合并产物验证，不伪造 completed Run 或 FrozenAssessment；通过后仍须人工审批。所有修改后的候选必须重新计算和验证，不能复用旧结果。
+
+完整验证目前只覆盖 `report.md` 和 `sources.json`，其他 Markdown 仍只能做首增量的未验证产物预览；未知文件不会因未被报告验收器检查而自动成为“已验证”内容。调用证明除 occurrence/签名/请求/响应外，还必须证明调用意图的前检查点属于选定 Commit 的祖先；相同字节不代表同一条执行轨迹，分叉后原 Run 的读取不能进入新分支证明。
 
 ## 冻结历史兼容
 
 S8/S10 的正式运行源码仍是 `source-sha256:f66ad3bbdd82a4b16a787bad17002d35827b240faf948aeb8a60748e276e54a9`。增加 S11 产品代码后，旧 release 的源码 guard 应拒绝当前环境；复现必须使用各自冻结快照和已记录 Git 基线，不能改写旧 release 来接受新代码。旧报告/成本/成功率不重算为 S11 结果。
 
 首增量[共同祖先与只读产物候选](acceptance/S11-artifact-preview.md)已通过 43 新单元、全部 743 单元、3 新真实集成及 7 版本历史集成核对，两个原始包独立重审；没有改历史单父约束或执行模型/工具。下一步按上述第二项实现结构化状态/约束/来源硬验证，再接持久审批与双父等完整交付。
+
+2026-10-28 第二增量[结构化状态与完整研究验证](acceptance/S11-state-validation.md)已实现：全部 764 单元、4 新真实集成及 14 相关集成通过，来源从 occurrence 到真实祖先/冻结原文核验，未知写入不因快照缺消息而漏过；没有合并调用轨迹或授权。修正的分叉后读取混入、测试 CTE 观察器和 JSON 顺序均保留原失败及证据。接下来完成耐久提案、候选编辑/重新验证和精确审批，再进行双父提交/历史兼容、桌面、三十组/基线及新包，不能以本增量替代 T01–T06。

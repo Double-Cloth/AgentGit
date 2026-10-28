@@ -11,7 +11,7 @@ from agentgit.core.merge import ConflictKind
 from agentgit.core.research import AgentState, Evidence, ResearchGoal
 from agentgit.core.snapshots import ArtifactEntry
 from agentgit.merge.artifacts import MAX_FILE_BYTES, ArtifactVersion, merge_artifact
-from agentgit.runtime.validation import report_from_memory
+from agentgit.runtime.validation import ResearchReport, render_report, report_from_memory
 
 
 def version(text, path="report.md", media=None):
@@ -49,6 +49,14 @@ def json_merge(base, ours, theirs):
             for value in (base, ours, theirs)
         ),
     )
+
+
+def test_unchanged_report_keeps_claim_order_required_by_markdown_renderer():
+    value = report()
+    original = ResearchReport.model_validate_json(encode(value))
+    result = json_merge(value, value, value)
+    merged = ResearchReport.model_validate_json(result.content)
+    assert merged.claims == original.claims and render_report(merged) == render_report(original)
 
 
 def test_different_sections_merge_exact_bytes_with_provenance_and_pending_validation():

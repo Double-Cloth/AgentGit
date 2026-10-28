@@ -1,0 +1,254 @@
+"""从明确来源路径和录制调用构造可信合并输入；不执行 Adapter 或写 CAS。"""
+
+from typing import Any
+from uuid import UUID
+
+import sqlalchemy as sa
+
+from agentgit.adapters.corpus import Corpus
+from agentgit.adapters.tools import ReadArguments, ToolRegistry
+from agentgit.core.canonical import ObjectType, decode, encode
+from agentgit.core.errors import AgentGitError, ErrorCode
+from agentgit.core.execution import SANDBOX_PROVIDERS, ExecutionResult
+from agentgit.core.merge import MergeEffect, MergeOrigin, MergeReadProof
+from agentgit.core.models import (
+    CallIntent,
+    CommitManifest,
+    EffectClass,
+    EnvironmentManifest,
+    parse_contract,
+)
+from agentgit.core.research import (
+    AgentConfig,
+    AgentState,
+    CallTrace,
+    ResearchGoal,
+    SavedCallOutcome,
+)
+from agentgit.core.versions import RecordedRange
+from agentgit.merge.state import StateMergeInput
+from agentgit.replay.workspace import MemoryWorkspace
+from agentgit.services.history import TABLES, HistoryService
+from agentgit.services.versions import VersionService
+
+MAX_CALLS = 1000
+
+
+def base_origin(
+    history: HistoryService, repository: UUID, source: UUID, commit: str
+) -> MergeOrigin:
+    versions = VersionService(history)
+    with history.engine.connect() as connection:
+        family = versions._family(connection, repository, source)
+        links = TABLES["run_commits"]
+        owners = set(
+            connection.execute(
+                sa.select(links.c.run_id).where(
+                    links.c.repository_id == repository,
+                    links.c.commit_id == commit,
+                    links.c.run_id.in_(family),
+                )
+            ).scalars()
+        )
+    for run in family:
+        if run in owners:
+            return MergeOrigin(run_id=str(run), commit_id=commit)
+    raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "共同祖先不在明确来源 Run 链内")
+
+
+def load_state_input(
+    history: HistoryService, repository: UUID, origin: MergeOrigin, corpus: Corpus
+) -> StateMergeInput:
+    versions = VersionService(history)
+    versions.select_range(
+        repository,
+        RecordedRange(
+            source_run_id=origin.run_id, from_commit=origin.commit_id, until_commit=origin.commit_id
+        ),
+    )
+    snapshot = history.restore(repository, origin.commit_id)
+    manifest = parse_contract(
+        history.objects.get(origin.commit_id, ObjectType.COMMIT), CommitManifest
+    )
+    environment = parse_contract(
+        history.objects.get(manifest.environment_ref, ObjectType.ENVIRONMENT), EnvironmentManifest
+    )
+    controlled = decode(history.objects.get(environment.input_ref, ObjectType.BLOB))
+    if (
+        not isinstance(controlled, dict)
+        or type(controlled.get("schema_version")) is not int
+        or controlled["schema_version"] != 1
+        or set(controlled)
+        - {
+            "schema_version",
+            "goal",
+            "config",
+            "corpus_digest",
+            "budget_baseline",
+            "hybrid_policy_ref",
+        }
+        or not {"goal", "config", "corpus_digest"} <= set(controlled)
+    ):
+        raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "合并来源没有受支持的冻结研究输入")
+    state = parse_contract(encode(snapshot.data), AgentState)
+    config = parse_contract(encode(controlled["config"]), AgentConfig)
+    goal = parse_contract(encode(controlled["goal"]), ResearchGoal)
+    if (
+        state.goal != goal
+        or controlled["corpus_digest"] != corpus.digest()
+        or environment.evaluation_time != corpus.evaluation_time
+    ):
+        raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "合并来源任务、语料或时钟与冻结验证输入不同")
+    ancestors = set(versions.ancestors(repository, origin.commit_id))
+    with history.engine.connect() as connection:
+        family = versions._family(connection, repository, UUID(origin.run_id))
+        table = TABLES["external_calls"]
+        rows = list(
+            connection.execute(
+                sa.select(table)
+                .where(table.c.repository_id == repository, table.c.run_id.in_(family))
+                .order_by(
+                    table.c.run_id,
+                    table.c.logical_step_id,
+                    table.c.call_index,
+                    table.c.attempt,
+                    table.c.id,
+                )
+                .limit(MAX_CALLS + 1)
+            ).mappings()
+        )
+    if len(rows) > MAX_CALLS:
+        raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "来源调用数量超过合并核验上限")
+    traces = {encode(trace.model_dump(mode="json")) for trace in state.messages}
+    # 这里只核对已登记的读取 Schema，不向新配置授予调用权限。
+    registry = ToolRegistry(corpus, MemoryWorkspace(max_file_bytes=1, max_files=1), AgentConfig())
+    reads: list[MergeReadProof] = []
+    effects: list[MergeEffect] = []
+    for row in rows:
+        intent = parse_contract(history.objects.get(row["intent_ref"], ObjectType.CALL), CallIntent)
+        if (
+            intent.effect.value != row["effect"]
+            or intent.request_ref != row["request_digest"]
+            or any(
+                getattr(intent.occurrence, key) != row[key]
+                for key in (
+                    "logical_step_id",
+                    "call_index",
+                    "attempt",
+                    "provider",
+                    "signature_digest",
+                    "request_digest",
+                )
+            )
+        ):
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "合并来源调用索引与意图不符")
+        saved = None
+        trace = None
+        response = None
+        selected = False
+        if row["result_ref"] is not None:
+            saved = parse_contract(
+                history.objects.get(row["result_ref"], ObjectType.CALL), SavedCallOutcome
+            )
+            response = history.objects.get(saved.response_ref, ObjectType.BLOB)
+            if saved.response_bytes < len(response) or (
+                saved.complete and saved.response_bytes != len(response)
+            ):
+                raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "合并来源响应长度不符")
+            trace = CallTrace(
+                logical_step_id=intent.occurrence.logical_step_id,
+                call_index=intent.occurrence.call_index,
+                attempt=intent.occurrence.attempt,
+                provider=intent.occurrence.provider,
+                signature_digest=intent.occurrence.signature_digest,
+                request_ref=intent.request_ref,
+                response_ref=saved.response_ref,
+                error_code=saved.error["code"] if saved.error else None,
+            )
+            # 相同 occurrence/请求/响应仍可能来自分叉后的其他轨迹；必须同时属于选定祖先。
+            selected = (
+                encode(trace.model_dump(mode="json")) in traces and intent.checkpoint in ancestors
+            )
+        pending = (
+            row["status"] in ("proposed", "started", "outcome_unknown") or row["result_ref"] is None
+        )
+        # 未决调用尚未进入 messages；仍需依据意图前检查点检查，不能被状态投影隐藏。
+        if not selected and not (
+            pending and (intent.checkpoint is None or intent.checkpoint in ancestors)
+        ):
+            continue
+        cleanup = False
+        if selected and row["provider"] in SANDBOX_PROVIDERS and response is not None:
+            result = parse_contract(response, ExecutionResult)
+            with history.engine.connect() as connection:
+                executions = TABLES["sandbox_executions"]
+                managed = connection.execute(
+                    sa.select(executions.c.cleanup_confirmed).where(
+                        executions.c.repository_id == repository,
+                        executions.c.call_id == row["id"],
+                        executions.c.run_id == row["run_id"],
+                        executions.c.policy_ref == result.execution_policy_ref,
+                        executions.c.input_manifest_ref == result.input_manifest_ref,
+                    )
+                ).scalar_one_or_none()
+            cleanup = (
+                managed is True
+                and result.cleanup_confirmed
+                and config.execution_policy is not None
+                and config.execution_policy.digest() == result.execution_policy_ref
+            )
+        if row["effect"] != EffectClass.READ_ONLY.value or pending:
+            effects.append(
+                MergeEffect(
+                    call_id=str(row["id"]),
+                    run_id=str(row["run_id"]),
+                    provider=row["provider"],
+                    effect=EffectClass(row["effect"]),
+                    status=row["status"],
+                    intent_ref=row["intent_ref"],
+                    result_ref=row["result_ref"],
+                    cleanup_confirmed=cleanup,
+                )
+            )
+        if (
+            not selected
+            or row["status"] != "succeeded"
+            or row["effect"] != EffectClass.READ_ONLY.value
+            or row["provider"] != "tool:source_read/v1"
+            or saved is None
+            or not saved.complete
+            or saved.error is not None
+            or trace is None
+            or response is None
+        ):
+            continue
+        request = parse_contract(
+            history.objects.get(intent.request_ref, ObjectType.BLOB), ReadArguments
+        )
+        if trace.signature_digest != registry.signature("source_read"):
+            continue
+        raw: Any = decode(response)
+        if (
+            not isinstance(raw, dict)
+            or set(raw) != {"schema_version", "source"}
+            or type(raw["schema_version"]) is not int
+            or raw["schema_version"] != 1
+        ):
+            continue
+        evidence = state.working_memory.get(request.source_id)
+        if (
+            evidence is not None
+            and raw["source"] == evidence.source.model_dump(mode="json")
+            and (evidence.logical_step_id, evidence.call_index, evidence.attempt)
+            == (trace.logical_step_id, trace.call_index, trace.attempt)
+        ):
+            reads.append(
+                MergeReadProof(
+                    origin=origin,
+                    call_id=str(row["id"]),
+                    call_run_id=str(row["run_id"]),
+                    evidence=evidence,
+                    trace=trace,
+                )
+            )
+    return StateMergeInput(origin, manifest.state_ref, state, config, tuple(reads), tuple(effects))
