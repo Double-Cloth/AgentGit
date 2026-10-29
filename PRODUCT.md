@@ -1,5 +1,7 @@
 # AgentGit 产品上下文
 
+S12-B 当前完成[范围/依赖与原生语义准备](doc/acceptance/S12-B.md)：固定 LangGraph `1.2.18` 和一类只读图，新增必需传递依赖且未升级原包。新锁下原 866 单元和原生 checkpoint 暂停/恢复/Fork 探针通过；持久图/Worker/Recorded 尚待实现。A 的完整证据继续使用其原锁和冻结，不以准备工作代替 B/C/D 或 D3。
+
 <!-- impeccable:product-schema 1 -->
 
 本文仅整理用户已确认的 [产品设计](doc/AgentGit_设计文档_v1.0.0.md)、[实施方案](doc/AgentGit_实施方案_v1.0.0.md)及当前实现事实，不新增产品承诺。技术与阶段要求仍以这些项目规范为准，视觉继续遵守 [DESIGN.md](DESIGN.md)。
