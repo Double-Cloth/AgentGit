@@ -10,6 +10,7 @@ from sqlalchemy.engine import Connection, RowMapping
 from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.jobs import TERMINAL_RUNS, JobPayload, Lease, Submission
+from agentgit.core.mcp_runs import MCPJobPayload
 from agentgit.core.merge_runs import MergedRunSpec
 from agentgit.core.models import parse_contract
 from agentgit.core.research import AgentConfig, BudgetLimits
@@ -386,7 +387,14 @@ class JobService:
             )
             if candidate is None:
                 return None
-            payload = self.payload(candidate)
+            payload = (
+                parse_contract(
+                    self.history.objects.get(candidate["payload_ref"], ObjectType.BLOB),
+                    MCPJobPayload,
+                )
+                if candidate["kind"] == "mcp_run"
+                else self.payload(candidate)
+            )
             token = int(candidate["fencing_token"]) + 1
             connection.execute(
                 jobs.update()

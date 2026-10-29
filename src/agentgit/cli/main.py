@@ -17,6 +17,7 @@ from typer.core import TyperGroup
 
 from agentgit import __version__
 from agentgit.adapters.execution.policy import bundled_policy
+from agentgit.adapters.mcp import configured_client
 from agentgit.config import Settings
 from agentgit.core.canonical import decode, encode
 from agentgit.core.debug_reports import NewDebugReport
@@ -31,6 +32,8 @@ from agentgit.core.management import (
     NewTask,
     SubmitRun,
 )
+from agentgit.core.mcp import MCPServer
+from agentgit.core.mcp_runs import MCPProgram, MCPRecordedSpec
 from agentgit.core.merge_proposals import (
     ApproveMergeProposal,
     NewMergeProposal,
@@ -40,7 +43,7 @@ from agentgit.core.merge_proposals import (
     ValidateMergeRevision,
 )
 from agentgit.core.merge_runs import ForkMergedBranch, NewMergedRun
-from agentgit.core.models import Contract, parse_contract
+from agentgit.core.models import Contract, EffectClass, parse_contract
 from agentgit.core.repair import NewRepairSearch
 from agentgit.core.repair_pools import NewPreparedRepairSearch, NewRepairValidationSuite
 from agentgit.core.repair_reviews import DecideRepairReview
@@ -52,6 +55,8 @@ from agentgit.repair.confirmation_worker import RepairConfirmationWorker
 from agentgit.repair.study_worker import RepairStudyWorker
 from agentgit.repair.worker import RepairSearchWorker
 from agentgit.services.management import ManagementService
+from agentgit.services.mcp_runs import MCPRunService
+from agentgit.services.versions import VersionService
 from agentgit.storage.database import probe_database
 from agentgit.worker import Worker
 
@@ -131,6 +136,71 @@ def management(testing: bool) -> Iterator[ManagementService]:
     finally:
         if service is not None:
             service.history.engine.dispose()
+
+
+def _mcp_input[T: Contract](file: Path, model: type[T], max_bytes: int = 2_097_152) -> T:
+    with file.open("rb") as stream:
+        payload = stream.read(max_bytes + 1)
+    if len(payload) > max_bytes:
+        raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "MCP 输入文件超过上限")
+    return parse_contract(payload, model)
+
+
+@app.command("mcp-bind")
+def mcp_bind(
+    server_identity: str,
+    endpoint: str,
+    tool_name: str,
+    effect: Annotated[EffectClass, typer.Option()],
+    timeout_ms: int = typer.Option(2000, min=20, max=30000),
+    max_response_bytes: int = typer.Option(65536, min=128, max=1048576),
+    testing: bool = False,
+) -> None:
+    """操作者明确登记可信回环工具，发现定义并固定本地效果，不调用工具。"""
+    with management(testing):
+        server = MCPServer(
+            server_identity=server_identity,
+            endpoint=endpoint,
+            timeout_ms=timeout_ms,
+            max_response_bytes=max_response_bytes,
+        )
+        emit(configured_client(server).bind(tool_name, effect).model_dump(mode="json"))
+
+
+@app.command("mcp-submit")
+def mcp_submit(
+    repository_id: UUID,
+    file: Path,
+    expected_version: int = typer.Option(..., min=0),
+    key: str = typer.Option(...),
+    branch: str = "main",
+    head: str | None = None,
+    replay_file: Path | None = None,
+    testing: bool = False,
+) -> None:
+    """提交固定单次 MCP 程序；需要审批的动作由现有 Worker 停放等待。"""
+    with management(testing) as service:
+        program = _mcp_input(file, MCPProgram)
+        replay = _mcp_input(replay_file, MCPRecordedSpec, 4096) if replay_file else None
+        submitted = MCPRunService(service.jobs).submit(
+            repository_id,
+            program,
+            actor=service.actor,
+            key=key,
+            branch_name=branch,
+            expected_head=head,
+            expected_version=expected_version,
+            replay=replay,
+        )
+        emit(submitted.model_dump(mode="json"))
+
+
+@app.command("mcp-fork")
+def mcp_fork(repository_id: UUID, file: Path, testing: bool = False) -> None:
+    """从明确的 MCP 安全检查点建立来源分支，不启动任务或继承审批。"""
+    with management(testing) as service:
+        request = _mcp_input(file, NewBranch, 4096)
+        emit(VersionService(service.history).fork(repository_id, request, actor=service.actor))
 
 
 @app.command("init")

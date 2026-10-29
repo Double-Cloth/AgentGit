@@ -26,6 +26,7 @@ from agentgit.core.management import (
     NewTask,
     SubmitRun,
 )
+from agentgit.core.mcp_runs import MCPRecordedSpec, MCPRunState
 from agentgit.core.merge_proposals import (
     ApproveMergeProposal,
     NewMergeProposal,
@@ -57,6 +58,7 @@ from agentgit.services.experiments import ExperimentService
 from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.inspection import InspectionService
 from agentgit.services.jobs import JobService
+from agentgit.services.mcp_runs import MCPRunService
 from agentgit.services.merge import MergePreviewService
 from agentgit.services.merge_proposals import MergeProposalService
 from agentgit.services.merge_runs import MergeRunService
@@ -92,6 +94,7 @@ class ManagementService:
             raise AgentGitError(ErrorCode.CONFIGURATION, "本机操作者身份无效")
         self.research, self.history, self.actor = research, research.history, actor
         self.jobs = JobService(research)
+        self.mcp_runs = MCPRunService(self.jobs)
         self.versions = VersionService(self.history)
         self.replays = ReplayService(research)
         self.inspection = InspectionService(self.history)
@@ -952,6 +955,73 @@ class ManagementService:
         result.update(branch_head=branch["head_commit_id"], branch_version=branch["version"])
         if row["agent_config_id"] is None:
             result["budget"] = None
+            with self.history.engine.connect() as connection:
+                jobs, snapshots = TABLES["jobs"], TABLES["snapshots"]
+                job = (
+                    connection.execute(
+                        sa.select(jobs).where(
+                            jobs.c.repository_id == repository_id, jobs.c.run_id == run_id
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+                own = connection.execute(
+                    sa.select(snapshots.c.commit_id).where(
+                        snapshots.c.repository_id == repository_id,
+                        snapshots.c.run_id == run_id,
+                        snapshots.c.commit_id == row["checkpoint_commit_id"],
+                    )
+                ).first()
+            if job is not None and job["kind"] == "mcp_run":
+                payload = self.mcp_runs.payload(repository_id, job["id"])
+                program = self.mcp_runs.program(repository_id, payload)
+                mcp_state = MCPRunState(program_ref=payload.program_ref)
+                if own is not None or payload.replay is not None:
+                    restored = self.history.restore(repository_id, row["checkpoint_commit_id"])
+                    mcp_state = parse_contract(encode(restored.data), MCPRunState)
+                    if mcp_state.program_ref != payload.program_ref:
+                        raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "MCP 状态与固定程序引用不符")
+                    if own is None:
+                        mcp_state = mcp_state.model_copy(update={"actual_attempts": 0})
+                result["adapter"] = {
+                    "kind": "mcp_single_call/v1",
+                    "program_ref": payload.program_ref,
+                    "server_identity": program.binding.server.server_identity,
+                    "tool_name": program.binding.tool_name,
+                    "schema_digest": program.binding.schema_digest(),
+                    "effect_class": program.binding.effect_class.value,
+                    "limits": program.limits.model_dump(mode="json"),
+                    "logical_usage": mcp_state.usage.model_dump(mode="json"),
+                    "actual_attempts": mcp_state.actual_attempts,
+                    "response_ref": mcp_state.response_ref,
+                    "mode": row["mode"],
+                    "has_model": False,
+                    "recording": None,
+                }
+                if row["mode"] == "live" and row["status"] == "completed":
+                    with self.history.engine.connect() as connection:
+                        calls = TABLES["external_calls"]
+                        recorded = list(
+                            connection.execute(
+                                sa.select(calls).where(
+                                    calls.c.repository_id == repository_id,
+                                    calls.c.run_id == run_id,
+                                    calls.c.status == "succeeded",
+                                )
+                            ).mappings()
+                        )
+                    if len(recorded) == 1:
+                        intent = parse_contract(
+                            self.history.objects.get(recorded[0]["intent_ref"], ObjectType.CALL),
+                            CallIntent,
+                        )
+                        if intent.checkpoint is not None:
+                            result["adapter"]["recording"] = MCPRecordedSpec(
+                                source_run_id=str(run_id),
+                                from_commit=intent.checkpoint,
+                                to_commit=row["checkpoint_commit_id"],
+                            ).model_dump(mode="json")
             return result
         config = self.research.config(repository_id, row["agent_config_id"])
         result["model"] = config.model
@@ -1223,7 +1293,8 @@ class ManagementService:
             raise AgentGitError(ErrorCode.VALIDATION, "审批分页参数越界")
         table = TABLES["approvals"]
         with self.history.engine.connect() as connection:
-            self.history._run(connection, repository_id, run_id)
+            run = self.history._run(connection, repository_id, run_id)
+            version = run["state_version"]
             numbered = (
                 sa.select(
                     table,
@@ -1245,6 +1316,7 @@ class ManagementService:
         items = []
         for row in rows:
             item = public(dict(row))
+            item["version"] = version
             item["action"] = self.history.objects.get_json(row["action_ref"], ObjectType.CALL)
             action = item["action"]
             item["request"] = self.history.objects.get_json(

@@ -1,6 +1,6 @@
 # 本地开发与测试
 
-S12 当前在 `codex/s12-adapters` 推进，[MCP 首增量](acceptance/S12-A.md)已实现固定回环 HTTP、闭合 Schema、本地效果/精确审批及既有网关录制。839 单元、17 真实 MCP 联调、72 核心及 3 包内桌面兼容流程通过；产品源码 `source-sha256:0397fd867f3c9425ceb6d42230814e045d4e76853c502b15fe5d470c2b3f22db`，依赖和迁移未改。测试命令及可信 Server 范围见 [fixture 说明](../tests/fixtures/mcp/v1/README.md)。当前不是完整 MCP Run/Worker 或新桌面入口，继续实际任务接入与完整状态回放；旧研究 release 继续使用其冻结源码，不修改旧 guard 接受新模块。
+S12 当前在 `codex/s12-adapters` 推进，[MCP 实际任务](acceptance/S12-A.md)已在固定 HTTP/Schema/本地效果及网关上接通单次有界 Run/Worker、精确审批、恢复和完整 Recorded。最终源码 `source-sha256:80a3638629b34b6e5ccd0b3f40b0c695baa546e01c405ef5b0b1790d0ac388d3`，852 Python 单元、36 MCP/API 联调、74 核心、40 桌面单元及 4 个包内节点通过。Schema head `0027_mcp_runs` 仅扩展 jobs 类型约束，不新增业务表/依赖、不迁移业务库。命令见 [HTTP 演示](S12-A-mcp-demo.md)，可信 Server 范围见 [fixture](../tests/fixtures/mcp/v1/README.md)。stdio 启动边界及 A 完整退出继续核对；旧研究 release 仍使用其冻结源码，不修改旧 guard 接受新模块。
 
 S11 已接通[Merge Review](acceptance/S11-desktop.md)与固定 IPC，并进入 [0.1.7 分发候选](acceptance/S11-package-017.md)；`playwright.merge.config.ts` 覆盖明确 HTTP fixture 和两套真实测试 Schema/API/独立 Worker/CAS。`npm run build` 后以唯一证据前缀运行，实际 Runtime 期间冻结产品、锁、迁移、构建与驱动。桌面 HTTP 修订仍受完整请求 1 MiB 限制，不能仅按两个单文件上限估计载荷。新 ZIP 的 20 个不同节点均有通过证据，3 次失败与后续复验保留；完整阶段前置见 [S11 门槛](acceptance/S11-gates.md)。
 
@@ -123,7 +123,7 @@ CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障�
 
 ## S3 离线研究演示
 
-S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 Schema head 为 `0026_merge_runs`。S10 八张缩减控制/证据表、三张预注册/开启表、五张实际确认/结算/摘要表、七张字段状态/执行证据表及四张精确建议/审阅/实验定义/决定表，以及 S11 九张提案/修订/验证/冲突/审阅/拒绝/批准/独立分支/新任务来源表只在独立测试 Schema 验证，没有迁移业务库。字段阶段沿用原 study 租约和预算，旧原子协议记录保持原编码。用户自行准备业务环境后再运行：
+S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 Schema head 为 `0027_mcp_runs`。S10 八张缩减控制/证据表、三张预注册/开启表、五张实际确认/结算/摘要表、七张字段状态/执行证据表及四张精确建议/审阅/实验定义/决定表，以及 S11 九张提案/修订/验证/冲突/审阅/拒绝/批准/独立分支/新任务来源表只在独立测试 Schema 验证，没有迁移业务库。S12-A 仅扩展 jobs 类型约束；字段阶段沿用原 study 租约和预算，旧原子协议记录保持原编码。用户自行准备业务环境后再运行：
 
 ```powershell
 uv run --locked alembic upgrade head

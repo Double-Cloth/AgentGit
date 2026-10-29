@@ -9,12 +9,14 @@ import sqlalchemy as sa
 from sqlalchemy.engine import Connection
 
 from agentgit.adapters.corpus import Corpus
+from agentgit.adapters.mcp import MCPClient
 from agentgit.adapters.models import select_model
 from agentgit.adapters.tools import WriteArguments
 from agentgit.adapters.workspace import ArtifactWorkspace
 from agentgit.core.canonical import ObjectType, decode, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.jobs import Lease
+from agentgit.core.mcp import MCPBinding
 from agentgit.core.models import (
     CallIntent,
     CommitManifest,
@@ -25,6 +27,7 @@ from agentgit.core.models import (
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage, ResearchGoal, evolve
 from agentgit.core.snapshots import EventPayload, StateSnapshot
 from agentgit.core.versions import HybridReplaySpec
+from agentgit.runtime.mcp_run import MCPRunRunner
 from agentgit.runtime.model_budget import call_budget, reserve_model
 from agentgit.runtime.ports import CallSettlement, ModelAdapter
 from agentgit.services.approvals import ApprovalService
@@ -74,10 +77,12 @@ class Worker:
         name: str | None = None,
         model_factory: Callable[[], ModelAdapter] | None = None,
         fault: Callable[[str], None] | None = None,
+        mcp_client_factory: Callable[[MCPBinding], MCPClient] | None = None,
     ):
         self.queue, self.name = queue, name or f"worker-{uuid4()}"
         self.model_factory = model_factory
         self.fault = fault or (lambda _: None)
+        self.mcp_client_factory = mcp_client_factory
 
     def run_once(self) -> dict[str, Any] | None:
         ApprovalService.expire_pending(self.queue.history)
@@ -85,7 +90,13 @@ class Worker:
         if lease is None:
             return None
         try:
-            payload = self.queue.payload(self.queue.get(lease.repository_id, lease.job_id))
+            job = self.queue.get(lease.repository_id, lease.job_id)
+            if job["kind"] == "mcp_run":
+                with LeaseHeartbeat(self.queue, lease):
+                    return MCPRunRunner(
+                        self.queue, lease, fault=self.fault, client_factory=self.mcp_client_factory
+                    ).run()
+            payload = self.queue.payload(job)
             if payload.replay is not None and payload.replay.mode == "recorded":
                 if lease.recovery_required:
                     with LeaseHeartbeat(self.queue, lease):

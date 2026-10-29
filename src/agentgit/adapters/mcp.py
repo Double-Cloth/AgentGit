@@ -3,39 +3,35 @@
 import os
 import re
 import time
+from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 
 from agentgit.adapters.mcp_http import MCPTransportFailure, post
 from agentgit.core.canonical import ObjectType, decode, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
-from agentgit.core.mcp import MCP_VERSION, MCPArguments, MCPBinding, MCPServer
+from agentgit.core.mcp import (
+    MCP_VERSION,
+    MCPArguments,
+    MCPBinding,
+    MCPServer,
+    check_mcp_credentials,
+)
 from agentgit.core.mcp_schema import validate_value
 from agentgit.core.models import EffectClass, parse_contract
 from agentgit.runtime.ports import CallGateway, CallOutcome
 
-_PRIVATE = {"authorization", "api_key", "apikey", "access_token", "password", "secret"}
 
-
-def _no_credentials(value: Any, secret: str | None) -> None:
-    if isinstance(value, dict):
-        if any(
-            key.lower().replace("-", "_") in _PRIVATE or (secret is not None and secret in key)
-            for key in value
-        ):
-            raise AgentGitError(ErrorCode.FORBIDDEN, "MCP 业务内容不能携带凭据字段")
-        for child in value.values():
-            _no_credentials(child, secret)
-    elif isinstance(value, list):
-        for child in value:
-            _no_credentials(child, secret)
-    elif isinstance(value, str) and secret is not None and secret in value:
-        raise AgentGitError(ErrorCode.FORBIDDEN, "MCP 业务内容不能包含运行时凭据")
+def configured_client(server: MCPServer) -> "MCPClient":
+    name = "AGENTGIT_MCP_" + server.server_identity.upper().replace("-", "_") + "_TOKEN"
+    return MCPClient(server, credential_env=name if name in os.environ else None)
 
 
 class MCPClient:
     def __init__(self, server: MCPServer, *, credential_env: str | None = None):
         self.server = server
+        self._deadline: float | None = None
+        self._request_guard: Callable[[], None] | None = None
         self._secret: str | None = None
         if credential_env is not None:
             if re.fullmatch(r"[A-Z][A-Z0-9_]{0,99}", credential_env) is None:
@@ -44,6 +40,15 @@ class MCPClient:
             if secret is None or re.fullmatch(r"[\x21-\x7e]{1,4096}", secret) is None:
                 raise AgentGitError(ErrorCode.CONFIGURATION, "MCP 运行时凭据缺失或无效")
             self._secret = secret
+
+    def restrict_deadline(self, remaining_ms: int) -> None:
+        if type(remaining_ms) is not int or not 1 <= remaining_ms <= 900_000:
+            raise AgentGitError(ErrorCode.VALIDATION, "MCP 实际剩余期限无效")
+        deadline = time.monotonic() + remaining_ms / 1000
+        self._deadline = deadline if self._deadline is None else min(self._deadline, deadline)
+
+    def guard_requests(self, guard: Callable[[], None]) -> None:
+        self._request_guard = guard
 
     def _rpc(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         request_id = str(uuid4())
@@ -65,7 +70,11 @@ class MCPClient:
                 },
             }
         )
-        reply = post(self.server, method, params.get("name"), payload, self._secret)
+        if self._request_guard is not None:
+            self._request_guard()
+        reply = post(
+            self.server, method, params.get("name"), payload, self._secret, deadline=self._deadline
+        )
         # 从未反射 HTTP 正文或远端错误文本，避免凭据回显进入异常和历史。
         result = decode(reply.payload)
         if (
@@ -80,7 +89,7 @@ class MCPClient:
         value: dict[str, Any] = result["result"]
         if value.get("resultType") != "complete":
             raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "MCP 仅支持完整工具响应")
-        _no_credentials(value, self._secret)
+        check_mcp_credentials(value, self._secret)
         return value
 
     def list_tools(self) -> tuple[bytes, ...]:
@@ -134,7 +143,7 @@ class MCPAdapter:
     ) -> CallOutcome:
         if len(encode(arguments)) > 1_048_000:
             raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "MCP 参数超过请求上限")
-        _no_credentials(arguments, self.client._secret if self.client else None)
+        check_mcp_credentials(arguments, self.client._secret if self.client else None)
         validate_value(self.binding.definition()["inputSchema"], arguments)
         request = encode(MCPArguments(arguments=arguments).model_dump(mode="json"))
         return gateway.call(
@@ -144,9 +153,17 @@ class MCPAdapter:
             signature=self.binding.signature(),
             effect=self.binding.effect_class,
             request=request,
-            invoke=lambda: self._invoke(request),
+            invoke=lambda: self.invoke(request),
             max_bytes=self.binding.server.max_response_bytes,
         )
+
+    def invoke(self, request: bytes) -> bytes:
+        arguments = parse_contract(request, MCPArguments).arguments
+        if len(request) > 1_048_000:
+            raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "MCP 参数超过请求上限")
+        validate_value(self.binding.definition()["inputSchema"], arguments)
+        check_mcp_credentials(arguments, self.client._secret if self.client else None)
+        return self._invoke(request)
 
     def _invoke(self, request: bytes) -> bytes:
         client, binding = self.client, self.binding

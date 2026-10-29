@@ -364,10 +364,11 @@ def test_approval_inspection_and_decision_share_idempotent_transaction(action, t
         item = page.json()["items"][0]
         assert item["request"]["value"] == "approved-value"
         assert item["action"]["actor"] == "fixture-operator"
+        assert item["version"] == version
         decision = post(
             client,
             f"/approvals/{row['id']}/decision",
-            {"decision": "approve", "expected_version": version},
+            {"decision": "approve", "expected_version": item["version"]},
             "approve-1",
             str(repo),
         )

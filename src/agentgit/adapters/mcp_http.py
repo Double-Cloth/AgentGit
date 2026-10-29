@@ -24,14 +24,28 @@ class MCPHTTPReply:
 
 
 def post(
-    server: MCPServer, method: str, name: str | None, payload: bytes, secret: str | None
+    server: MCPServer,
+    method: str,
+    name: str | None,
+    payload: bytes,
+    secret: str | None,
+    *,
+    deadline: float | None = None,
 ) -> MCPHTTPReply:
     if method not in {"tools/list", "tools/call"} or len(payload) > 1_048_576:
         raise ValueError("MCP 请求不在声明范围")
     # host 是固定数字 IP，不使用系统代理或任意 DNS 名称。
     port = urlsplit(server.endpoint).port
-    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=server.timeout_ms / 1000)
-    deadline = time.monotonic() + server.timeout_ms / 1000
+    now = time.monotonic()
+    deadline = (
+        min(now + server.timeout_ms / 1000, deadline)
+        if deadline is not None
+        else now + server.timeout_ms / 1000
+    )
+    remaining = deadline - now
+    if remaining <= 0:
+        raise MCPTransportFailure(sent=False)
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=remaining)
     sent = False
     active_socket: socket.socket | None = None
     response: http.client.HTTPResponse | None = None
@@ -43,7 +57,7 @@ def post(
                 active_socket.shutdown(socket.SHUT_RDWR)
             active_socket.close()
 
-    timer = threading.Timer(server.timeout_ms / 1000, expire)
+    timer = threading.Timer(remaining, expire)
     timer.daemon = True
     timer.start()
     try:

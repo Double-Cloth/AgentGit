@@ -7,11 +7,29 @@ from pydantic import Field, model_validator
 
 from agentgit.core.canonical import ObjectType, decode, encode, object_digest
 from agentgit.core.effects import ToolRule
+from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.mcp_schema import check_schema
 from agentgit.core.models import Contract, EffectClass
 
 MCP_VERSION: Literal["2026-07-28"] = "2026-07-28"
 MCPName = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
+
+
+def check_mcp_credentials(value: Any, secret: str | None = None) -> None:
+    private = {"authorization", "api_key", "apikey", "access_token", "password", "secret"}
+    if isinstance(value, dict):
+        if any(
+            key.lower().replace("-", "_") in private or (secret is not None and secret in key)
+            for key in value
+        ):
+            raise AgentGitError(ErrorCode.FORBIDDEN, "MCP 业务内容不能携带凭据字段")
+        for child in value.values():
+            check_mcp_credentials(child, secret)
+    elif isinstance(value, list):
+        for child in value:
+            check_mcp_credentials(child, secret)
+    elif isinstance(value, str) and secret is not None and secret in value:
+        raise AgentGitError(ErrorCode.FORBIDDEN, "MCP 业务内容不能包含运行时凭据")
 
 
 class MCPServer(Contract):

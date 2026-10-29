@@ -543,3 +543,11 @@ uv run --locked agentgit repair-review $repo.repository_id $proposal.proposal_id
 # decision.json 使用上面的完整严格请求；该动作不会开始执行。
 uv run --locked agentgit repair-review-decision $repo.repository_id $proposal.proposal_id --file decision.json --key decision-001
 ```
+
+## MCP 有界任务（S12-A）
+
+可信操作者使用 `mcp-bind / mcp-submit / mcp-fork`；完整输入和运行顺序见 [MCP HTTP 演示](S12-A-mcp-demo.md)。没有可由渲染器提交任意 endpoint/command 的 HTTP 路由。任务复用既有 Run 查询、控制、审批和产物接口，类型为 `mcp_run`，不创建研究 Task 或模型调用。
+
+`GET /runs/{id}` 的 MCP 结果增加 `adapter`：固定程序/Server/工具/Schema/本地效果、limits、logical_usage、actual_attempts、response_ref、mode、has_model=false。成功 Live 的 `recording` 给出明确来源 Run/起止 Commit；它不创建 Fork 或执行新任务。Recorded 的逻辑调用仍为 1，实际尝试为 0；未知实际尝试保持 null，不把未知改成零。
+
+`GET /approvals?run_id=...` 每项的 `version` 是此次读取的 Run `state_version`，供现有桌面按钮提交 `expected_version`。它不是单独的审批表版本；若读取后状态推进，后端仍返回 `version_conflict`。审批绑定精确动作/请求/效果/策略/操作者，不能因远端只读提示或重复点击扩大权限。
