@@ -263,3 +263,19 @@ dd { margin: 0; color: var(--ink); }
 @media (max-width: 1199px) { .experiment-group-results { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 1023px) { .experiment-layout { grid-template-columns: minmax(0, 1fr); } .experiment-layout .branch-aside { display: block; } }
 @media (max-width: 767px) { .experiment-groups { grid-template-columns: minmax(0, 1fr); gap: 0; } .experiment-report h2 code { display: block; font-size: 18px; } }
+.merge-review section, .merge-review article, .merge-review details, .merge-review label { min-width: 0; }
+.merge-review .panel { margin-bottom: 24px; }
+.merge-review fieldset { min-width: 0; border: 0; border-top: 1px solid var(--line); padding: 20px 0 0; margin: 24px 0 0; }
+.merge-review legend { padding-right: 12px; font-weight: 500; }
+.merge-review details { margin-block: 16px; }
+.merge-review summary { cursor: pointer; overflow-wrap: anywhere; }
+.merge-review .code { max-height: 400px; }
+.merge-review .check { display: flex; align-items: flex-start; gap: 10px; margin-block: 20px; }
+.merge-review .check input { width: auto; flex-shrink: 0; margin-top: 4px; }
+.merge-review .facts > div { min-width: 0; }
+.merge-origins { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.merge-origins > section + section { border-left: 1px solid var(--line); padding-left: 24px; }
+.merge-origins button { margin: 0 8px 8px 0; }
+.merge-conflicts { padding-left: 20px; overflow-wrap: anywhere; }
+.merge-conflicts li { border-bottom: 1px solid var(--line); padding-block: 12px; }
+@media (max-width: 1023px) { .merge-origins { grid-template-columns: minmax(0, 1fr); } .merge-origins > section + section { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); } }

@@ -86,6 +86,47 @@ function query(path: string, values: Record<string, string | number | undefined>
   return path + (params.size ? '?' + params.toString() : '');
 }
 
+function required(value: unknown): unknown {
+  if (value === undefined) throw new DesktopError('validation', '缺少确切版本或预算值');
+  return value;
+}
+function mergeSchema(data: Args): void {
+  if (Object.hasOwn(data, 'schema_version') && data.schema_version !== 1) throw new DesktopError('validation', '合并内容版本无效');
+}
+function mergeEdits(value: unknown): JsonObject {
+  // 文件限制和完整 HTTP 请求限制同时适用，不放宽 API 的统一传输边界。
+  const data = fields(jsonObject(value), [], ['schema_version', 'replace_plan', 'plan', 'sources', 'artifacts']);
+  mergeSchema(data);
+  if (data.replace_plan !== undefined && typeof data.replace_plan !== 'boolean') throw new DesktopError('validation', '计划替换开关无效');
+  if (data.plan != null) {
+    if (data.replace_plan !== true) throw new DesktopError('validation', '计划编辑需要明确选择替换');
+    jsonObject(data.plan);
+  }
+  if (data.sources !== undefined) {
+    const sources = jsonObject(data.sources);
+    if (Object.keys(sources).length > 1000) throw new DesktopError('output_limit', '来源选择超过一千项');
+    for (const [name, choice] of Object.entries(sources)) {
+      text(name, 200);
+      if (!['base', 'ours', 'theirs', 'delete'].includes(String(choice)) || typeof choice !== 'string') throw new DesktopError('validation', '来源选择无效');
+    }
+  }
+  if (data.artifacts !== undefined) {
+    if (!Array.isArray(data.artifacts) || data.artifacts.length > 2) throw new DesktopError('validation', '仅支持两个不同的研究产物');
+    const seen = new Set<string>();
+    for (const raw of data.artifacts) {
+      const file = fields(raw, ['path'], ['schema_version', 'operation', 'text', 'media_type']); mergeSchema(file);
+      const path = text(file.path, 20), op = file.operation ?? 'write';
+      if (!['report.md', 'sources.json'].includes(path) || seen.has(path) || !['write', 'delete'].includes(String(op))) throw new DesktopError('validation', '研究产物路径或操作无效');
+      seen.add(path);
+      if (op === 'write') {
+        if (typeof file.text !== 'string' || Buffer.byteLength(file.text) > 1048576
+            || (file.media_type != null && file.media_type !== (path === 'report.md' ? 'text/markdown' : 'application/json'))) throw new DesktopError('validation', '编辑文件须为对应 MIME 且不超过一 MiB 的 UTF-8 文本');
+      } else if (file.text != null || file.media_type != null) throw new DesktopError('validation', '删除操作不能携带文件内容');
+    }
+  }
+  return data as JsonObject;
+}
+
 export interface Preferences { baseUrl: string; repositoryId: string | null }
 export type SaveArtifact = (name: string, bytes: Buffer) => Promise<JsonObject>;
 
@@ -251,7 +292,61 @@ export class BusinessController {
     const get = (path: string, maxBytes = 8388608): ApiRequest => ({ method: 'GET', path, maxBytes });
     const post = (path: string, body: JsonObject): ApiRequest => ({ method: 'POST', path, body: { schema_version: 1, ...body }, key: key(input.key) });
     const page = (path: string) => get(query(path, { after_id: input.afterId === undefined ? undefined : id(input.afterId), limit: number(input.limit, 30, 100, 1) }));
+    const mergeOperations = ['listMergeProposals', 'getMergeBases', 'createMergeProposal', 'getMergeProposal', 'getMergeReview',
+      'replaceMergeRevision', 'validateMergeRevision', 'beginMergeReview', 'approveMergeProposal', 'rejectMergeProposal', 'forkMergedBranch', 'submitMergedRun'];
+    if (mergeOperations.includes(operation)) {
+      this.connected();
+      const features = this.descriptor?.features;
+      if (!Array.isArray(features) || !features.includes('semantic_merge')
+          || (['forkMergedBranch', 'submitMergedRun'].includes(operation) && !features.includes('merged_run_initialization'))) {
+        throw new DesktopError('unsupported', '当前后端未提供此合并能力，请更新后端并重新检查连接');
+      }
+    }
     switch (operation) {
+      case 'listMergeProposals': input = fields(raw, [], ['afterId', 'limit']); return page(`/repositories/${this.state.repositoryId!}/merge-proposals`);
+      case 'getMergeBases': {
+        input = fields(raw, ['ours', 'theirs'], ['selected']);
+        return get(query('/merge-bases', { ours: digest(input.ours), theirs: digest(input.theirs), selected: input.selected === undefined ? undefined : digest(input.selected) }));
+      }
+      case 'createMergeProposal': {
+        input = fields(raw, ['request', 'key']);
+        const request = fields(jsonObject(input.request), ['ours', 'theirs', 'validator_ref'], ['schema_version', 'selected_base', 'selected_base_run_id']);
+        mergeSchema(request);
+        const pin = (value: unknown) => {
+          const side = fields(value, ['name', 'source_run_id', 'head', 'version'], ['schema_version']); mergeSchema(side);
+          return { name: text(side.name, 100), source_run_id: id(side.source_run_id), head: digest(side.head), version: number(required(side.version), 0, Number.MAX_SAFE_INTEGER) };
+        };
+        const ours = pin(request.ours), theirs = pin(request.theirs);
+        if (ours.name === theirs.name || ours.head === theirs.head) throw new DesktopError('validation', '提案须选择不同分支及 HEAD');
+        if (request.selected_base_run_id != null && request.selected_base == null) throw new DesktopError('validation', '显式 base Run 需要同时选择 base Commit');
+        return post('/merge-proposals', { ours, theirs, validator_ref: digest(request.validator_ref),
+          ...(request.selected_base == null ? {} : { selected_base: digest(request.selected_base) }),
+          ...(request.selected_base_run_id == null ? {} : { selected_base_run_id: id(request.selected_base_run_id) }) });
+      }
+      case 'getMergeProposal': input = fields(raw, ['proposalId'], ['reviewBefore']); return get(query(`/merge-proposals/${id(input.proposalId)}`, { review_before: input.reviewBefore === undefined ? undefined : id(input.reviewBefore) }), 16777216);
+      case 'getMergeReview': input = fields(raw, ['proposalId', 'reviewId']); return get(`/merge-proposals/${id(input.proposalId)}/reviews/${id(input.reviewId)}`);
+      case 'replaceMergeRevision': case 'validateMergeRevision': case 'beginMergeReview': case 'approveMergeProposal': case 'rejectMergeProposal': {
+        const extra = operation === 'replaceMergeRevision' ? ['edits'] : operation === 'beginMergeReview' ? ['validationId'] : operation === 'approveMergeProposal' ? ['reviewId', 'ticketRef', 'candidateDigest'] : operation === 'rejectMergeProposal' ? ['reason'] : [];
+        input = fields(raw, ['proposalId', 'expectedRevision', 'expectedRevisionRef', 'key', ...extra]);
+        const body: JsonObject = { expected_revision: number(required(input.expectedRevision), 1, 100, 1), expected_revision_ref: digest(input.expectedRevisionRef) };
+        let suffix = 'validate';
+        if (operation === 'replaceMergeRevision') { suffix = 'revisions'; body.edits = mergeEdits(input.edits); }
+        if (operation === 'beginMergeReview') { suffix = 'review'; body.validation_id = id(input.validationId); }
+        if (operation === 'approveMergeProposal') { suffix = 'approve'; body.review_id = id(input.reviewId); body.ticket_ref = digest(input.ticketRef); body.candidate_digest = digest(input.candidateDigest); }
+        if (operation === 'rejectMergeProposal') { suffix = 'reject'; body.reason = text(input.reason, 4000); }
+        return post(`/merge-proposals/${id(input.proposalId)}/${suffix}`, body);
+      }
+      case 'forkMergedBranch': {
+        input = fields(raw, ['approvalId', 'commitId', 'branchName', 'key']);
+        return post('/merge-branches', { approval_id: id(input.approvalId), commit_id: digest(input.commitId), name: text(input.branchName, 100) });
+      }
+      case 'submitMergedRun': {
+        input = fields(raw, ['branchName', 'expectedHead', 'expectedBranchVersion', 'configId', 'configVersion', 'validatorRef', 'budget', 'key']);
+        const budget = jsonObject(input.budget);
+        fields(budget, [], ['schema_version', 'max_steps', 'max_model_calls', 'max_tool_calls', 'max_replans', 'max_tokens', 'max_wall_ms', 'max_response_bytes', 'max_context_bytes', 'max_artifact_bytes', 'max_files', 'max_cost_micro_usd']); mergeSchema(budget);
+        for (const [name, value] of Object.entries(budget)) if (name !== 'schema_version' && !(name === 'max_cost_micro_usd' && value === null)) number(required(value), 0, Number.MAX_SAFE_INTEGER);
+        return post('/merge-runs', { branch_name: text(input.branchName, 100), expected_head: digest(input.expectedHead), expected_branch_version: number(required(input.expectedBranchVersion), 0, Number.MAX_SAFE_INTEGER), config_id: id(input.configId), config_version: number(required(input.configVersion), 1, Number.MAX_SAFE_INTEGER, 1), validator_ref: digest(input.validatorRef), budget });
+      }
       case 'getRepository': fields(raw, []); return get(`/repositories/${this.state.repositoryId!}`);
       case 'listRuns': input = fields(raw, [], ['afterId', 'limit']); return page(`/repositories/${this.state.repositoryId ?? ''}/runs`);
       case 'getRun': input = fields(raw, ['runId']); return get(`/runs/${id(input.runId)}`);

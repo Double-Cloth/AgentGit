@@ -9,6 +9,10 @@ function method(operation: Operation) {
   };
 }
 const api: DesktopApi = {
+  listMergeProposals: method('listMergeProposals'), getMergeBases: method('getMergeBases'), createMergeProposal: method('createMergeProposal'),
+  getMergeProposal: method('getMergeProposal'), getMergeReview: method('getMergeReview'), replaceMergeRevision: method('replaceMergeRevision'),
+  validateMergeRevision: method('validateMergeRevision'), beginMergeReview: method('beginMergeReview'), approveMergeProposal: method('approveMergeProposal'),
+  rejectMergeProposal: method('rejectMergeProposal'), forkMergedBranch: method('forkMergedBranch'), submitMergedRun: method('submitMergedRun'),
   getConnection: method('getConnection'), configureConnection: method('configureConnection'), selectRepository: method('selectRepository'),
   capabilities: method('capabilities'), getRepository: method('getRepository'), createRepository: method('createRepository'), listRuns: method('listRuns'),
   getRun: method('getRun'), getJob: method('getJob'), getEvents: method('getEvents'), listBranches: method('listBranches'),

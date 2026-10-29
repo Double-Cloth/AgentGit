@@ -3,6 +3,7 @@ export type JsonObject = { [key: string]: Json };
 export type Reply<T> = { ok: true; data: T } | { ok: false; error: { code: string; message: string } };
 export type Page = { afterId?: string; limit?: number };
 export type ExecutionResource = 'command' | 'code' | 'stdin' | 'stdout' | 'stderr' | 'metadata' | 'input_manifest' | 'output_manifest';
+export type MergeVersion = { proposalId: string; expectedRevision: number; expectedRevisionRef: string; key: string };
 export interface BinaryChunk {
   base64: string;
   objectRef: string;
@@ -24,6 +25,18 @@ export interface ConnectionState {
   message: string;
 }
 export interface Inputs {
+  listMergeProposals: Page;
+  getMergeBases: { ours: string; theirs: string; selected?: string };
+  createMergeProposal: { request: JsonObject; key: string };
+  getMergeProposal: { proposalId: string; reviewBefore?: string };
+  getMergeReview: { proposalId: string; reviewId: string };
+  replaceMergeRevision: MergeVersion & { edits: JsonObject };
+  validateMergeRevision: MergeVersion;
+  beginMergeReview: MergeVersion & { validationId: string };
+  approveMergeProposal: MergeVersion & { reviewId: string; ticketRef: string; candidateDigest: string };
+  rejectMergeProposal: MergeVersion & { reason: string };
+  forkMergedBranch: { approvalId: string; commitId: string; branchName: string; key: string };
+  submitMergedRun: { branchName: string; expectedHead: string; expectedBranchVersion: number; configId: string; configVersion: number; validatorRef: string; budget: JsonObject; key: string };
   getConnection: undefined;
   configureConnection: { baseUrl: string };
   selectRepository: { repositoryId: string };

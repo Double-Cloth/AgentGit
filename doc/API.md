@@ -4,12 +4,14 @@
 
 ## S11 耐久合并提案
 
-当前实现提案→编辑→硬验证→准备审阅→精确批准/拒绝，耐久定义见 [S11-proposals.md](acceptance/S11-proposals.md)。准备审阅不代表批准；批准必须显式提交本人票据、确切候选和修订，原子创建双父 Commit 并仅推进 ours 的 HEAD/version。所有这些操作不启动 Run 或外部调用。桌面和完整双父兼容验收仍待完成。
+当前实现提案→编辑→硬验证→准备审阅→精确批准/拒绝，耐久定义见 [S11-proposals.md](acceptance/S11-proposals.md)，桌面入口见[Merge Review](acceptance/S11-desktop.md)。准备审阅不代表批准；批准必须显式提交本人票据、确切候选和修订，原子创建双父 Commit 并仅推进 ours 的 HEAD/version。所有这些操作不启动 Run 或外部调用。更新分发包、人工预期和完整阶段前置仍待完成。
 
 HTTP 使用既有 Authorization、`X-Repository-ID`，写入还须 `Idempotency-Key`，actor 来自后端身份。项目、来源、版本和所有 JSON 契约均严格核对。下表 `id` 为提案 ID，全部 POST 返回 201：
 
 | 方法/路径 | 请求内容或用途 |
 |---|---|
+| `GET /repositories/{repository_id}/merge-proposals` | 当前项目元数据列表；`after_id` UUID、`limit` 1–100（默认 30） |
+| `GET /merge-bases` | `ours`、`theirs` 摘要与可选 `selected`；返回全部最佳共同祖先和歧义状态 |
 | `POST /merge-proposals` | `ours`、`theirs`、`validator_ref`、可选 `selected_base`、`selected_base_run_id` |
 | `GET /merge-proposals/{id}` | 当前候选、全部修订摘要、当前验证、拒绝和票据页 |
 | `POST /merge-proposals/{id}/revisions` | `expected_revision`、`expected_revision_ref`、完整 `edits` |
@@ -22,6 +24,10 @@ HTTP 使用既有 Authorization、`X-Repository-ID`，写入还须 `Idempotency-
 两侧各为 `{ "name": "分支名", "source_run_id": "Run UUID", "head": "64位小写十六进制摘要", "version": 1 }`；需不同分支和不同 HEAD，分支无活动写入者。验收器必须属于同项目且绑定当前源码/锁，多个最佳共同祖先须显式选定其中之一。创建返回提案及第 1 版收据；后续请求使用收据中的确切版号和 ref，不能只传候选摘要。
 
 `edits` 是完整替换定义，例如 `{ "replace_plan": false, "sources": { "source-id": "ours" }, "artifacts": [] }`。省略字段恢复自动合并；来源选项为 base/ours/theirs/delete，计划替换须显式 `replace_plan: true` 并提交合法 `plan`。`artifacts` 使用既有 ArtifactPatch，仅支持两个研究文件的文本写入/删除，每个文件最多 1 MiB；不能上传权限、效果、来源原文或验证结论。编辑追加新版（上限 100），所有旧验证/票据过时。即使无冲突，仍须显式验证后准备审阅。
+
+HTTP 仍同时适用完整请求体 1 MiB 的统一限制，包含 JSON 转义、两个文件和其他字段；单文件上限不扩大传输总额度。桌面在发送前拒绝超限，不截断候选，也不拆分为改变语义的多次修订。
+
+提案列表不读取 CAS，仅返回有界元数据和 `next_after_id`，按创建时间/ID 倒序；游标必须属于当前项目。`open` 只表示没有关闭决定，不证明来源当前或验证通过，详情才重核状态。`/capabilities` 的 `semantic_merge` 和 `merged_run_initialization` 分别声明合并审阅与后续独立任务能力，旧后端保留其他页面。
 
 查询票据最多 100 条，`reviews_truncated` 和 `reviews_next_cursor` 指明后续页，用 `?review_before=<cursor UUID>` 继续。`current` 是当前绑定提示，`requires_recheck` 始终为 true；任一 HEAD/version 变化使提案 stale。拒绝可关闭已过时提案。同键重试只返回原收据，不重新验证、不重新激活旧票据；未知提交结果应先原键确认及只读查询。
 

@@ -57,6 +57,7 @@ from agentgit.services.experiments import ExperimentService
 from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.inspection import InspectionService
 from agentgit.services.jobs import JobService
+from agentgit.services.merge import MergePreviewService
 from agentgit.services.merge_proposals import MergeProposalService
 from agentgit.services.merge_runs import MergeRunService
 from agentgit.services.repair_confirmation import RepairConfirmationService
@@ -130,6 +131,20 @@ class ManagementService:
         self, repository: UUID, request: NewMergeProposal, key: str
     ) -> dict[str, Any]:
         return self.merge_proposals.create(repository, request, actor=self.actor, key=key)
+
+    def merge_proposals_list(
+        self, repository: UUID, *, after_id: UUID | None = None, limit: int = 30
+    ) -> dict[str, Any]:
+        return self.merge_proposals.listing(repository, after_id=after_id, limit=limit)
+
+    def merge_bases(
+        self, repository: UUID, ours: str, theirs: str, *, selected: str | None = None
+    ) -> dict[str, Any]:
+        return (
+            MergePreviewService(self.history)
+            .bases(repository, ours, theirs, selected=selected)
+            .model_dump(mode="json")
+        )
 
     def merge_proposal(
         self, repository: UUID, proposal: UUID, *, review_before: UUID | None = None
@@ -548,6 +563,8 @@ class ManagementService:
                 "repair_search",
                 "repair_validation",
                 "repair_reviews",
+                "semantic_merge",
+                "merged_run_initialization",
             ],
             "worker": {"status": "unknown", "reason": "no_readiness_probe"},
             "execution_environment": {"status": "unknown", "reason": "policy_is_not_readiness"},

@@ -337,6 +337,28 @@ def create_app(
             raise AgentGitError(ErrorCode.VALIDATION, "采纳或保存实验必须使用 approve 入口")
         return service.decide_repair_review(repo, proposal_id, request, key)
 
+    @app.get("/repositories/{repository_id}/merge-proposals")
+    def merge_proposals_list(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.merge_proposals_list(repo, after_id=after_id, limit=limit)
+
+    @app.get("/merge-bases")
+    def merge_bases(
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        ours: Annotated[str, Query(pattern=r"^[0-9a-f]{64}$")],
+        theirs: Annotated[str, Query(pattern=r"^[0-9a-f]{64}$")],
+        selected: Annotated[str | None, Query(pattern=r"^[0-9a-f]{64}$")] = None,
+    ) -> dict[str, Any]:
+        return service.merge_bases(repo, ours, theirs, selected=selected)
+
     @app.post("/merge-proposals", status_code=201)
     def merge_proposal_create(
         body: dict[str, Any],

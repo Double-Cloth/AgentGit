@@ -8,7 +8,8 @@ const Timeline = lazy(() => import('./Timeline'));
 const Branch = lazy(() => import('./Branch'));
 const Diff = lazy(() => import('./Diff'));
 const RepairLab = lazy(() => import('./RepairLab'));
-const PAGES = [{ id: 'runs', text: '运行' }, { id: 'timeline', text: '时间线' }, { id: 'branch', text: '分支实验' }, { id: 'diff', text: '差异' }, { id: 'repair', text: '修复实验室' }] as const;
+const MergeReview = lazy(() => import('./MergeReview'));
+const PAGES = [{ id: 'runs', text: '运行' }, { id: 'timeline', text: '时间线' }, { id: 'branch', text: '分支实验' }, { id: 'diff', text: '差异' }, { id: 'repair', text: '修复实验室' }, { id: 'merge', text: '合并审阅' }] as const;
 type Page = typeof PAGES[number]['id'];
 
 export function App() {
@@ -50,7 +51,7 @@ export function App() {
       {settings && <Connection key={connection?.baseUrl ?? 'initial'} state={connection} onChange={changeConnection} onClose={() => setSettings(false)} />}
       {!retainWorkspace && <section className="welcome"><span className="eyebrow">执行历史 · 隔离分支 · 可审计回放</span><h1>让每次执行有据可查。</h1><p>连接本机 API 后选择项目，查看运行、追溯检查点，并比较独立分支的结果。</p><p className="muted">桌面只展示和管理任务。Worker 与固定容器是否就绪，以实际任务证据为准。</p>{!settings && <button className="primary" onClick={() => setSettings(true)}>配置连接与项目</button>}</section>}
       {retainWorkspace && <fieldset className="workspace" disabled={!ready} aria-label="当前项目工作区" key={workspace}><Suspense fallback={<p role="status">正在打开页面…</p>}>
-          {page === 'runs' ? <Runs {...props} /> : page === 'timeline' ? <Timeline {...props} /> : page === 'branch' ? <Branch {...props} /> : page === 'repair' ? <RepairLab {...props} active={ready} preset={repairPreset} /> : <Diff diagnosisRunId={diagnosisRunId} openEvent={target => { setEventFocus(target); setRunId(target.runId); setPage('timeline'); }} openExperiment={preset => { setRunId(preset.sourceRunId); setCommit(preset.fromCommit); setExperimentPreset(preset); setPage('branch'); }} openRepair={preset => { setRunId(preset.sourceRunId); setCommit(preset.fromCommit); setRepairPreset(preset); setPage('repair'); }} />}
+          {page === 'runs' ? <Runs {...props} /> : page === 'timeline' ? <Timeline {...props} /> : page === 'branch' ? <Branch {...props} /> : page === 'merge' ? <MergeReview {...props} active={ready} /> : page === 'repair' ? <RepairLab {...props} active={ready} preset={repairPreset} /> : <Diff diagnosisRunId={diagnosisRunId} openEvent={target => { setEventFocus(target); setRunId(target.runId); setPage('timeline'); }} openExperiment={preset => { setRunId(preset.sourceRunId); setCommit(preset.fromCommit); setExperimentPreset(preset); setPage('branch'); }} openRepair={preset => { setRunId(preset.sourceRunId); setCommit(preset.fromCommit); setRepairPreset(preset); setPage('repair'); }} />}
         </Suspense></fieldset>}
     </main><footer className="shell footer"><span>AgentGit {__AGENTGIT_DESKTOP_VERSION__}</span><span>状态可恢复、历史可验证与修复有效，分别判断。</span></footer></>;
 }

@@ -73,6 +73,7 @@ test('S10 修复决定拒绝不精确票据、越界版本、路径和附加执�
 });
 async function fixture(options: {
   token?: string | null; version?: string; ready?: boolean;
+  features?: string[];
   respond?: (request: IncomingMessage, response: ServerResponse) => boolean;
   persist?: (preferences: Preferences) => Promise<void>; save?: SaveArtifact;
 } = {}) {
@@ -83,7 +84,7 @@ async function fixture(options: {
     const path = new URL(request.url!, 'http://localhost').pathname;
     if (path === '/health') response.end(JSON.stringify({ status: 'ok', version: options.version ?? '0.1.0' }));
     else if (path === '/ready') response.end(JSON.stringify({ status: options.ready === false ? 'unavailable' : 'ready' }));
-    else if (path === '/capabilities') response.end(JSON.stringify({ schema_version: 1, version: options.version ?? '0.1.0', features: FEATURES }));
+    else if (path === '/capabilities') response.end(JSON.stringify({ schema_version: 1, version: options.version ?? '0.1.0', features: options.features ?? FEATURES }));
     else if (/^\/repositories\/[0-9a-f-]+$/.test(path)) response.end(JSON.stringify({ id: path.split('/').at(-1) }));
     else response.end(JSON.stringify({ items: [], id: REPO }));
   });

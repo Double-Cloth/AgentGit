@@ -36,6 +36,71 @@ class MergeProposalService:
     def __init__(self, history: HistoryService):
         self.history = history
 
+    def listing(
+        self, repo: UUID, *, after_id: UUID | None = None, limit: int = 30
+    ) -> dict[str, Any]:
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise AgentGitError(ErrorCode.VALIDATION, "合并列表上限必须为一至一百")
+        roots, repos = TABLES["merge_proposals"], TABLES["repositories"]
+        approvals, rejections = TABLES["merge_approvals"], TABLES["merge_rejections"]
+        with self.history.engine.connect() as connection:
+            if connection.execute(sa.select(repos.c.id).where(repos.c.id == repo)).first() is None:
+                raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+            closed = [
+                sa.exists(
+                    sa.select(table.c.id).where(
+                        table.c.repository_id == repo, table.c.proposal_id == roots.c.id
+                    )
+                )
+                for table in (approvals, rejections)
+            ]
+            query = sa.select(
+                roots.c.id,
+                roots.c.manifest_ref,
+                roots.c.ours_branch,
+                roots.c.theirs_branch,
+                roots.c.created_at,
+                closed[0].label("merged"),
+                closed[1].label("rejected"),
+            ).where(roots.c.repository_id == repo)
+            if after_id is not None:
+                cursor = connection.execute(
+                    sa.select(roots.c.created_at, roots.c.id).where(
+                        roots.c.repository_id == repo, roots.c.id == after_id
+                    )
+                ).first()
+                if cursor is None:
+                    raise AgentGitError(ErrorCode.NOT_FOUND, "合并列表游标不可访问")
+                query = query.where(
+                    sa.tuple_(roots.c.created_at, roots.c.id)
+                    < sa.tuple_(cursor.created_at, cursor.id)
+                )
+            rows = (
+                connection.execute(
+                    query.order_by(roots.c.created_at.desc(), roots.c.id.desc()).limit(limit + 1)
+                )
+                .mappings()
+                .all()
+            )
+            return dict(
+                items=[
+                    dict(
+                        proposal_id=str(row["id"]),
+                        proposal_ref=row["manifest_ref"],
+                        ours_branch=row["ours_branch"],
+                        theirs_branch=row["theirs_branch"],
+                        created_at=row["created_at"].isoformat(),
+                        status="merged"
+                        if row["merged"]
+                        else "rejected"
+                        if row["rejected"]
+                        else "open",
+                    )
+                    for row in rows[:limit]
+                ],
+                next_after_id=str(rows[limit - 1]["id"]) if len(rows) > limit else None,
+            )
+
     @staticmethod
     def _identity(repo: UUID, payload: Contract, actor: str, key: str) -> str:
         if any(
