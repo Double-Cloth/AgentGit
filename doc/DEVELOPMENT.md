@@ -8,7 +8,7 @@ S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命
 
 ## 环境
 
-当前开发分支为 `codex/s11-merge`。S11 的共同祖先、有限状态/产物验证、[耐久提案](acceptance/S11-proposals.md)、[精确批准/双父后端](acceptance/S11-approval.md)、[合并后的独立新任务](acceptance/S11-merged-runs.md)及[再次合并/交叉历史](acceptance/S11-remerge.md)已实现。[正式三十组三方法](acceptance/S11-merge-evaluation.md)完成全量候选/双父/零基线新任务重审，结果见[报告](S11-merge-report.md)；桌面和新包工程已核对，人工预期及整体前置仍待补，S12 仍待 S11 完整验收。当前核对范围见各增量记录，以下阶段记录保留历史范围。
+当前开发分支为 `codex/s11-merge`。S11 的共同祖先、有限状态/产物验证、[耐久提案](acceptance/S11-proposals.md)、[精确批准/双父后端](acceptance/S11-approval.md)、[合并后的独立新任务](acceptance/S11-merged-runs.md)及[再次合并/交叉历史](acceptance/S11-remerge.md)已实现。[正式三十组三方法](acceptance/S11-merge-evaluation.md)完成全量候选/双父/零基线新任务重审，结果见[报告](S11-merge-report.md)；桌面和新包工程已核对，人工预期及整体前置仍待补，用户已明确选择延续 S12 工程，S11 完整验收仍是正式前置，见[次序记录](S12-engineering-order-proposal.md)。当前核对范围见各增量记录，以下阶段记录保留历史范围。
 
 ```powershell
 uv run --locked pytest tests/unit

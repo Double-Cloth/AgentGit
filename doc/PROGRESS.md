@@ -19,7 +19,7 @@
 | S10 | 本机工程与三十例研究核对完成，整体前置待补 | [退出矩阵](acceptance/S10-gates.md)覆盖缩减、独立复测、精确审批、伪修复边界和完整评估；当前 179 协议及 13 关键集成通过，三条关键原始链重审。[D2 研究报告](D2-research-report.md)完整保留 30×5 原始结果，开发目标 12/12、保留主方法 6/10、无排序 6/10、不缩减 8/10；只限 fixture，不宣称全面基线优势。最终最小性使用分析 v2，迁移清单遗漏及 Git 基线补充明确披露。[备份恢复](acceptance/S10-backup-restore.md)两项通过。S9 默认空间/额度不变，业务配置未采纳；S6/D1、S8 待补及整体阶段前置保留 |
 | S10 桌面 | 本机及 0.1.6 包内核对通过，原生前置待补 | [0.1.6 分发](acceptance/S10-package-016.md)35 单元及 17 条包内 Electron 流程通过，包含 Repair Lab、联合字段缩减/六加四、精确审批与版本竞争、候选交接、取消/未知、观测禁正式采纳。原始 CAS 独立重审，源不变，批准无新 Job/Run，重开无 POST；原包四件套在研究结束后再次核对未变。独立 Windows/原生及完整阶段前置仍待补，不重复累计旧桌面测试 |
 | S11 | 开发中，三方法及桌面闭环通过，整体前置待补 | [有限候选](acceptance/S11-artifact-preview.md)、[完整硬验证](acceptance/S11-state-validation.md)、[耐久提案](acceptance/S11-proposals.md)、[原子批准](acceptance/S11-approval.md)、[新任务/实际中断](acceptance/S11-merged-runs.md)、[再次合并](acceptance/S11-remerge.md)及[正式三方法](acceptance/S11-merge-evaluation.md)已实现。[报告](S11-merge-report.md)保留全部 30×3 候选，正式 30 项与 15 协议节点通过，10 个批准后新任务通过；主方法完整整合 10/10、安全阻断 20/20，基线错误接纳 15/20、20/20。原始候选/批准/初始化重审、四类候选和五类统计反例通过；相同产品源码最近的 806 单元沿用原记录、不重复累计。[Merge Review 与真实桌面闭环](acceptance/S11-desktop.md)通过：806 Python 单元、40 桌面单元、1 真实只读集成及 3 Electron 流程；原始正负审计和双父/独立初始化/Recorded 保持，视觉复核 ship。[0.1.7](acceptance/S11-package-017.md) 的 20 个不同包内节点已有通过证据，失败尝试与后续复验保留；人工预期复核及完整前置继续，完整验收后再进入 S12 |
-| S12-A/B/C/D | 必选，未开始 | S11 及四项适配全部验收、最终桌面包验证后才达到 D3 |
+| S12-A/B/C/D | 必选，A 工程准备；正式前置待补 | 用户明确选择延续工程，已从 `fcb7635` 建立 `codex/s12-adapters`，按 [MCP 范围](S12-A-mcp-plan.md)先固定协议/端点/Schema 和测试；B/C/D 未开始。S11 及四项适配全部验收、最终桌面包验证后才达到 D3 |
 
 开发命令见 [DEVELOPMENT.md](DEVELOPMENT.md)。实施方案第 1.2 节记录当前临时开发顺序调整，S6/D1 环境与原生证据继续保留待补；阶段完整验收仍须满足前置退出条件，D1/D2 不能替代完整交付。
 
