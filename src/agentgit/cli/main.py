@@ -32,7 +32,7 @@ from agentgit.core.management import (
     NewTask,
     SubmitRun,
 )
-from agentgit.core.mcp import MCPServer
+from agentgit.core.mcp import MCPServer, MCPStdioServer
 from agentgit.core.mcp_runs import MCPProgram, MCPRecordedSpec
 from agentgit.core.merge_proposals import (
     ApproveMergeProposal,
@@ -193,6 +193,27 @@ def mcp_submit(
             replay=replay,
         )
         emit(submitted.model_dump(mode="json"))
+
+
+@app.command("mcp-stdio-bind")
+def mcp_stdio_bind(
+    server_identity: str,
+    program_ref: str,
+    tool_name: str,
+    effect: Annotated[EffectClass, typer.Option()],
+    timeout_ms: int = typer.Option(2000, min=20, max=30000),
+    max_response_bytes: int = typer.Option(65536, min=128, max=1048576),
+    testing: bool = False,
+) -> None:
+    """仅从后端批准白名单发现工具；不接受命令、参数或凭据。"""
+    with management(testing):
+        server = MCPStdioServer(
+            server_identity=server_identity,
+            program_ref=program_ref,
+            timeout_ms=timeout_ms,
+            max_response_bytes=max_response_bytes,
+        )
+        emit(configured_client(server).bind(tool_name, effect).model_dump(mode="json"))
 
 
 @app.command("mcp-fork")

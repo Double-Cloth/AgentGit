@@ -1,6 +1,6 @@
 # 本地开发与测试
 
-S12 当前在 `codex/s12-adapters` 推进，[MCP 实际任务](acceptance/S12-A.md)已在固定 HTTP/Schema/本地效果及网关上接通单次有界 Run/Worker、精确审批、恢复和完整 Recorded。最终源码 `source-sha256:80a3638629b34b6e5ccd0b3f40b0c695baa546e01c405ef5b0b1790d0ac388d3`，852 Python 单元、36 MCP/API 联调、74 核心、40 桌面单元及 4 个包内节点通过。Schema head `0027_mcp_runs` 仅扩展 jobs 类型约束，不新增业务表/依赖、不迁移业务库。命令见 [HTTP 演示](S12-A-mcp-demo.md)，可信 Server 范围见 [fixture](../tests/fixtures/mcp/v1/README.md)。stdio 启动边界及 A 完整退出继续核对；旧研究 release 仍使用其冻结源码，不修改旧 guard 接受新模块。
+S12 当前在 `codex/s12-adapters` 推进，[MCP A 本机核对](acceptance/S12-A.md)已覆盖固定 HTTP 及批准的单文件 Python stdio、有界 Run/Worker、精确审批、失租/未知恢复和完整 Recorded。最终源码 `source-sha256:aad91a9394b16d68cd2ac3d252705d8161b1fe2ee24d62fb43b46a3178da1b10`；866 Python 单元、53 个不同 MCP/API、74 核心、40 桌面单元和 5 个不同包内节点均有通过证据，失败尝试和复验保留。Schema head 仍 `0027_mcp_runs`，不新增依赖/业务表或业务迁移。命令见 [HTTP 演示](S12-A-mcp-demo.md)与 [stdio 演示](S12-A-stdio-demo.md)；stdio 必须通过后端白名单，不能使用它执行未审阅脚本或替代 S4 容器。正式前置/最终包待补，按授权进入 B 工程；旧研究 release 仍使用其冻结源码，不修改旧 guard 接受新模块。
 
 S11 已接通[Merge Review](acceptance/S11-desktop.md)与固定 IPC，并进入 [0.1.7 分发候选](acceptance/S11-package-017.md)；`playwright.merge.config.ts` 覆盖明确 HTTP fixture 和两套真实测试 Schema/API/独立 Worker/CAS。`npm run build` 后以唯一证据前缀运行，实际 Runtime 期间冻结产品、锁、迁移、构建与驱动。桌面 HTTP 修订仍受完整请求 1 MiB 限制，不能仅按两个单文件上限估计载荷。新 ZIP 的 20 个不同节点均有通过证据，3 次失败与后续复验保留；完整阶段前置见 [S11 门槛](acceptance/S11-gates.md)。
 

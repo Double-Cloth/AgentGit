@@ -1,5 +1,7 @@
 # MCP 有界任务与恢复接入
 
+本文件为 HTTP 任务增量的实施计划；后续[stdio 接入](S12-A-stdio-plan.md)复用同一有界程序/Worker/Recorded，仅扩展固定绑定的传输类型，当前映射见[工程记录](acceptance/S12-A.md)。
+
 接续 `17c02af` 首增量，在现有 Job、Run、History、ApprovalService 和 RecordedAdapter 上接通实际任务，不改变研究任务的五工具配置。沿用实施方案第 1.2 节的工程授权和全部正式门槛。
 
 首批实际任务明确为一次固定 MCP 工具调用：冻结绑定、参数、响应/墙钟/工具次数预算，输出 `mcp-result.json`。没有 LLM、任意代码或 stdio 执行。操作者通过后端可信登记构造绑定；渲染进程不能提交任意网络地址或凭据。参数先验证和检查凭据字段，凭据仍从 Worker 环境注入。

@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { desktopIdentity, launchDesktop } from '../support/desktop-runtime';
+import { captureDesktop, desktopIdentity, launchDesktop } from '../support/desktop-runtime';
 
 const REPO = '00000000-0000-4000-8000-000000000001', OURS = '10000000-0000-4000-8000-000000000001', THEIRS = '20000000-0000-4000-8000-000000000001';
 const PROPOSAL = '30000000-0000-4000-8000-000000000001', REVIEW = '40000000-0000-4000-8000-000000000001', APPROVAL = '50000000-0000-4000-8000-000000000001', VALIDATION = '60000000-0000-4000-8000-000000000001';
@@ -82,7 +82,7 @@ test('Merge Review 原键、完整修订、精确本人票据、冲突、批准�
     stale = false; await page.getByRole('button', { name: '只读刷新', exact: true }).click(); await expect(page.getByRole('button', { name: '核对并获取本人票据', exact: true })).toBeEnabled(); await page.getByRole('button', { name: '核对并获取本人票据', exact: true }).click(); await page.getByRole('checkbox', { name: '我已核对三方来源', exact: false }).check();
     await page.getByRole('button', { name: '批准合并当前候选', exact: true }).click(); await expect(page.getByRole('button', { name: '用原键确认请求', exact: true })).toBeEnabled(); await expect(page.getByRole('heading', { name: '已合并 · 后续执行须新建任务', exact: true })).toBeVisible(); expect(queued).toBe(false); expect(branched).toBe(false);
     await page.getByRole('button', { name: '用原键确认请求', exact: true }).click(); const approvals = posts.filter(item => item.path.endsWith('/approve')); expect(approvals.at(-1)).toEqual(approvals.at(-2));
-    for (const width of [1440, 360]) { await page.setViewportSize({ width, height: 1000 }); await page.evaluate(() => window.scrollTo(0, 0)); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); const file = join(folder, `merge-${width}.png`); await page.screenshot({ path: file, fullPage: true }); images.push(file); }
+    for (const width of [1440, 360]) { await page.setViewportSize({ width, height: 1000 }); await page.evaluate(() => window.scrollTo(0, 0)); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); const file = join(folder, `merge-${width}.png`); await captureDesktop(desktop, page, file, true); images.push(file); }
     await page.getByLabel('新分支名称', { exact: true }).fill('merged/fixture'); await page.getByRole('button', { name: '建立独立合并分支', exact: true }).click(); await page.getByLabel('Agent 配置 UUID', { exact: true }).fill(OURS); await page.getByRole('checkbox', { name: '我选择此配置和预算', exact: false }).check(); await page.getByRole('button', { name: '提交独立新任务', exact: true }).click(); await expect(page.getByRole('heading', { name: '新任务已提交', exact: true })).toBeVisible(); expect(queued).toBe(true);
     expect(await page.evaluate(() => 'bad' in window)).toBe(false); expect(errors).toEqual([]);
     const count = posts.length; await desktop.close(); desktop = await launchDesktop(profile, url, token); page = await desktop.firstWindow(); await desktopIdentity(desktop, page); await page.getByRole('button', { name: '合并审阅', exact: true }).click(); await page.getByRole('button', { name: PROPOSAL.slice(0, 12), exact: true }).click(); await expect(page.getByRole('heading', { name: '已合并 · 后续执行须新建任务', exact: true })).toBeVisible(); expect(posts).toHaveLength(count); await expect(page.getByRole('button', { name: '批准合并当前候选', exact: true })).toBeDisabled();

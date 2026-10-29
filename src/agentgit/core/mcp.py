@@ -9,7 +9,7 @@ from agentgit.core.canonical import ObjectType, decode, encode, object_digest
 from agentgit.core.effects import ToolRule
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.mcp_schema import check_schema
-from agentgit.core.models import Contract, EffectClass
+from agentgit.core.models import Contract, Digest, EffectClass
 
 MCP_VERSION: Literal["2026-07-28"] = "2026-07-28"
 MCPName = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
@@ -32,12 +32,15 @@ def check_mcp_credentials(value: Any, secret: str | None = None) -> None:
         raise AgentGitError(ErrorCode.FORBIDDEN, "MCP 业务内容不能包含运行时凭据")
 
 
-class MCPServer(Contract):
+class MCPServerBase(Contract):
     server_identity: MCPName
-    endpoint: str
     protocol_version: Literal["2026-07-28"] = MCP_VERSION
     timeout_ms: Annotated[int, Field(ge=20, le=30_000)] = 2000
     max_response_bytes: Annotated[int, Field(ge=128, le=1_048_576)] = 65_536
+
+
+class MCPServer(MCPServerBase):
+    endpoint: str
 
     @model_validator(mode="after")
     def registered_loopback(self) -> "MCPServer":
@@ -55,8 +58,13 @@ class MCPServer(Contract):
         return self
 
 
+class MCPStdioServer(MCPServerBase):
+    transport: Literal["stdio"] = "stdio"
+    program_ref: Digest
+
+
 class MCPBinding(Contract):
-    server: MCPServer
+    server: MCPServer | MCPStdioServer
     tool_name: MCPName
     # 保存 canonical 文本，避免冻结模型内部可变 dict 改写固定 Schema。
     definition_json: Annotated[str, Field(max_length=131_072)]

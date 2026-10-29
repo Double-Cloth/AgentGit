@@ -1,6 +1,6 @@
 # MCP HTTP 单次任务演示
 
-本演示使用仓库内可信 echo Server，不访问公网、不配置真实供应商 Key、没有 LLM。它证明一次工具调用、精确审批、独立 Recorded 和原始产物；不是完整 D3 或独立 Windows 安装验收。stdio 尚未接入，不能传入任意宿主程序或命令。
+本演示使用仓库内可信 echo Server，不访问公网、不配置真实供应商 Key、没有 LLM。它证明一次工具调用、精确审批、独立 Recorded 和原始产物；不是完整 D3 或独立 Windows 安装验收。已批准 Python stdio 的独立流程见 [stdio 演示](S12-A-stdio-demo.md)，两者都不能传入任意宿主程序或命令。
 
 ## 自动化复现
 

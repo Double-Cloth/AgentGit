@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { TOKEN, data, objects, startBackend } from '../support/real-client';
 import { captureDesktop, desktopIdentity, launchDesktop } from '../support/desktop-runtime';
 
-test('真实 MCP 任务：原生审批、零模型调用、逻辑状态及产物、重开只读', async () => {
-  const backend = await startBackend('mcp'), folder = await mkdtemp(join(tmpdir(), 'agentgit-s12-mcp-'));
+for (const transport of ['http', 'stdio'] as const) test(`真实 MCP ${transport} 任务：原生审批、零模型调用、逻辑状态及产物、重开只读`, async () => {
+  const backend = await startBackend(transport === 'stdio' ? 'mcp-stdio' : 'mcp'), folder = await mkdtemp(join(tmpdir(), `agentgit-s12-mcp-${transport}-`));
   const seed = await backend.command('seed').catch(async failure => { await backend.stop(); throw failure; });
   const runId = String(seed.run_id), profile = join(folder, 'profile');
   let desktop = await launchDesktop(profile, backend.url, TOKEN).catch(async failure => { await backend.stop(); throw failure; });

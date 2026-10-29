@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { JsonObject } from '../../src/shared/bridge';
 import { TOKEN, data, objects, startBackend, completed } from '../support/real-client';
-import { desktopIdentity, launchDesktop } from '../support/desktop-runtime';
+import { captureDesktop, desktopIdentity, launchDesktop } from '../support/desktop-runtime';
 
 const object = (value: unknown): JsonObject => value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
 test('真实 Merge Review：三方来源、完整修订、双父批准、独立初始化与显式 Recorded', async () => {
@@ -33,9 +33,9 @@ test('真实 Merge Review：三方来源、完整修订、双父批准、独立�
     await expect.poll(async () => object(data(await page!.evaluate(proposalId => window.agentgit.getMergeProposal({ proposalId }), proposalId)).revision).revision).toBe(2);
     await expect(page.getByRole('button', { name: '验证当前修订', exact: true })).toBeEnabled(); await page.getByRole('button', { name: '验证当前修订', exact: true }).click(); await expect(page.getByRole('button', { name: '核对并获取本人票据', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: '核对并获取本人票据', exact: true }).click(); await page.getByRole('checkbox', { name: '我已核对三方来源', exact: false }).check(); await expect(page.getByRole('button', { name: '批准合并当前候选', exact: true })).toBeEnabled();
-    for (const width of [1440, 360]) { await page.setViewportSize({ width, height: 1000 }); await page.evaluate(() => window.scrollTo(0, 0)); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); const file = join(folder, `review-${width}.png`); await page.screenshot({ path: file, fullPage: true }); screenshots.push(file);
-      const top = join(folder, `review-${width}-top.png`); await page.screenshot({ path: top }); screenshots.push(top);
-      for (const title of ['三方原文与来源', '验证与决定']) { const detail = join(folder, `review-${width}-${title}.png`); await page.locator('article > section').filter({ has: page.getByRole('heading', { name: title, exact: true }) }).evaluate(element => element.scrollIntoView({ block: 'start' })); await page.screenshot({ path: detail }); screenshots.push(detail); }
+    for (const width of [1440, 360]) { await page.setViewportSize({ width, height: 1000 }); await page.evaluate(() => window.scrollTo(0, 0)); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); const file = join(folder, `review-${width}.png`); await captureDesktop(desktop, page, file, true); screenshots.push(file);
+      const top = join(folder, `review-${width}-top.png`); await captureDesktop(desktop, page, top); screenshots.push(top);
+      for (const title of ['三方原文与来源', '验证与决定']) { const detail = join(folder, `review-${width}-${title}.png`); await page.locator('article > section').filter({ has: page.getByRole('heading', { name: title, exact: true }) }).evaluate(element => element.scrollIntoView({ block: 'start' })); await captureDesktop(desktop, page, detail); screenshots.push(detail); }
     }
     await page.getByRole('button', { name: '批准合并当前候选', exact: true }).dblclick(); await expect(page.getByRole('heading', { name: '已合并 · 后续执行须新建任务', exact: true })).toBeVisible();
     const approved = data(await page.evaluate(proposalId => window.agentgit.getMergeProposal({ proposalId }), proposalId)), approval = object(approved.approval);
@@ -58,7 +58,7 @@ test('真实 Merge Review：三方来源、完整修订、双父批准、独立�
     expect(invalid.ok).toBe(false); if (!invalid.ok) expect(invalid.error.code).toBe('recording_missing');
     await page.getByRole('button', { name: '查看新 Run 时间线', exact: true }).click(); await expect(page.getByRole('heading', { name: '时间线', exact: true })).toBeVisible();
     await page.getByRole('combobox').selectOption('ours'); await expect(page.locator(`.react-flow__edge[data-id$=":${String(approval.commit_id)}"]`)).toHaveCount(2);
-    await page.setViewportSize({ width: 1440, height: 1000 }); await page.evaluate(() => window.scrollTo(0, 0)); const graph = join(folder, 'two-parent-history.png'); await page.screenshot({ path: graph, fullPage: true }); screenshots.push(graph);
+    await page.setViewportSize({ width: 1440, height: 1000 }); await page.evaluate(() => window.scrollTo(0, 0)); const graph = join(folder, 'two-parent-history.png'); await captureDesktop(desktop, page, graph, true); screenshots.push(graph);
     await page.getByRole('button', { name: '从所选检查点分支 →', exact: true }).click(); await page.getByLabel('来源 Run', { exact: false }).fill(newRun); await page.getByLabel('安全起点 Commit', { exact: true }).fill(checkpoints[0]!); await page.getByLabel('验证终点 Commit', { exact: true }).fill(checkpoints.at(-1)!); await page.getByLabel('新分支名称', { exact: true }).fill('recorded/native-merge');
     const beforeRecorded = await backend.command('merge_state'); await page.getByRole('button', { name: '提交 Recorded', exact: true }).click(); await expect(page.getByRole('button', { name: '打开新运行时间线 →', exact: true })).toBeVisible();
     const recorded = objects(data(await page.evaluate(() => window.agentgit.listRuns({ limit: 100 }))).items).find(item => item.branch_name === 'recorded/native-merge')!; await completed(page, String(recorded.id));
@@ -67,7 +67,7 @@ test('真实 Merge Review：三方来源、完整修订、双父批准、独立�
     await desktop.close(); desktop = await launchDesktop(profile, backend.url, TOKEN); page = await desktop.firstWindow(); observe(page); await desktopIdentity(desktop, page); await page.getByRole('button', { name: '合并审阅', exact: true }).click(); await page.getByRole('button', { name: proposalId.slice(0, 12), exact: true }).click(); await expect(page.getByRole('heading', { name: '已合并 · 后续执行须新建任务', exact: true })).toBeVisible(); expect(objects((await backend.command('mutations')).mutations)).toHaveLength(count); await expect(page.getByRole('button', { name: '批准合并当前候选', exact: true })).toBeDisabled();
     expect(errors).toEqual([]); await writeFile(join(folder, 'native-merge.json'), JSON.stringify({ runtime, seed, proposalId, newRun, recorded, original, beforeRun, queued, input, final, screenshots, errors }, null, 2)); console.log(`真实合并桌面证据：${folder}`);
   } catch (failure) {
-    if (page && !page.isClosed()) { await page.screenshot({ path: join(folder, 'failure.png'), fullPage: true }); await writeFile(join(folder, 'failure.txt'), await page.locator('body').innerText()); }
+    if (page && !page.isClosed()) { await captureDesktop(desktop, page, join(folder, 'failure.png'), true); await writeFile(join(folder, 'failure.txt'), await page.locator('body').innerText()); }
     console.log(`真实合并失败证据：${folder}`); throw failure;
   } finally { try { await desktop.close(); } finally { await backend.stop(); } }
 });

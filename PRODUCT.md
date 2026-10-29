@@ -86,7 +86,7 @@ S11 第七增量[三十组真实输入准备](doc/acceptance/S11-merge-inputs.md
 
 S11 第八增量[完整三方法报告](doc/S11-merge-report.md)已归档 30×3 候选及十个批准后新任务：主方法完整内容 10/10、安全拒绝 20/20（19 冲突、1 Schema 拒绝），两种有限基线错误接纳 15/20、20/20，均未发布无效候选。30 正式与 15 协议节点通过，457 文件执行冻结，全量原始候选/来源/批准/初始化及四类候选、五类统计反例重核完成。正式成本共 607 模型、477 工具、6,477,472 Mock 字节，费用 0；独立人工预期、Merge Review、新包和整体前置继续，未退出 S11 或进入 S12。
 
-S12-A 的[MCP 工程记录](doc/acceptance/S12-A.md)已接通明确 HTTP 工具、固定 Schema/本地效果、精确审批及实际有界 Run/Worker。单次任务复用租约、分支写锁、预算和恢复，未知不重发；完整 Recorded 核对来源逻辑投影和原始产物，不构造客户端。当前 852 Python 单元、36 MCP/API 联调、74 核心兼容、40 桌面单元及 4 个包内节点通过，原始对象、三次真实进程终止和五项篡改反例独立复核。新增 `mcp-bind / mcp-submit / mcp-fork` 及[可运行演示](doc/S12-A-mcp-demo.md)，0.1.7 可查询/审批和查看状态/产物，修正审批列表缺少版本号。Schema head 为 `0027_mcp_runs`，无新业务表/依赖，仅迁移隔离测试 Schema；stdio 启动边界与 A 完整退出继续，B/C/D 未开始。没有本轮新分发包，正式阶段及用户暂缓的原生/人工门槛保持。
+S12-A 的[MCP 本机工程核对](doc/acceptance/S12-A.md)已覆盖明确 HTTP 工具及操作者批准的单文件 Python stdio Server，复用固定 Schema/本地效果、精确审批、有界 Run/Worker、租约和完整 Recorded。未知不重发，Recorded 不构造客户端或进程；stdio 的固定解释器/脚本摘要、最小环境及 Windows Job Object 已实测，discover→工具帧间失租也阻断。当前 866 Python 单元、53 个不同 MCP/API 节点、74 核心兼容、40 桌面单元及 5 个不同包内节点均有通过证据，失败尝试保留；52 原始包、40 Server 进程、6 次 Worker 终止和 8 项篡改反例独立复核。[HTTP](doc/S12-A-mcp-demo.md)/[stdio 演示](doc/S12-A-stdio-demo.md)及 CLI 可运行，0.1.7 查询/审批和状态/产物展示通过，包字节不变。head 仍 `0027_mcp_runs`，无新依赖/业务表或业务迁移。按授权进入 B 工程，C/D 和最终四适配新包仍必选，正式前置及用户暂缓的原生/人工门槛保持。
 
 ## Brand Commitments
 

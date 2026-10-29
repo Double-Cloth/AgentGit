@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from agentgit.adapters.mcp_http import MCPTransportFailure, post
+from agentgit.adapters.mcp_stdio import post as stdio_post
 from agentgit.core.canonical import ObjectType, decode, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.mcp import (
@@ -15,6 +16,7 @@ from agentgit.core.mcp import (
     MCPArguments,
     MCPBinding,
     MCPServer,
+    MCPStdioServer,
     check_mcp_credentials,
 )
 from agentgit.core.mcp_schema import validate_value
@@ -22,18 +24,22 @@ from agentgit.core.models import EffectClass, parse_contract
 from agentgit.runtime.ports import CallGateway, CallOutcome
 
 
-def configured_client(server: MCPServer) -> "MCPClient":
+def configured_client(server: MCPServer | MCPStdioServer) -> "MCPClient":
+    if isinstance(server, MCPStdioServer):
+        return MCPClient(server)
     name = "AGENTGIT_MCP_" + server.server_identity.upper().replace("-", "_") + "_TOKEN"
     return MCPClient(server, credential_env=name if name in os.environ else None)
 
 
 class MCPClient:
-    def __init__(self, server: MCPServer, *, credential_env: str | None = None):
+    def __init__(self, server: MCPServer | MCPStdioServer, *, credential_env: str | None = None):
         self.server = server
         self._deadline: float | None = None
         self._request_guard: Callable[[], None] | None = None
         self._secret: str | None = None
         if credential_env is not None:
+            if isinstance(server, MCPStdioServer):
+                raise AgentGitError(ErrorCode.CONFIGURATION, "MCP stdio 首批不支持凭据注入")
             if re.fullmatch(r"[A-Z][A-Z0-9_]{0,99}", credential_env) is None:
                 raise AgentGitError(ErrorCode.CONFIGURATION, "MCP 凭据环境变量名称无效")
             secret = os.environ.get(credential_env)
@@ -72,8 +78,17 @@ class MCPClient:
         )
         if self._request_guard is not None:
             self._request_guard()
-        reply = post(
-            self.server, method, params.get("name"), payload, self._secret, deadline=self._deadline
+        reply = (
+            stdio_post(self.server, payload, deadline=self._deadline, guard=self._request_guard)
+            if isinstance(self.server, MCPStdioServer)
+            else post(
+                self.server,
+                method,
+                params.get("name"),
+                payload,
+                self._secret,
+                deadline=self._deadline,
+            )
         )
         # 从未反射 HTTP 正文或远端错误文本，避免凭据回显进入异常和历史。
         result = decode(reply.payload)

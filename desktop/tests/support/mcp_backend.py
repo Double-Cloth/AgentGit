@@ -5,8 +5,10 @@ import hashlib
 import json
 import os
 import re
+import runpy
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from urllib.request import ProxyHandler, build_opener
@@ -29,11 +31,17 @@ from agentgit.services.management import ManagementService, public
 from agentgit.services.mcp_runs import MCPRunService
 
 ECHO = None
+STDIO = None
 
 
 def frozen():
     values = frozen_files()
-    for name in ("tests/helpers/mcp_server.py", "tests/fixtures/mcp/v1/tools.json"):
+    for name in (
+        "tests/helpers/mcp_server.py",
+        "tests/helpers/mcp_stdio_server.py",
+        "tests/helpers/mcp_stdio_fixture.py",
+        "tests/fixtures/mcp/v1/tools.json",
+    ):
         values[name] = hashlib.sha256((base.ROOT / name).read_bytes()).hexdigest()
     return values
 
@@ -42,19 +50,22 @@ def seed(history, root):
     global ECHO
     manifest = frozen()
     (root / "mcp-frozen.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    ready = root / "mcp-ready.json"
-    ECHO = subprocess.Popen(
-        [sys.executable, str(base.ROOT / "tests/helpers/mcp_server.py"), str(ready)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-    )
-    deadline = time.monotonic() + 10
-    while not ready.exists():
-        assert ECHO.poll() is None and time.monotonic() < deadline
-        time.sleep(0.02)
-    endpoint = json.loads(ready.read_text("utf-8"))["endpoint"]
-    server = MCPServer(server_identity="s12-desktop-fixture", endpoint=endpoint)
+    if STDIO is not None:
+        server = STDIO[0].model_copy(update={"server_identity": "s12-desktop-stdio"})
+    else:
+        ready = root / "mcp-ready.json"
+        ECHO = subprocess.Popen(
+            [sys.executable, str(base.ROOT / "tests/helpers/mcp_server.py"), str(ready)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+        deadline = time.monotonic() + 10
+        while not ready.exists():
+            assert ECHO.poll() is None and time.monotonic() < deadline
+            time.sleep(0.02)
+        endpoint = json.loads(ready.read_text("utf-8"))["endpoint"]
+        server = MCPServer(server_identity="s12-desktop-fixture", endpoint=endpoint)
     binding = MCPClient(server).bind("echo", EffectClass.NON_IDEMPOTENT_WRITE)
     limits = BudgetLimits(
         max_steps=1,
@@ -93,6 +104,27 @@ def seed(history, root):
 
 
 def echo_counts(server):
+    if server.get("transport") == "stdio":
+        assert STDIO is not None
+        rows = STDIO[3]()
+        calls = sum(r["event"] == "effect" for r in rows)
+        starts = [r for r in rows if r["event"] == "started"]
+        return dict(
+            mode="normal",
+            requests=sum(r["event"] == "request" for r in rows),
+            calls=calls,
+            writes=calls,
+            valid_headers=all(
+                r["meta"]["io.modelcontextprotocol/protocolVersion"] == "2026-07-28"
+                for r in rows
+                if r["event"] == "request"
+            ),
+            authorized=False,
+            records=rows,
+            processes=len(starts),
+            all_exited=all(STDIO[4](r["pid"]) for r in starts),
+            approved_program=STDIO[1].model_dump(mode="json"),
+        )
     endpoint = server["endpoint"].removesuffix("/mcp")
     with build_opener(ProxyHandler({})).open(endpoint + "/state", timeout=2) as response:
         return json.loads(response.read(8192))
@@ -179,7 +211,19 @@ if __name__ == "__main__":
         worker_main(sys.argv[2], Path(sys.argv[3]))
     else:
         try:
-            base.main(seed_case=seed, extra_command=extra_command)
+            if os.environ.get("AGENTGIT_MCP_NATIVE_TRANSPORT") == "stdio":
+
+                class Environment:
+                    @staticmethod
+                    def setenv(key, value):
+                        os.environ[key] = value
+
+                helper = runpy.run_path(str(base.ROOT / "tests/helpers/mcp_stdio_fixture.py"))
+                with tempfile.TemporaryDirectory(prefix="agentgit-native-stdio-") as directory:
+                    STDIO = (*helper["prepare"](Path(directory), Environment()), helper["exited"])
+                    base.main(seed_case=seed, extra_command=extra_command)
+            else:
+                base.main(seed_case=seed, extra_command=extra_command)
         finally:
             if ECHO is not None:
                 ECHO.terminate()

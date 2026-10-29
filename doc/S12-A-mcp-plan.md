@@ -2,6 +2,8 @@
 
 2026-10-29，`codex/s12-adapters`，依据用户明确延续工程的选择及实施方案第 1.2 节。S11/原生/人工前置保持待补，本文不是阶段验收记录。
 
+本文件保留首增量的 HTTP 范围；后续按[stdio 计划](S12-A-stdio-plan.md)增加批准的单文件 Python Server，当前完整本机映射见[工程记录](acceptance/S12-A.md)。下文“暂不支持 stdio”描述首增量当时的边界。
+
 固定 MCP `2026-07-28`，资料核对于本日：[版本/逐请求元数据](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning)、[基础字段](https://modelcontextprotocol.io/specification/2026-07-28/basic/index)、[Streamable HTTP](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http)、[工具](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)。该版本使用逐请求版本和能力，不使用旧 initialize 会话。先实现明确的 HTTP JSON 完整响应子集；不宣称通用 MCP 客户端。
 
 1. 由操作者登记本地 server_identity、唯一 `http://127.0.0.1:端口/mcp` 和本地效果分类。禁止任意主机、DNS、私网、用户信息、查询/片段、代理及重定向。stdio 启动、OAuth、资源/提示词、SSE、额外输入/任务请求均暂不支持，配置不得携带程序或命令。

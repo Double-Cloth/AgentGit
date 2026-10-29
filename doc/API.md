@@ -546,7 +546,7 @@ uv run --locked agentgit repair-review-decision $repo.repository_id $proposal.pr
 
 ## MCP 有界任务（S12-A）
 
-可信操作者使用 `mcp-bind / mcp-submit / mcp-fork`；完整输入和运行顺序见 [MCP HTTP 演示](S12-A-mcp-demo.md)。没有可由渲染器提交任意 endpoint/command 的 HTTP 路由。任务复用既有 Run 查询、控制、审批和产物接口，类型为 `mcp_run`，不创建研究 Task 或模型调用。
+可信操作者使用 `mcp-bind / mcp-stdio-bind / mcp-submit / mcp-fork`；完整输入和运行顺序见 [MCP HTTP 演示](S12-A-mcp-demo.md)与 [stdio 演示](S12-A-stdio-demo.md)。stdio 只接受后端白名单中的程序引用，固定当前 Worker 基础 Python/已审阅单文件脚本的路径与摘要、固定启动参数及最小环境，不接受 command/args/env/cwd。没有可由渲染器提交任意 endpoint/command 的 HTTP 路由。任务复用既有 Run 查询、控制、审批和产物接口，类型为 `mcp_run`，不创建研究 Task 或模型调用。
 
 `GET /runs/{id}` 的 MCP 结果增加 `adapter`：固定程序/Server/工具/Schema/本地效果、limits、logical_usage、actual_attempts、response_ref、mode、has_model=false。成功 Live 的 `recording` 给出明确来源 Run/起止 Commit；它不创建 Fork 或执行新任务。Recorded 的逻辑调用仍为 1，实际尝试为 0；未知实际尝试保持 null，不把未知改成零。
 

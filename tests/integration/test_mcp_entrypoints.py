@@ -5,19 +5,20 @@ from uuid import UUID
 
 import pytest
 import sqlalchemy as sa
+import test_mcp_adapter as http_cases
 from fastapi.testclient import TestClient
 from mcp_evidence import archive_mcp_run as archive_mcp_run
 from pydantic import SecretStr
-from test_mcp_adapter import server as server
 from test_mcp_runs import isolated_worker_credentials as isolated_worker_credentials
 from test_mcp_runs import state
+from test_mcp_stdio_runs import stdio_server_case
 from typer.testing import CliRunner
 
 from agentgit.api.main import create_app
 from agentgit.cli.main import app
 from agentgit.config import Settings
 from agentgit.core.canonical import ObjectType, encode
-from agentgit.core.mcp import MCPArguments, MCPBinding
+from agentgit.core.mcp import MCPArguments, MCPBinding, MCPStdioServer
 from agentgit.core.mcp_runs import MCPProgram, MCPRecordedSpec
 from agentgit.core.models import CallIntent, parse_contract
 from agentgit.core.versions import NewBranch
@@ -27,6 +28,12 @@ from agentgit.services.research import ResearchService
 from agentgit.worker import Worker
 
 pytestmark = pytest.mark.integration
+http_server = http_cases.server
+
+
+@pytest.fixture(params=["http", "stdio"])
+def server(request, http_server, mcp_stdio):
+    return http_server if request.param == "http" else stdio_server_case(mcp_stdio)
 
 
 def test_cli_http_approval_query_and_recorded_share_one_real_run(
@@ -40,9 +47,9 @@ def test_cli_http_approval_query_and_recorded_share_one_real_run(
     bound = runner.invoke(
         app,
         [
-            "mcp-bind",
+            "mcp-stdio-bind" if isinstance(config, MCPStdioServer) else "mcp-bind",
             config.server_identity,
-            config.endpoint,
+            config.program_ref if isinstance(config, MCPStdioServer) else config.endpoint,
             "echo",
             "--effect",
             "NON_IDEMPOTENT_WRITE",
@@ -175,6 +182,9 @@ def test_cli_http_approval_query_and_recorded_share_one_real_run(
     )
     assert recorded.exit_code == 0, recorded.output
     before = counts()
+    if isinstance(config, MCPStdioServer):
+        # 来源成功后移除启动白名单；纯 Recorded 仍不读取或解析它。
+        monkeypatch.delenv("AGENTGIT_MCP_STDIO_REGISTRY")
     result = Worker(
         service.jobs, mcp_client_factory=lambda _: pytest.fail("Recorded 不能构造客户端")
     ).run_once()
