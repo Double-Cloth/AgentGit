@@ -2,6 +2,8 @@
 
 当前实现依据设计/实施方案 v1.0.0；本文件记录实际进展，不将规划中的预期视为完成。
 
+2026-10-30 S12-B 首增量：[固定原生图与 checkpoint 日志](acceptance/S12-B.md)实现受限图校验、只读 MCP 网关、原生暂停/恢复、AGJSON 操作日志、先持久化再确认及故障后重新接管要求。最终 917 单元（原 866 加新增 51）和 3 项真实 History/CAS/MCP 集成通过；23 个 Commit、118 个对象、三次实际工具/九次协议请求及四个审计反例独立核对。首轮构造遗漏、SDK 合法 null、损坏配置异常及 fixture 就绪文件竞争均保留原报告并修正。封存 SHA256 `0f1bc45ab6f7f00bb9822837604ee3e2ea9b2020dee5f97edf75f321da95d5b4`。尚未接入 Job/Worker、服务层 Fork 或完整 Recorded；未增加迁移、业务操作或桌面包，正式前置保持。
+
 2026-10-30 S12-B 准备：[LangGraph 计划](S12-B-langgraph-plan.md)/[工程记录](acceptance/S12-B.md)固定 `1.2.18`、只读取证→review→publish 图和反例，uv 锁新增所需传递依赖、无原包升级。禁用 LangSmith 自动 pytest 插件后原 866 单元通过；原生 SDK 的 AGJSON checkpoint 往返、暂停/恢复/Fork 探针通过，追踪关闭时网络尝试 0。尚无持久图/Worker/严格 Recorded 实现；旧 A 源码/锁封存不改，B/C/D 与最终正式门槛继续。
 
 2026-10-29 S12-A 本机退出映射：[MCP HTTP/可信 Python stdio](acceptance/S12-A.md)已覆盖 T01/T05/T06/T07 的 A 本机范围。当前 866 Python 单元、53 个不同 MCP/API、74 核心、40 桌面单元及 5 个不同包内节点均有通过证据；52 原始包、40 Server 进程、6 次真实 Worker 终止和八项反例独立核对。发现→工具帧之间的失租阻断，原生重开原始包相同；早期临时文件清理、setup/发现/关闭/截图失败保留，固定目录补跑及对应复验通过。完整封存 SHA256 `ce1e6ec83b5432d0f595fcce21a696340861b2bc2468a514ca524f0798f222e2`。没有新依赖/迁移/包或业务操作；正式前置与最终 D3 保持，按用户授权继续 B。

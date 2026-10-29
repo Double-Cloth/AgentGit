@@ -1,6 +1,6 @@
 # AgentGit 产品上下文
 
-S12-B 当前完成[范围/依赖与原生语义准备](doc/acceptance/S12-B.md)：固定 LangGraph `1.2.18` 和一类只读图，新增必需传递依赖且未升级原包。新锁下原 866 单元和原生 checkpoint 暂停/恢复/Fork 探针通过；持久图/Worker/Recorded 尚待实现。A 的完整证据继续使用其原锁和冻结，不以准备工作代替 B/C/D 或 D3。
+S12-B 当前实现[固定图与公共 checkpoint 日志首增量](doc/acceptance/S12-B.md)：实际 LangGraph `1.2.18` 驱动只读取证、审阅和报告，AGJSON 日志经持久化回调确认保存。当前 917 单元和 3 项真实 MCP/PostgreSQL/History 集成通过，含重新打开恢复、HEAD 竞争和项目隔离；日志与原始调用另经审计。Job/Worker、独立 Run/分支 Fork、完整 Recorded 和真实进程中断继续，正式 B/C/D 与 D3 未验收。A 的完整证据仍使用其原锁和冻结。
 
 <!-- impeccable:product-schema 1 -->
 

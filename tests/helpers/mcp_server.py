@@ -111,7 +111,11 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     server.daemon_threads = True
-    Path(sys.argv[1]).write_text(
+    ready = Path(sys.argv[1])
+    pending = ready.with_suffix(".pending")
+    pending.write_text(
         json.dumps({"endpoint": f"http://127.0.0.1:{server.server_port}/mcp"}), encoding="utf-8"
     )
+    # 就绪标记必须在完整 JSON 关闭后发布，读取方不能看到空文件或半写入内容。
+    pending.replace(ready)
     server.serve_forever()
