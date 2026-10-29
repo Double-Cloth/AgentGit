@@ -6,7 +6,7 @@ S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命
 
 ## 环境
 
-当前开发分支为 `codex/s11-merge`。S11 的共同祖先、有限状态/产物验证、[耐久提案](acceptance/S11-proposals.md)、[精确批准/双父后端](acceptance/S11-approval.md)、[合并后的独立新任务](acceptance/S11-merged-runs.md)及[再次合并/交叉历史](acceptance/S11-remerge.md)已实现。[三十组真实输入准备](acceptance/S11-merge-inputs.md)完成各十组构造/来源审计并修正单侧补读记录选择；正式三方法/批准后执行、桌面/新包继续，S12 仍待 S11 完整验收。当前核对范围见各增量记录，以下阶段记录保留历史范围。
+当前开发分支为 `codex/s11-merge`。S11 的共同祖先、有限状态/产物验证、[耐久提案](acceptance/S11-proposals.md)、[精确批准/双父后端](acceptance/S11-approval.md)、[合并后的独立新任务](acceptance/S11-merged-runs.md)及[再次合并/交叉历史](acceptance/S11-remerge.md)已实现。[正式三十组三方法](acceptance/S11-merge-evaluation.md)完成全量候选/双父/零基线新任务重审，结果见[报告](S11-merge-report.md)；人工预期、桌面/新包及整体前置继续，S12 仍待 S11 完整验收。当前核对范围见各增量记录，以下阶段记录保留历史范围。
 
 ```powershell
 uv run --locked pytest tests/unit
@@ -14,6 +14,7 @@ uv run --locked pytest tests/integration/test_merge_approval.py
 uv run --locked pytest tests/integration/test_merge_runs.py tests/integration/test_merge_process_crash.py tests/integration/test_merge_runs_api.py
 uv run --locked pytest tests/integration/test_remerge.py
 uv run --locked pytest tests/integration/test_merge_benchmark_construction.py
+uv run --locked pytest tests/integration/test_merge_benchmark_protocol.py
 uv run --locked pytest tests/integration/test_merge_proposals.py tests/integration/test_merge_proposal_api.py tests/integration/test_merge_migration.py
 uv run --locked pytest tests/integration/test_merge_research_validation.py tests/integration/test_merge_unknown_input.py tests/integration/test_merge_preview.py tests/integration/test_versions.py tests/integration/test_validator_service.py
 uv run --locked ruff check src tests migrations
@@ -22,6 +23,8 @@ uv run --locked mypy src
 ```
 
 集成套件只使用 `AGENTGIT_TEST_DATABASE_URL` 指定的测试库及独立 Schema/CAS；产品源字节、锁及实际驱动在相关 Runtime 全部终态前保持冻结。可设置 `AGENTGIT_MERGE_PROPOSAL_EVIDENCE` 归档原始证据，详情以 `tests/integration/merge_proposal_cases.py` 为准；每次使用新目录，不覆盖旧包。离线重审脚本 `tests/integration/merge_proposal_verify.py` 读取指定六组归档，不连接数据库，输出只能创建一次。原 S8/S10 冻结源码不等于当前产品，旧 release guard 拒绝不能通过修改旧协议规避。
+
+S11 正式三方法冻结于 `2ffec49` 与 `evaluation-release-v1.json`。默认运行 `test_merge_benchmark_evaluation.py` 是原型模式，正式阶段还须通过完整文件/源码/资产门禁；已执行正式结果的文档更正保留在后续提交。完整重跑在 `2ffec49` 的隔离完整工作树进行，分析器从归档 `analysis-v1/` 或后续报告提交取得，命令及原始包见报告，不修改旧 release 来接受新源码/文档。
 
 当前 Repair Lab 已进入 0.1.6 并完成包内核对，三十例/五方法已全量执行并原始审计，见 [S10 退出矩阵](acceptance/S10-gates.md)和 [D2 研究报告](D2-research-report.md)。正式基准输出只创建一次，复现实验使用独立工作目录及既定版本，按[复现说明](S10-evaluation-reproduction.md)操作；原始评估与当前分析 v2 不覆盖旧结果。迁移清单漏项需要额外的已归档 Git 基线核验，不能仅凭旧 release 入口通过。完整阶段前置仍待补，后续 S11/S12 保持必选。以下增量说明保留其历史范围。
 
