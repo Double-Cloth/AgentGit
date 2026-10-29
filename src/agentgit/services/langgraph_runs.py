@@ -10,10 +10,13 @@ from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.jobs import Submission
 from agentgit.core.langgraph import LangGraphProgram
-from agentgit.core.langgraph_runs import LangGraphJobPayload
+from agentgit.core.langgraph_runs import LangGraphForkSpec, LangGraphJobPayload, NewLangGraphFork
 from agentgit.core.models import parse_contract
+from agentgit.core.versions import NewBranch
 from agentgit.services.environment import dependency_lock_digest, source_revision
 from agentgit.services.history import TABLES
+from agentgit.services.langgraph_forks import load_fork_source
+from agentgit.services.versions import PreparedBranch, VersionService
 
 if TYPE_CHECKING:
     from agentgit.services.jobs import JobService
@@ -59,6 +62,66 @@ class LangGraphRunService:
         expected_head: str | None,
         expected_version: int,
     ) -> Submission:
+        return self._submit(
+            repository_id,
+            program,
+            actor=actor,
+            key=key,
+            branch_name=branch_name,
+            expected_head=expected_head,
+            expected_version=expected_version,
+        )
+
+    def fork(
+        self, repository_id: UUID, request: NewLangGraphFork, *, actor: str, key: str
+    ) -> Submission:
+        request = parse_contract(encode(request.model_dump(mode="json")), NewLangGraphFork)
+        source, state, _ = load_fork_source(
+            self.history, repository_id, UUID(request.source_run_id), request.from_commit
+        )
+        assert state.native_ref is not None
+        spec = LangGraphForkSpec(
+            source_run_id=request.source_run_id,
+            from_commit=request.from_commit,
+            source_program_ref=state.program_ref,
+            native_ref=state.native_ref,
+        )
+        program = parse_contract(
+            encode({**source.model_dump(mode="json"), "review_note": request.review_note}),
+            LangGraphProgram,
+        )
+        branch = NewBranch(
+            source_run_id=request.source_run_id,
+            from_commit=request.from_commit,
+            name=request.name,
+            expected_version=request.expected_version,
+        )
+        prepared = VersionService(self.history).prepare_fork(repository_id, branch)
+        return self._submit(
+            repository_id,
+            program,
+            actor=actor,
+            key=key,
+            branch_name=request.name,
+            expected_head=request.from_commit,
+            expected_version=0,
+            fork=spec,
+            prepared=prepared,
+        )
+
+    def _submit(
+        self,
+        repository_id: UUID,
+        program: LangGraphProgram,
+        *,
+        actor: str,
+        key: str,
+        branch_name: str,
+        expected_head: str | None,
+        expected_version: int,
+        fork: LangGraphForkSpec | None = None,
+        prepared: PreparedBranch | None = None,
+    ) -> Submission:
         program = parse_contract(encode(program.model_dump(mode="json")), LangGraphProgram)
         if (
             type(expected_version) is not int
@@ -78,6 +141,7 @@ class LangGraphRunService:
             code_revision=source_revision(),
             dependency_lock_digest=dependency_lock_digest(),
             max_wall_ms=program.limits.max_wall_ms,
+            fork=fork,
         )
         payload_obj = self.history.objects.put(
             ObjectType.BLOB, encode(payload.model_dump(mode="json"))
@@ -87,7 +151,7 @@ class LangGraphRunService:
         response = self.history.objects.put(
             ObjectType.BLOB, encode(submission.model_dump(mode="json"))
         )
-        route = f"POST /repositories/{repository_id}/langgraph-runs"
+        route = f"POST /repositories/{repository_id}/langgraph-{'forks' if fork else 'runs'}"
         request_digest = object_digest(
             ObjectType.BLOB,
             encode(
@@ -97,6 +161,7 @@ class LangGraphRunService:
                     "branch_name": branch_name,
                     "head": expected_head,
                     "version": expected_version,
+                    **({"fork": fork.model_dump(mode="json")} if fork is not None else {}),
                 }
             ),
         )
@@ -125,6 +190,10 @@ class LangGraphRunService:
                     )
                 return parse_contract(
                     self.history.objects.get(cached["result_ref"], ObjectType.BLOB), Submission
+                )
+            if prepared is not None:
+                VersionService(self.history).publish_fork(
+                    prepared, actor=actor, connection=connection
                 )
             branches = TABLES["branches"]
             branch = (
@@ -157,6 +226,7 @@ class LangGraphRunService:
                     branch_name=branch_name,
                     base_commit_id=expected_head,
                     checkpoint_commit_id=expected_head,
+                    origin_run_id=UUID(fork.source_run_id) if fork else None,
                     mode="live",
                     status="queued",
                 )
@@ -175,6 +245,7 @@ class LangGraphRunService:
                     id=job_id,
                     repository_id=repository_id,
                     run_id=run_id,
+                    origin_run_id=UUID(fork.source_run_id) if fork else None,
                     kind="langgraph_run",
                     payload_ref=payload_obj.id,
                 )

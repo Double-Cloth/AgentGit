@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from agentgit.core.langgraph_runs import LangGraphRunState
+from agentgit.core.langgraph_runs import LangGraphRunState, NewLangGraphFork
 from agentgit.core.models import RunStatus
 from agentgit.core.research import BudgetUsage
 
@@ -47,3 +47,22 @@ def test_internal_start_boundary_is_preserved_and_physical_refs_are_excluded():
         native_next=("__start__",),
     )
     assert first.logical_projection() == other.logical_projection()
+
+
+@pytest.mark.parametrize(
+    "change",
+    [{"review_note": "x" * 2049}, {"expected_version": 1}, {"limits": {}}, {"name": " leading"}],
+)
+def test_fork_request_only_accepts_bounded_note_and_new_branch(change):
+    value = {
+        "source_run_id": "00000000-0000-0000-0000-000000000001",
+        "from_commit": "a" * 64,
+        "name": "fork",
+        "expected_version": 0,
+        "review_note": "",
+        **change,
+    }
+    import json
+
+    with pytest.raises(ValidationError):
+        NewLangGraphFork.model_validate_json(json.dumps(value))

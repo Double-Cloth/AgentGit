@@ -2,6 +2,8 @@
 
 当前实现依据设计/实施方案 v1.0.0；本文件记录实际进展，不将规划中的预期视为完成。
 
+2026-10-30 S12-B 安全 Fork：[完整 review 边界](acceptance/S12-B.md)已接通原子新分支/Run/Job、独立 thread 克隆和原生备注更新；历史点、连续 Fork、原键/并发幂等与回滚通过。当前 939 单元、36 图集成和 41 历史/版本/合并兼容全过；七个实际进程终止点零重发，三处 Fork 终止后只生效一次原生备注更新。34 原始包的 373 Commit/2,109 对象记录、14 Fork、全部调用/父边/分支来源/幂等收据和六个审计反例独立核对，Fork 自身取证为 0。封存 SHA256 `85cdfd6d2cabd80636b036aee98d36c3ad08d96da75633ed49d04acce7be6a11`。早期指纹测试失败及归档表遗漏保留，最终先冻结后完整复验。无新依赖/迁移/业务操作/桌面包；完整 Recorded 与其余 B 退出继续，正式前置保持，未合并 main。
+
 2026-10-30 S12-B Live Worker：[耐久图任务与演示](S12-B-langgraph-demo.md)接通既有 Run/Job/租约/History、CLI、原生暂停/恢复及共同产物预算，正式源/锁核对后才执行。最终 933 单元、20 项图相关集成和 118 项核心兼容全过，四个实际解释器终止点零重发；只有意图的来源保持未知。18 原始包的 152 Commit/836 对象、12 次工具/42 次协议请求及五个篡改反例独立核对。封存 SHA256 `098c858d6686530dafa6a7978f71d7d3b342fbff848f61cc7851ff0eb9186ab1`，514 输入冻结、7,425 文件索引；早期初始原生状态/诊断掩盖和一次晚冻结均保留，最终按先冻结后执行复验。head28 仅扩展 Job CHECK、仍 73 业务表，只迁移测试 Schema。独立 Run/分支 Fork、完整 Recorded、更多图控制/stdio 和完整桌面退出继续，B/C/D/D3 及正式前置未验收，未合并 main。
 
 2026-10-30 S12-B 首增量：[固定原生图与 checkpoint 日志](acceptance/S12-B.md)实现受限图校验、只读 MCP 网关、原生暂停/恢复、AGJSON 操作日志、先持久化再确认及故障后重新接管要求。最终 917 单元（原 866 加新增 51）和 3 项真实 History/CAS/MCP 集成通过；23 个 Commit、118 个对象、三次实际工具/九次协议请求及四个审计反例独立核对。首轮构造遗漏、SDK 合法 null、损坏配置异常及 fixture 就绪文件竞争均保留原报告并修正。封存 SHA256 `0f1bc45ab6f7f00bb9822837604ee3e2ea9b2020dee5f97edf75f321da95d5b4`。尚未接入 Job/Worker、服务层 Fork 或完整 Recorded；未增加迁移、业务操作或桌面包，正式前置保持。
@@ -29,7 +31,7 @@
 | S10 | 本机工程与三十例研究核对完成，整体前置待补 | [退出矩阵](acceptance/S10-gates.md)覆盖缩减、独立复测、精确审批、伪修复边界和完整评估；当前 179 协议及 13 关键集成通过，三条关键原始链重审。[D2 研究报告](D2-research-report.md)完整保留 30×5 原始结果，开发目标 12/12、保留主方法 6/10、无排序 6/10、不缩减 8/10；只限 fixture，不宣称全面基线优势。最终最小性使用分析 v2，迁移清单遗漏及 Git 基线补充明确披露。[备份恢复](acceptance/S10-backup-restore.md)两项通过。S9 默认空间/额度不变，业务配置未采纳；S6/D1、S8 待补及整体阶段前置保留 |
 | S10 桌面 | 本机及 0.1.6 包内核对通过，原生前置待补 | [0.1.6 分发](acceptance/S10-package-016.md)35 单元及 17 条包内 Electron 流程通过，包含 Repair Lab、联合字段缩减/六加四、精确审批与版本竞争、候选交接、取消/未知、观测禁正式采纳。原始 CAS 独立重审，源不变，批准无新 Job/Run，重开无 POST；原包四件套在研究结束后再次核对未变。独立 Windows/原生及完整阶段前置仍待补，不重复累计旧桌面测试 |
 | S11 | 开发中，三方法及桌面闭环通过，整体前置待补 | [有限候选](acceptance/S11-artifact-preview.md)、[完整硬验证](acceptance/S11-state-validation.md)、[耐久提案](acceptance/S11-proposals.md)、[原子批准](acceptance/S11-approval.md)、[新任务/实际中断](acceptance/S11-merged-runs.md)、[再次合并](acceptance/S11-remerge.md)及[正式三方法](acceptance/S11-merge-evaluation.md)已实现。[报告](S11-merge-report.md)保留全部 30×3 候选，正式 30 项与 15 协议节点通过，10 个批准后新任务通过；主方法完整整合 10/10、安全阻断 20/20，基线错误接纳 15/20、20/20。原始候选/批准/初始化重审、四类候选和五类统计反例通过；相同产品源码最近的 806 单元沿用原记录、不重复累计。[Merge Review 与真实桌面闭环](acceptance/S11-desktop.md)通过：806 Python 单元、40 桌面单元、1 真实只读集成及 3 Electron 流程；原始正负审计和双父/独立初始化/Recorded 保持，视觉复核 ship。[0.1.7](acceptance/S11-package-017.md) 的 20 个不同包内节点已有通过证据，失败尝试与后续复验保留；人工预期复核及完整前置继续，完整验收后再进入 S12 |
-| S12-A/B/C/D | 必选，A 本机核对通过，B Live 工程已接通；正式前置待补 | [A 的 HTTP/可信 stdio、有界任务及完整 Recorded](acceptance/S12-A.md)保留原源/锁封存。[B Live Worker](acceptance/S12-B.md)当前 933 单元、20 图集成和 118 核心兼容通过，四处实际进程终止/原始关系已审计，head28 仅测试 Schema 类型约束。B 的服务层 Fork、完整 Recorded、更多边界/桌面及最终退出仍待完成，之后继续 C/D 和最终四适配新包/D3；原生/人工正式前置保持 |
+| S12-A/B/C/D | 必选，A 本机核对通过，B Live/Fork 工程已接通；正式前置待补 | [A 的 HTTP/可信 stdio、有界任务及完整 Recorded](acceptance/S12-A.md)保留原源/锁封存。[B Live/Fork](acceptance/S12-B.md)当前 939 单元、36 图集成和 41 历史/版本/合并兼容通过，七处实际进程终止/原始关系已审计，head28 未新增迁移。完整 Recorded、更多边界/桌面及 B 最终退出仍待完成，之后继续 C/D 和最终四适配新包/D3；原生/人工正式前置保持 |
 
 开发命令见 [DEVELOPMENT.md](DEVELOPMENT.md)。实施方案第 1.2 节记录当前临时开发顺序调整，S6/D1 环境与原生证据继续保留待补；阶段完整验收仍须满足前置退出条件，D1/D2 不能替代完整交付。
 

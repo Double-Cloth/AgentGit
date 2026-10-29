@@ -51,11 +51,15 @@ def archive(history, server, request):
                 "runs",
                 "jobs",
                 "branches",
+                "branch_forks",
                 "commits",
+                "commit_parents",
+                "run_commits",
                 "snapshots",
                 "artifacts",
                 "events",
                 "external_calls",
+                "idempotency_keys",
             )
         }
     objects = []

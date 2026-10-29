@@ -4,8 +4,20 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field, model_validator
 
-from agentgit.core.models import Contract, Digest, RunStatus
+from agentgit.core.models import Contract, Digest, Identifier, RunStatus
 from agentgit.core.research import BudgetUsage, CallTrace
+from agentgit.core.versions import NewBranch
+
+
+class NewLangGraphFork(NewBranch):
+    review_note: Annotated[str, Field(max_length=2048)]
+
+
+class LangGraphForkSpec(Contract):
+    source_run_id: Identifier
+    from_commit: Digest
+    source_program_ref: Digest
+    native_ref: Digest
 
 
 class LangGraphJobPayload(Contract):
@@ -15,6 +27,7 @@ class LangGraphJobPayload(Contract):
     code_revision: str
     dependency_lock_digest: Digest
     max_wall_ms: Annotated[int, Field(ge=1, le=900_000)]
+    fork: LangGraphForkSpec | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
 class LangGraphRunState(Contract):
@@ -30,6 +43,7 @@ class LangGraphRunState(Contract):
     native_next: tuple[str, ...] = ()
     values: dict[str, Any] = Field(default_factory=dict)
     review_boundary_reached: bool = False
+    fork_initialized: bool = False
     error_code: str | None = None
 
     @model_validator(mode="after")
@@ -101,5 +115,6 @@ class LangGraphRunState(Contract):
             "next": list(self.native_next),
             "values": self.values,
             "review_boundary_reached": self.review_boundary_reached,
+            "fork_initialized": self.fork_initialized,
             "error_code": self.error_code,
         }

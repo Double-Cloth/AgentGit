@@ -1006,6 +1006,10 @@ class ManagementService:
                     "mode": row["mode"],
                     "has_model": False,
                     "recording": None,
+                    "fork": graph_payload.fork.model_dump(mode="json")
+                    if graph_payload.fork
+                    else None,
+                    "fork_initialized": graph_state.fork_initialized,
                 }
             if job is not None and job["kind"] == "mcp_run":
                 payload = self.mcp_runs.payload(repository_id, job["id"])

@@ -25,6 +25,7 @@ from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.experiments import FreezeValidator, NewExperiment
 from agentgit.core.interventions import NewIntervention
 from agentgit.core.langgraph import LangGraphProgram
+from agentgit.core.langgraph_runs import NewLangGraphFork
 from agentgit.core.management import (
     ControlRun,
     DecideApproval,
@@ -220,6 +221,20 @@ def langgraph_submit(
             expected_version=expected_version,
         )
         emit(submitted.model_dump(mode="json"))
+
+
+@app.command("langgraph-fork")
+def langgraph_fork(
+    repository_id: UUID, file: Path, key: str = typer.Option(...), testing: bool = False
+) -> None:
+    """从完整 review 检查点创建独立图任务，只编辑审阅备注。"""
+    with management(testing) as service:
+        request = _mcp_input(file, NewLangGraphFork, 16384)
+        emit(
+            LangGraphRunService(service.jobs)
+            .fork(repository_id, request, actor=service.actor, key=key)
+            .model_dump(mode="json")
+        )
 
 
 @app.command("mcp-stdio-bind")

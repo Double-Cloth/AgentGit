@@ -3,6 +3,7 @@
 import platform
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 import sqlalchemy as sa
 from sqlalchemy.engine import Connection
@@ -10,10 +11,11 @@ from sqlalchemy.engine import Connection
 from agentgit import __version__
 from agentgit.adapters.langgraph import LangGraphAdapter
 from agentgit.adapters.mcp import MCPAdapter, MCPClient, configured_client
-from agentgit.core.canonical import ObjectType, encode, object_digest
+from agentgit.core.canonical import ObjectType, decode, encode, object_digest
 from agentgit.core.effects import ToolPolicy
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.jobs import Lease
+from agentgit.core.langgraph import LangGraphProgram
 from agentgit.core.langgraph_runs import LangGraphRunState
 from agentgit.core.mcp import MCPBinding
 from agentgit.core.models import EnvironmentManifest, RunStatus, parse_contract
@@ -24,6 +26,7 @@ from agentgit.services.approvals import ApprovalService
 from agentgit.services.calls import RecordedCallGateway
 from agentgit.services.environment import dependency_lock_digest, source_revision
 from agentgit.services.history import TABLES, ArtifactInput, EventInput, HistoryService
+from agentgit.services.langgraph_forks import load_fork_source
 from agentgit.services.langgraph_runs import LangGraphRunService
 
 if TYPE_CHECKING:
@@ -161,6 +164,28 @@ class LangGraphRunRunner:
                 )
             ).first()
         self.version = self.history.branch(self.lease.repository_id, run["branch_name"])["version"]
+        fork_source: tuple[LangGraphProgram, LangGraphRunState, bytes] | None = None
+        if self.payload.fork is not None:
+            spec = self.payload.fork
+            if run["base_commit_id"] != spec.from_commit or run["origin_run_id"] != UUID(
+                spec.source_run_id
+            ):
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "图 Fork Run 来源与载荷不符")
+            fork_source = load_fork_source(
+                self.history, self.lease.repository_id, UUID(spec.source_run_id), spec.from_commit
+            )
+            source_program, source_state, _ = fork_source
+            expected_program = source_program.model_copy(
+                update={"review_note": self.program.review_note}
+            )
+            if (
+                source_state.program_ref != spec.source_program_ref
+                or source_state.native_ref != spec.native_ref
+                or self.program != expected_program
+            ):
+                raise AgentGitError(
+                    ErrorCode.REPLAY_MISMATCH, "图 Fork 程序、预算或原生日志来源不符"
+                )
         if own is not None:
             self.state = parse_contract(
                 encode(self.history.restore(self.lease.repository_id, self.head).data),
@@ -179,9 +204,36 @@ class LangGraphRunRunner:
                     raise AgentGitError(
                         ErrorCode.OBJECT_CORRUPT, "LangGraph 原生记录缺少确切产物引用"
                     )
+        elif fork_source is not None:
+            assert self.payload.fork is not None
+            _, source_state, raw = fork_source
+            source_journal = LangGraphCheckpointJournal(
+                self.payload.fork.source_run_id, lambda *args: None, restored=raw
+            )
+            self.native_raw = source_journal.clone_review(str(self.lease.run_id))
+            self.state = source_state.model_copy(
+                update={
+                    "program_ref": self.payload.program_ref,
+                    "status": RunStatus.RUNNING,
+                    "native_ref": object_digest(ObjectType.BLOB, self.native_raw),
+                    "actual_attempts": 0,
+                    "review_boundary_reached": True,
+                    "fork_initialized": False,
+                }
+            )
+            self._save(self.state, "langgraph.fork_seeded")
+            self.fault("langgraph.after_fork_seed")
         else:
             self.state = LangGraphRunState(program_ref=self.payload.program_ref)
             self._save(self.state, "langgraph.initialized")
+        if fork_source is not None and (
+            self.state.actual_attempts != 0
+            or self.state.trace != fork_source[1].trace
+            or self.state.usage.tool_calls != 1
+        ):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "Fork 检查点不能伪造新的取证计量或来源")
+        if self.payload.fork is None and self.state.fork_initialized:
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "普通图任务不能借用 Fork 初始化状态")
         if self.state.status.value in {"completed", "failed", "cancelled", "budget_exhausted"}:
             self.queue.finish(self.lease, self.state.status.value)
             return
@@ -215,6 +267,12 @@ class LangGraphRunRunner:
                 self._save(
                     self.state.model_copy(update={"status": RunStatus.RUNNING}), "langgraph.resumed"
                 )
+            if self.payload.fork is not None and not self.state.fork_initialized:
+                graph.update_note(self.program.review_note)
+                if not self.state.fork_initialized:
+                    raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "图 Fork 原生备注更新未完成")
+                self.fault("langgraph.after_fork_initialized")
+                continue
             if (
                 self.state.native_operation == "checkpoint"
                 and self.state.native_next == ("review",)
@@ -251,6 +309,8 @@ class LangGraphRunRunner:
 
     def _call(self, kwargs: dict[str, Any]) -> CallOutcome:
         assert self.state is not None
+        if self.payload.fork is not None:
+            raise AgentGitError(ErrorCode.FORBIDDEN, "图 Fork 不得重新执行已保存的取证节点")
         binding = self.program.binding
         request = encode(self.program.request.model_dump(mode="json"))
         if (
@@ -341,12 +401,23 @@ class LangGraphRunRunner:
                 "native_next": tuple(candidate.next),
                 "values": values,
                 "usage": usage,
+                "fork_initialized": self.state.fork_initialized
+                or (
+                    self.payload.fork is not None
+                    and kind == "checkpoint"
+                    and decode(raw)["operations"][-1].get("metadata", {}).get("source") == "update"
+                    and values.get("review_note") == self.program.review_note
+                    and values.get("node_order") == ["fetch"]
+                    and tuple(candidate.next) == ("review",)
+                ),
             }
         )
         self._save(state, "langgraph.native." + kind, native_raw=raw, native_id=native_id)
         self.fault("langgraph.after_" + kind)
         if values.get("node_order") == ["fetch"]:
             self.fault("langgraph.after_fetch_" + kind)
+            if self.payload.fork is not None:
+                self.fault("langgraph.after_fork_" + kind)
 
     def _control(self) -> str | None:
         action = self.queue.apply_control(self.lease)
@@ -436,6 +507,11 @@ class LangGraphRunRunner:
                         "native_ref": state.native_ref,
                         "native_checkpoint_id": native_id,
                         "error_code": state.error_code,
+                        **(
+                            {"fork_source": self.payload.fork.model_dump(mode="json")}
+                            if self.payload.fork is not None
+                            else {}
+                        ),
                     },
                 ),
             ),

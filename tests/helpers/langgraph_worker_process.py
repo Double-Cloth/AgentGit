@@ -6,10 +6,10 @@ import re
 from pathlib import Path
 from threading import Event
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 
 from agentgit.services.environment import dependency_lock_digest, source_revision
-from agentgit.services.history import HistoryService
+from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.jobs import JobService
 from agentgit.services.research import ResearchService
 from agentgit.storage.objects import ObjectStore
@@ -25,6 +25,9 @@ def main():
         "langgraph.after_result",
         "langgraph.after_fetch_writes",
         "langgraph.after_fetch_checkpoint",
+        "langgraph.after_fork_seed",
+        "langgraph.after_fork_writes",
+        "langgraph.after_fork_checkpoint",
     }
 
     def wait(point):
@@ -32,6 +35,10 @@ def main():
             return
         path = Path(os.environ["AGENTGIT_GRAPH_TEST_MARKER"])
         pending = path.with_suffix(".pending")
+        with history.engine.connect() as connection:
+            active_run = connection.execute(
+                select(TABLES["jobs"].c.run_id).where(TABLES["jobs"].c.status == "running")
+            ).scalar_one()
         pending.write_text(
             json.dumps(
                 {
@@ -41,6 +48,7 @@ def main():
                     "schema": schema,
                     "source_revision": source_revision(),
                     "lock_digest": dependency_lock_digest(),
+                    "run_id": str(active_run),
                 }
             ),
             encoding="utf-8",

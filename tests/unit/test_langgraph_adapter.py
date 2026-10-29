@@ -470,3 +470,41 @@ def test_malformed_configurable_is_an_explicit_scope_rejection():
     with pytest.raises(AgentGitError) as caught:
         LangGraphCheckpointJournal(thread, forbidden, restored=encode(raw))
     assert caught.value.code == ErrorCode.FORBIDDEN
+
+
+def test_clone_changes_only_scoped_thread_fields_and_preserves_uuid_text():
+    source = str(uuid4())
+    p = program().model_copy(update={"request": MCPArguments(arguments={"value": source})})
+    calls = gateway(p)
+    journal = LangGraphCheckpointJournal(source, lambda *args: None)
+    graph = LangGraphAdapter(p, calls, thread_id=source, checkpointer=journal)
+    graph.invoke(start=True)
+    original = journal.export()
+    target = str(uuid4())
+    cloned = LangGraphCheckpointJournal(
+        target, lambda *args: None, restored=journal.clone_review(target)
+    )
+    fork = LangGraphAdapter(p, calls, thread_id=target, checkpointer=cloned)
+    assert fork.state().values["fetch_text"] == source
+    assert fork.state().config["configurable"]["thread_id"] == target
+    fork.update_note("独立备注")
+    assert source in fork.invoke()["report"]
+    assert journal.export() == original and graph.state().next == ("review",)
+    assert [o.get("checkpoint", {}).get("id") for o in decode(original)["operations"]] == [
+        o.get("checkpoint", {}).get("id")
+        for o in decode(journal.clone_review(target))["operations"]
+    ]
+
+
+def test_clone_rejects_pending_writes_and_shared_thread():
+    _, _, thread, saved, journal, _ = native_run()
+    with pytest.raises(AgentGitError):
+        journal.clone_review(thread)
+    pending = next(
+        raw
+        for raw, kind, _ in saved
+        if kind == "writes" and ["node_order", ["fetch"]] in decode(raw)["operations"][-1]["writes"]
+    )
+    incomplete = LangGraphCheckpointJournal(thread, lambda *args: None, restored=pending)
+    with pytest.raises(AgentGitError):
+        incomplete.clone_review(str(uuid4()))

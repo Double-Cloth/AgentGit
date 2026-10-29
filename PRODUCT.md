@@ -1,6 +1,6 @@
 # AgentGit 产品上下文
 
-S12-B 已接通[固定图的耐久 Live Worker](doc/acceptance/S12-B.md)：复用 Run/Job/History/CAS、租约和控制，提供 CLI 提交及现有 HTTP 查询/恢复，原生日志与报告共用预算。当前 933 单元和 20 项图相关集成通过，含四次实际解释器终止后零重发、未知保留、原生暂停恢复及项目边界，原始对象另经审计。独立 Run/分支 Fork、完整 Recorded、完整桌面/兼容退出继续，正式 B/C/D 与 D3 未验收。A 的完整证据仍使用其原锁和冻结。
+S12-B 已接通[耐久 Live 与安全 Fork](doc/acceptance/S12-B.md)：固定图复用 Run/Job/History/CAS、租约和控制；完整 review 边界可创建独立分支/Run/thread，仅修改备注，来源不变且不重复取证。当前 939 单元、36 项图集成和 41 项历史/版本/合并兼容通过，七处实际解释器终止及原始关系独立核对。完整 Recorded、更多控制/stdio 与完整桌面退出继续，正式 B/C/D 和 D3 未验收。A 的原源/锁封存保持。
 
 <!-- impeccable:product-schema 1 -->
 

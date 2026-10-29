@@ -239,6 +239,42 @@ class LangGraphCheckpointJournal(BaseCheckpointSaver[str]):
         with self._lock:
             return self._raw
 
+    def require_review(self) -> None:
+        """确认当前为没有 pending writes 的完整 fetch 后边界。"""
+        with self._lock:
+            self._active()
+            current = self._inner.get_tuple(
+                {"configurable": {"thread_id": self.thread_id, "checkpoint_ns": ""}}
+            )
+            bundle = decode(self._raw)
+            if (
+                current is None
+                or current.pending_writes
+                or not bundle["operations"]
+                or bundle["operations"][-1]["kind"] != "checkpoint"
+                or current.checkpoint["channel_values"].get("node_order") != ["fetch"]
+                or "branch:to:review" not in current.checkpoint["channel_values"]
+                or current.checkpoint["channel_values"].get("error_code") is not None
+                or current.metadata.get("source") not in {"loop", "update"}
+            ):
+                raise _invalid("LangGraph Fork 只允许 fetch 后的完整 review 边界")
+
+    def clone_review(self, thread_id: str) -> bytes:
+        """克隆已完成 fetch 的完整边界；仅替换已声明的物理 thread 字段。"""
+        with self._lock:
+            self.require_review()
+            if not _uuid(thread_id) or thread_id == self.thread_id:
+                raise _invalid("LangGraph Fork 必须使用独立目标 thread")
+            bundle = decode(self._raw)
+            bundle["thread_id"] = thread_id
+            for operation in bundle["operations"]:
+                operation["config"]["configurable"]["thread_id"] = thread_id
+                if "thread_id" in operation.get("metadata", {}):
+                    operation["metadata"]["thread_id"] = thread_id
+            raw = encode(bundle)
+            LangGraphCheckpointJournal(thread_id, lambda *args: None, restored=raw)
+            return raw
+
     def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         with self._lock:
             self._active()

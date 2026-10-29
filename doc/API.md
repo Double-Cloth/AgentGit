@@ -8,7 +8,9 @@
 
 既有 `GET /runs/{run_id}` 的 `adapter.kind=langgraph_program/v1`，提供 SDK/checkpoint 版本、模板、工具/Schema/效果、limits、logical_usage、actual_attempts、native_ref/native_next 和 has_model=false。未知尝试为 null，不代表零次。状态/事件/产物/Commit 查询保留同项目边界；`POST /runs/{run_id}/pause|resume|cancel` 继续使用 expected_version 和原键，resume 保留原墙钟期限。
 
-`langgraph.native.checkpoint/writes` 事件的 native_checkpoint_id/native_ref 对应确切 Commit，原生日志和报告发布为 `langgraph-native.json`/`report.md`，共用程序产物预算。已有结果或 pending writes 恢复不新增工具请求；只有意图时保持未知。本增量已通过[工程核对](acceptance/S12-B.md)，独立 Run/分支 Fork、完整 Recorded 与完整桌面退出继续。
+`langgraph.native.checkpoint/writes` 事件的 native_checkpoint_id/native_ref 对应确切 Commit，原生日志和报告发布为 `langgraph-native.json`/`report.md`，共用程序产物预算。已有结果或 pending writes 恢复不新增工具请求；只有意图时保持未知。本增量已通过[工程核对](acceptance/S12-B.md)，完整 Recorded 与完整桌面退出继续。
+
+`langgraph-fork <repository_id> <fork.json> --key <key>` 从完整 review 检查点原子创建新分支/Run/Job，文件为 NewBranch 的 source_run_id/from_commit/name/expected_version=0 加 review_note，见[演示](S12-B-langgraph-demo.md)。仅备注可变，代码/锁/来源录制及原生状态须匹配；pending writes、未决取证和已完成图不是可选点。adapter.fork 保存 source_run_id/from_commit/source_program_ref/native_ref；fork_initialized 表示新 thread 的原生更新已耐久完成。历史逻辑工具用量继承 1，实际尝试为 0，没有新的外部调用或继承审批；源分支继续独立保留。
 
 ## S11 耐久合并提案
 
