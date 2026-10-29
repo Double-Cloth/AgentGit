@@ -2,6 +2,8 @@
 
 当前实现依据设计/实施方案 v1.0.0；本文件记录实际进展，不将规划中的预期视为完成。
 
+2026-10-29 S11 新候选：[Windows 0.1.7](acceptance/S11-package-017.md)已完成四件套、ASAR/ZIP/Nupkg/RELEASES 审计，40 桌面单元和 20 个不同包内节点均有通过证据；23 次尝试保留两次截图超时、一次执行前数据库不可用及后续复验。合并/显式新任务、基础设施、实验、诊断及七条修复流程覆盖，原始合并/联合修复/观测/未知证据独立核对；只有测试捕获方式调整，产品及包字节不变。汇总 SHA256 `900ad219cabb31578c55178d0743adfa8975264cf9ec72e87c35988a70c3ff3d`。旧 0.1.6 四件套保持；未执行新包安装/升级/卸载、未调用付费模型、未迁移业务库。人工/原生前置见 [S11 门槛](acceptance/S11-gates.md)，不宣告完整 S11 退出、未进入 S12 或合并 main。
+
 | 阶段 | 状态 | 证据 |
 |---|---|---|
 | S0 | 已归档 | `ff9e971`，设计、实施方案和仓库规则 |
@@ -10,13 +12,13 @@
 | S3 | 已验收 | [S3.md](acceptance/S3.md)：156 项回归通过；离线研究、版本化计划、三工具、来源验证、预算与双 Run 隔离 |
 | S4 | 已验收（本机） | [S4.md](acceptance/S4.md)：T01–T20 逐项核对；当前 392 项分批覆盖，真实 CLI 五工具/产物 hash 通过；清理后新 attempt、预算与恢复控制完成，doctor 实测就绪 |
 | S5 | 已验收（本机） | [S5.md](acceptance/S5.md)：T01–T09 核对；599 项由三个不重叠组全部覆盖，无失败/跳过；实际 CLI 五工具→Recorded→复合 Recorded→A/B Live→Diff 通过；来源不变，4 个容器独立且清理确认 |
-| S6 | 实施中，未验收 | [0.1.3 历史 T01–T12 核对](acceptance/S6-keyboard-and-gates.md)保留 MSIX 安装生命周期等证据；当前候选为 [0.1.6](acceptance/S10-package-016.md)，本轮仅构建/审计/便携运行，未重做安装/升级/卸载。[D1 指南](D1-desktop-demo.md)和[独立 Windows 清单](S6-windows-acceptance.md)绑定新摘要，升级基线为独立归档的 0.1.5。原生保存、独立用户/原生 DPI/禁止外网及真实依赖缺失交叉复核待补；真实供应商冒烟未运行 |
+| S6 | 实施中，未验收 | [0.1.3 历史 T01–T12 核对](acceptance/S6-keyboard-and-gates.md)保留 MSIX 安装生命周期等证据；当前候选为 [0.1.7](acceptance/S11-package-017.md)，本轮仅构建/审计/便携运行，未重做安装/升级/卸载。[D1 指南](D1-desktop-demo.md)和[独立 Windows 清单](S6-windows-acceptance.md)绑定新摘要，升级基线为独立归档的 0.1.6。原生保存、独立用户/原生 DPI/禁止外网及真实依赖缺失交叉复核待补；真实供应商冒烟未运行 |
 | S7 | 本机功能核对通过，前置待补 | 冻结验收器、实验/干预、Hybrid、精确统计和桌面已实现；[T01–T06 与实施交付/退出矩阵](acceptance/S7-gates.md)及[0.1.4 历史包证据](acceptance/S7-package-014.md)保留。新 [0.1.5](acceptance/S8-package-015.md) 的 30 桌面单元和 10 条包内流程覆盖 S7/S8；Live 10 trial 为 9 通过/1 取消，Hybrid 各 5 全通过，来源不变、40 容器执行清理、原键重试与重开无 POST 已核对。历史后端回归不重复累加。S6/D1 原生/环境前置仍待补，S7 不标整体验收或合并 main |
 | S8 | 本机工程/效果核对通过，人工及正式退出待补 | [静态报告](acceptance/S8-static-reports.md)、连接池发布及[全 20 例暂定评估](acceptance/S8-evaluation.md)保留。[候选干预](acceptance/S8-candidate-experiments.md)、桌面/0.1.6 包内查询和[二十例效果补充](acceptance/S8-candidate-effects.md)通过：每例五加五、四例正差、十六例零差，全部原始重审，预算未知/只读/旧观测三项回归通过。原排名及七文件不变，注入点 Top-3 4/8 仍未达 6/8，拟修复决策指标不替代主要目标。人工标签、原定位未达标及正式前置保留，后续搜索使用完整候选降级，不宣称定位优势 |
 | S9 | 本机后端退出核对通过，前置待补 | [T01–T07 与实施交付矩阵](acceptance/S9-gates.md)齐备；最新 569 单元 + 32 真实集成通过，包含五类关联安全拒绝、完整候选排序、终态墙钟、默认预算、单点/联合、范围无解、进程退出、未知预留和取消。历史 [620 项](acceptance/S9-search-loop.md)及原始证据保留，不重复累加。原生产 Mock 默认搜索找到 Plan 候选，未标 verified 或最小性；S6/D1、S7 整体前置与 S8 待补范围保持，不合并 main |
 | S10 | 本机工程与三十例研究核对完成，整体前置待补 | [退出矩阵](acceptance/S10-gates.md)覆盖缩减、独立复测、精确审批、伪修复边界和完整评估；当前 179 协议及 13 关键集成通过，三条关键原始链重审。[D2 研究报告](D2-research-report.md)完整保留 30×5 原始结果，开发目标 12/12、保留主方法 6/10、无排序 6/10、不缩减 8/10；只限 fixture，不宣称全面基线优势。最终最小性使用分析 v2，迁移清单遗漏及 Git 基线补充明确披露。[备份恢复](acceptance/S10-backup-restore.md)两项通过。S9 默认空间/额度不变，业务配置未采纳；S6/D1、S8 待补及整体阶段前置保留 |
 | S10 桌面 | 本机及 0.1.6 包内核对通过，原生前置待补 | [0.1.6 分发](acceptance/S10-package-016.md)35 单元及 17 条包内 Electron 流程通过，包含 Repair Lab、联合字段缩减/六加四、精确审批与版本竞争、候选交接、取消/未知、观测禁正式采纳。原始 CAS 独立重审，源不变，批准无新 Job/Run，重开无 POST；原包四件套在研究结束后再次核对未变。独立 Windows/原生及完整阶段前置仍待补，不重复累计旧桌面测试 |
-| S11 | 开发中，三方法及桌面闭环通过，整体前置待补 | [有限候选](acceptance/S11-artifact-preview.md)、[完整硬验证](acceptance/S11-state-validation.md)、[耐久提案](acceptance/S11-proposals.md)、[原子批准](acceptance/S11-approval.md)、[新任务/实际中断](acceptance/S11-merged-runs.md)、[再次合并](acceptance/S11-remerge.md)及[正式三方法](acceptance/S11-merge-evaluation.md)已实现。[报告](S11-merge-report.md)保留全部 30×3 候选，正式 30 项与 15 协议节点通过，10 个批准后新任务通过；主方法完整整合 10/10、安全阻断 20/20，基线错误接纳 15/20、20/20。原始候选/批准/初始化重审、四类候选和五类统计反例通过；相同产品源码最近的 806 单元沿用原记录、不重复累计。[Merge Review 与真实桌面闭环](acceptance/S11-desktop.md)通过：806 Python 单元、40 桌面单元、1 真实只读集成及 3 Electron 流程；原始正负审计和双父/独立初始化/Recorded 保持，视觉复核 ship。人工预期复核、新包与完整前置继续，完整验收后再进入 S12 |
+| S11 | 开发中，三方法及桌面闭环通过，整体前置待补 | [有限候选](acceptance/S11-artifact-preview.md)、[完整硬验证](acceptance/S11-state-validation.md)、[耐久提案](acceptance/S11-proposals.md)、[原子批准](acceptance/S11-approval.md)、[新任务/实际中断](acceptance/S11-merged-runs.md)、[再次合并](acceptance/S11-remerge.md)及[正式三方法](acceptance/S11-merge-evaluation.md)已实现。[报告](S11-merge-report.md)保留全部 30×3 候选，正式 30 项与 15 协议节点通过，10 个批准后新任务通过；主方法完整整合 10/10、安全阻断 20/20，基线错误接纳 15/20、20/20。原始候选/批准/初始化重审、四类候选和五类统计反例通过；相同产品源码最近的 806 单元沿用原记录、不重复累计。[Merge Review 与真实桌面闭环](acceptance/S11-desktop.md)通过：806 Python 单元、40 桌面单元、1 真实只读集成及 3 Electron 流程；原始正负审计和双父/独立初始化/Recorded 保持，视觉复核 ship。[0.1.7](acceptance/S11-package-017.md) 的 20 个不同包内节点已有通过证据，失败尝试与后续复验保留；人工预期复核及完整前置继续，完整验收后再进入 S12 |
 | S12-A/B/C/D | 必选，未开始 | S11 及四项适配全部验收、最终桌面包验证后才达到 D3 |
 
 开发命令见 [DEVELOPMENT.md](DEVELOPMENT.md)。实施方案第 1.2 节记录当前临时开发顺序调整，S6/D1 环境与原生证据继续保留待补；阶段完整验收仍须满足前置退出条件，D1/D2 不能替代完整交付。

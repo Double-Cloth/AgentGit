@@ -1,6 +1,6 @@
 # AgentGit 桌面开发
 
-当前候选版本为 [Windows 0.1.6](../doc/acceptance/S10-package-016.md)，包含既有四页、S7/S8 和 Repair Lab；包内容审计、35 单元及 17 条打包 Electron 流程通过。联合修复、候选交接、取消/未知和观测禁采纳均有同次真实设施证据。原生保存和独立 Windows 环境仍待验收，S6/D1 阶段退出条件不变。既有安装生命周期证据对应历史候选，不能替代新包独立安装验收。操作步骤见 [D1 桌面离线指南](../doc/D1-desktop-demo.md)，剩余门槛见 [S6 清单](../doc/S6-windows-acceptance.md)。
+当前候选版本为 [Windows 0.1.7](../doc/acceptance/S11-package-017.md)，包含既有四页、S7/S8、Repair Lab 和 Merge Review；包内容审计、40 单元及 20 个不同打包 Electron 测试节点通过。23 次尝试保留 3 次失败和后续复验，合并/显式新任务、联合修复、候选交接、取消/未知及观测禁采纳均有真实设施证据。原生保存和独立 Windows 环境仍待验收，S6/D1 阶段退出条件不变。既有安装生命周期证据对应历史候选，不能替代新包独立安装验收。操作步骤见 [D1 桌面离线指南](../doc/D1-desktop-demo.md)，剩余门槛见 [S6 清单](../doc/S6-windows-acceptance.md)。
 
 S7 已接通验收器、实验/干预及实验列表共八个固定 IPC，以及来源冻结、A/B 表单、manifest、精确统计、trial、控制和重开查询。新 ZIP 的真实独立 API/Worker 流程验证 Live 9 通过/1 取消、Hybrid 各 5 全通过，recorded/synthetic 来源可区分。[S7 操作步骤](../doc/S7-desktop-demo.md)、[桌面记录](../doc/acceptance/S7-desktop.md)和[退出核对](../doc/acceptance/S7-gates.md)分别说明使用与证据范围。0.1.3 与 0.1.4 的分发文件均按摘要独立归档，不静默替换历史候选。
 

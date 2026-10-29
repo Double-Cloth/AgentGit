@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { JsonObject } from '../../src/shared/bridge';
 import { TOKEN, data, objects, startBackend } from '../support/real-client';
-import { desktopIdentity, launchDesktop } from '../support/desktop-runtime';
+import { captureDesktop, desktopIdentity, launchDesktop } from '../support/desktop-runtime';
 
 const object = (value: unknown): JsonObject => value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
 
@@ -61,7 +61,7 @@ test('真实确认结果未知：取消和重开保留一项预留，不重发�
     await page.getByRole('button', { name: '取消研究', exact: true }).dblclick();
     await expect.poll(async () => object((await read()).execution).status).toBe('cancelling');
     const beforeReopen = await backend.command('state'), firstAudit = await backend.command('edge_audit'); expect(objects(firstAudit.invocations)).toHaveLength(1);
-    for (const width of [1440, 360]) { await page.setViewportSize({ width, height: 1000 }); await page.getByText('存在结果未知试验：预留继续保留', { exact: false }).scrollIntoViewIfNeeded(); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); const path = join(folder, `unknown-${width}.png`); await page.screenshot({ path }); screenshots.push(path); }
+    for (const width of [1440, 360]) { await page.setViewportSize({ width, height: 1000 }); await page.getByText('存在结果未知试验：预留继续保留', { exact: false }).scrollIntoViewIfNeeded(); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); const path = join(folder, `unknown-${width}.png`); await captureDesktop(desktop, page, path); screenshots.push(path); }
     await desktop.close(); desktop = await launchDesktop(profile, backend.url, TOKEN); page = await desktop.firstWindow(); observe(page); await desktopIdentity(desktop, page);
     await page.getByRole('button', { name: '修复实验室', exact: true }).click(); await page.getByLabel('搜索 UUID', { exact: true }).fill(search); await page.getByRole('button', { name: '打开搜索', exact: true }).click();
     await expect(page.getByText('存在结果未知试验：预留继续保留', { exact: false })).toBeVisible(); await expect(page.locator('.experiment-report .section-heading')).toContainText('取消中，等待安全结算');

@@ -1,7 +1,7 @@
 {
   "name": "agentgit-desktop",
   "productName": "AgentGit",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "AgentGit 执行历史、隔离分支与回放桌面应用",
   "author": "AgentGit",
   "license": "UNLICENSED",

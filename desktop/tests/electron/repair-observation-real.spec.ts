@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { JsonObject } from '../../src/shared/bridge';
 import { TOKEN, data, objects, startBackend } from '../support/real-client';
-import { desktopIdentity, launchDesktop } from '../support/desktop-runtime';
+import { captureDesktop, desktopIdentity, launchDesktop } from '../support/desktop-runtime';
 
 const object = (value: unknown): JsonObject => value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
 
@@ -39,7 +39,7 @@ test('真实观测补丁六加四：禁止正式批准，仅保存精确实验�
     const ticket = data(await page.evaluate(proposalId => window.agentgit.beginRepairReview({ proposalId, key: 'observation-negative-ticket' }), proposalId));
     const rejected = await page.evaluate(input => window.agentgit.decideRepairReview(input), { proposalId, reviewId: String(ticket.review_id), proposalRef: String(proposed.proposal_ref), expectedConfigVersion: Number(object(ticket.ticket).expected_config_version), decision: 'approve' as const, key: 'observation-forbidden-approve' }); expect(rejected.ok).toBe(false); if (!rejected.ok) expect(rejected.error.code).toBe('forbidden');
     const beforeSave = await backend.command('state'); expect(beforeSave.counts).toEqual(beforeNegative.counts); expect(beforeSave.source_fingerprint).toBe(seed.source_fingerprint);
-    for (const width of [1440, 360]) { await page.setViewportSize({ width, height: 1000 }); await page.getByText('包含工具观测替换：test_only', { exact: false }).scrollIntoViewIfNeeded(); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); const path = join(folder, `observation-${width}.png`); await page.screenshot({ path }); screenshots.push(path); }
+    for (const width of [1440, 360]) { await page.setViewportSize({ width, height: 1000 }); await page.getByText('包含工具观测替换：test_only', { exact: false }).scrollIntoViewIfNeeded(); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); const path = join(folder, `observation-${width}.png`); await captureDesktop(desktop, page, path); screenshots.push(path); }
     await page.getByRole('button', { name: '仅保存为实验', exact: true }).dblclick(); await expect(page.getByRole('heading', { name: '已记录的决定', exact: true })).toBeVisible();
     const accepted = data(await page.evaluate(proposalId => window.agentgit.getRepairProposal({ proposalId }), proposalId)), review = object(accepted.review), decision = object(review.decision);
     expect(decision.decision).toBe('save_experiment'); expect(decision.execution).toBe('not_started'); expect(decision.new_config_id).toBeNull(); expect(object(object(review.saved_experiment).definition).patches).toEqual(proposal.patches);

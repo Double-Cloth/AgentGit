@@ -4,6 +4,8 @@
 
 后端身份为 `source-sha256:6bd747bcfae2111d2857a9a51f6ebeb0bd9e7726b6c8e117c29a9ccb784761ff`，API 协议仍为 0.1.0，迁移 head 仍为 `0026_merge_runs`。新 Python 产品代码仅增加提案元数据发现、完整共同祖先查询和能力声明；已有语义合并、批准和执行契约未改。此前[正式 30×3 评估](S11-merge-evaluation.md)仍属于原冻结 release/源码，不能把本次界面例计为新研究成绩或改写旧 release。
 
+后续分发验证另见 [Windows 0.1.7](S11-package-017.md)：新合并三条及全部 20 个不同包内节点均有通过证据，失败尝试及原始审计单列；本文件继续保留原开发构建的范围，不追溯改写为打包执行。
+
 ## 可见流程与业务边界
 
 提案列表只读元数据，按创建时间/ID 倒序分页，限制 1–100，跨项目或不存在的游标拒绝。`open` 表示尚无决定，打开详情后才核对 stale/validated 等当前状态。`GET /merge-bases` 返回全部最佳共同祖先，多基点由操作者明确选择；同摘要多执行归属仍须显式 base Run。`semantic_merge` 与 `merged_run_initialization` 分别声明审阅和后续任务能力，缺能力不影响旧页面。

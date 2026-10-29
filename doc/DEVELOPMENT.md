@@ -1,14 +1,14 @@
 # 本地开发与测试
 
-S11 已接通[Merge Review](acceptance/S11-desktop.md)与固定 IPC；`playwright.merge.config.ts` 覆盖明确 HTTP fixture 和两套真实测试 Schema/API/独立 Worker/CAS。`npm run build` 后以唯一证据前缀运行，实际 Runtime 期间冻结产品、锁、迁移、构建与驱动。桌面 HTTP 修订仍受完整请求 1 MiB 限制，不能仅按两个单文件上限估计载荷。当前是开发构建，更新分发包和完整阶段前置继续。
+S11 已接通[Merge Review](acceptance/S11-desktop.md)与固定 IPC，并进入 [0.1.7 分发候选](acceptance/S11-package-017.md)；`playwright.merge.config.ts` 覆盖明确 HTTP fixture 和两套真实测试 Schema/API/独立 Worker/CAS。`npm run build` 后以唯一证据前缀运行，实际 Runtime 期间冻结产品、锁、迁移、构建与驱动。桌面 HTTP 修订仍受完整请求 1 MiB 限制，不能仅按两个单文件上限估计载荷。新 ZIP 的 20 个不同节点均有通过证据，3 次失败与后续复验保留；完整阶段前置见 [S11 门槛](acceptance/S11-gates.md)。
 
 实现进度与阶段证据见 [PROGRESS.md](PROGRESS.md)。README 保留项目介绍；方案和设计的 S0 描述是规划时的历史基线。
 
-S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命令、身份预置和字体授权见 [desktop/README.md](../desktop/README.md)。当前 [0.1.6 候选](acceptance/S10-package-016.md)包含 Repair Lab，35 单元及 17 条包内流程通过；Python 后端仍由独立操作者准备，桌面不打包或迁移后端。独立用户/原生专项仍未验收；用户已授权延后这些专项、先继续其他开发与本机验收，范围见实施方案第 1.2 节。
+S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命令、身份预置和字体授权见 [desktop/README.md](../desktop/README.md)。当前 [0.1.7 候选](acceptance/S11-package-017.md)包含 Repair Lab 和 Merge Review，40 单元及 20 个不同包内节点通过；Python 后端仍由独立操作者准备，桌面不打包或迁移后端。独立用户/原生专项仍未验收；用户已授权延后这些专项、先继续其他开发与本机验收，范围见实施方案第 1.2 节。
 
 ## 环境
 
-当前开发分支为 `codex/s11-merge`。S11 的共同祖先、有限状态/产物验证、[耐久提案](acceptance/S11-proposals.md)、[精确批准/双父后端](acceptance/S11-approval.md)、[合并后的独立新任务](acceptance/S11-merged-runs.md)及[再次合并/交叉历史](acceptance/S11-remerge.md)已实现。[正式三十组三方法](acceptance/S11-merge-evaluation.md)完成全量候选/双父/零基线新任务重审，结果见[报告](S11-merge-report.md)；人工预期、桌面/新包及整体前置继续，S12 仍待 S11 完整验收。当前核对范围见各增量记录，以下阶段记录保留历史范围。
+当前开发分支为 `codex/s11-merge`。S11 的共同祖先、有限状态/产物验证、[耐久提案](acceptance/S11-proposals.md)、[精确批准/双父后端](acceptance/S11-approval.md)、[合并后的独立新任务](acceptance/S11-merged-runs.md)及[再次合并/交叉历史](acceptance/S11-remerge.md)已实现。[正式三十组三方法](acceptance/S11-merge-evaluation.md)完成全量候选/双父/零基线新任务重审，结果见[报告](S11-merge-report.md)；桌面和新包工程已核对，人工预期及整体前置仍待补，S12 仍待 S11 完整验收。当前核对范围见各增量记录，以下阶段记录保留历史范围。
 
 ```powershell
 uv run --locked pytest tests/unit

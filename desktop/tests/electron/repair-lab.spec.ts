@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { desktopIdentity, launchDesktop } from '../support/desktop-runtime';
+import { captureDesktop, desktopIdentity, launchDesktop } from '../support/desktop-runtime';
 
 const REPO = '00000000-0000-4000-8000-000000000001', RUN = '10000000-0000-4000-8000-000000000001';
 const SEARCH = '11111111-0000-4000-8000-000000000001', OBS = '22222222-0000-4000-8000-000000000001';
@@ -71,7 +71,7 @@ test('Repair Lab 可见流程：原键确认、缩减复测、版本冲突、观
     expect(posts.at(-1)!.body.expected_config_version).toBe(31); expect(posts.at(-1)!.body.decision).toBe('approve');
     observed = true; decided = null; await page.locator('.experiment-list button').filter({ hasText: '22222222' }).click(); await expect(page.getByText('包含工具观测替换：test_only', { exact: false })).toBeVisible();
     await page.getByRole('button', { name: '核对并获取审阅票据', exact: true }).click(); await expect(page.getByRole('button', { name: '批准创建配置版本', exact: true })).toBeDisabled(); await expect(page.getByRole('button', { name: '仅保存为实验', exact: true })).toBeEnabled();
-    for (const width of [1440, 360]) { await page.setViewportSize({ width, height: 1000 }); await page.evaluate(() => window.scrollTo(0, 0)); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); const file = join(folder, `lab-${width}.png`); await page.screenshot({ path: file, fullPage: true }); images.push(file); }
+    for (const width of [1440, 360]) { await page.setViewportSize({ width, height: 1000 }); await page.evaluate(() => window.scrollTo(0, 0)); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); const file = join(folder, `lab-${width}.png`); await captureDesktop(desktop, page, file, true); images.push(file); }
     expect(await page.locator('.repair-lab img').count()).toBe(0); expect(await page.evaluate(() => 'bad' in window)).toBe(false);
     await page.getByRole('button', { name: '仅保存为实验', exact: true }).click(); await expect(page.getByRole('heading', { name: '已记录的决定', exact: true })).toBeVisible(); expect(posts.at(-1)!.body.decision).toBe('save_experiment');
     const beforeRefresh = posts.length; unavailable = true; await page.getByRole('button', { name: '只读刷新', exact: true }).click(); await expect(page.getByText('显示上次已确认结果', { exact: false })).toBeVisible(); await expect(page.getByRole('heading', { name: '已记录的决定', exact: true })).toBeVisible(); unavailable = false; await page.getByRole('button', { name: '只读刷新', exact: true }).click(); await expect(page.getByText('显示上次已确认结果', { exact: false })).toHaveCount(0);

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { JsonObject } from '../../src/shared/bridge';
 import { TOKEN, data, objects, startBackend } from '../support/real-client';
-import { desktopIdentity, launchDesktop } from '../support/desktop-runtime';
+import { captureDesktop, desktopIdentity, launchDesktop } from '../support/desktop-runtime';
 
 const object = (value: unknown): JsonObject => value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
 
@@ -31,7 +31,7 @@ test('真实故障候选交接：仅带入核验来源和请求事件，不启�
     expect(bound).not.toBeNull();
     await page.locator('.debug-outline > button').nth(index).click();
     await page.getByLabel('候选验收器摘要').fill(String(seed.validator)); await page.getByRole('button', { name: '核对干预上下文', exact: true }).click(); await expect(page.getByText('已核对的调用与检查点', { exact: true })).toBeVisible();
-    for (const width of [1440, 360]) { await page.setViewportSize({ width, height: 1000 }); await page.getByRole('button', { name: '在修复实验室核对候选', exact: true }).scrollIntoViewIfNeeded(); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); const path = join(folder, `candidate-${width}.png`); await page.screenshot({ path }); screenshots.push(path); }
+    for (const width of [1440, 360]) { await page.setViewportSize({ width, height: 1000 }); await page.getByRole('button', { name: '在修复实验室核对候选', exact: true }).scrollIntoViewIfNeeded(); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); const path = join(folder, `candidate-${width}.png`); await captureDesktop(desktop, page, path); screenshots.push(path); }
     const before = await backend.command('state');
     await page.getByRole('button', { name: '在修复实验室核对候选', exact: true }).click(); await expect(page.getByRole('heading', { name: '修复实验室', exact: true })).toBeVisible();
     const context = object(bound!.context), target = object(bound!.request_event);
@@ -41,7 +41,7 @@ test('真实故障候选交接：仅带入核验来源和请求事件，不启�
     await expect(page.getByRole('checkbox', { name: '我已核对来源', exact: false })).not.toBeChecked(); await expect(page.getByRole('button', { name: '准备并搜索最小修复', exact: true })).toBeDisabled();
     const after = await backend.command('state'); expect(after).toEqual(before); expect(after.source_fingerprint).toBe(seed.source_fingerprint);
     expect(objects(after.mutations).map(row => row.path)).toEqual(['/debug-reports']);
-    for (const width of [1440, 360]) { await page.setViewportSize({ width, height: 1000 }); await page.evaluate(() => window.scrollTo(0, 0)); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); const path = join(folder, `handoff-${width}.png`); await page.screenshot({ path }); screenshots.push(path); }
+    for (const width of [1440, 360]) { await page.setViewportSize({ width, height: 1000 }); await page.evaluate(() => window.scrollTo(0, 0)); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); const path = join(folder, `handoff-${width}.png`); await captureDesktop(desktop, page, path); screenshots.push(path); }
     const confirm = data(await page.evaluate(input => window.agentgit.freezeValidator(input), { sourceRunId: String(context.source_run_id), fromCommit: String(context.base_commit), fixtureSplit: 'confirm' as const, key: 'handoff-confirm-guard' }));
     await page.getByRole('button', { name: '差异', exact: true }).click(); await page.getByRole('tab', { name: '故障定位', exact: true }).click(); await page.locator('.debug-report-list button').first().click(); await page.locator('.debug-outline > button').nth(index).click();
     await page.getByLabel('候选验收器摘要').fill(String(confirm.validator_ref)); await page.getByRole('button', { name: '核对干预上下文', exact: true }).click(); await expect(page.getByText('已核对的调用与检查点', { exact: true })).toBeVisible();

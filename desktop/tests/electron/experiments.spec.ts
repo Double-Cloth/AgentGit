@@ -75,7 +75,10 @@ test('真实 Electron/API/Worker：十 trial、原键重试、当前版本控制
     const screenshots: string[] = [];
     for (const width of [1440, 1024, 768, 360]) {
       await page.setViewportSize({ width, height: 1000 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-      const path = join(evidence, `experiments-${width}.png`); await page.screenshot({ path, fullPage: true }); screenshots.push(path);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      const layout = await page.evaluate(() => ({ width: innerWidth, height: document.documentElement.scrollHeight, fonts: document.fonts.status, visibility: document.visibilityState }));
+      await writeFile(join(evidence, `capture-${width}.json`), JSON.stringify(layout));
+      const path = join(evidence, `experiments-${width}.png`); await page.screenshot({ path, fullPage: true, animations: 'disabled', timeout: 60000 }); screenshots.push(path);
     }
     const before = await backend.command('traffic'); await desktop.close(); desktop = await launch(); page = await desktop.firstWindow(); observe(page);
     await desktopIdentity(desktop, page);

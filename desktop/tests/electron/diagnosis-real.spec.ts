@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { JsonObject } from '../../src/shared/bridge';
 import { TOKEN, completed, data, objects, startBackend } from '../support/real-client';
-import { desktopIdentity, launchDesktop } from '../support/desktop-runtime';
+import { captureDesktop, desktopIdentity, launchDesktop } from '../support/desktop-runtime';
 
 function object(value: unknown): JsonObject { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {}; }
 
@@ -72,7 +72,7 @@ test('真实 Electron/API/Worker：失败 Run 生成报告、候选干预效果�
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
       const clippedCandidates = await page.locator('.debug-outline > button').evaluateAll(buttons => buttons.filter(button => button.scrollHeight > button.clientHeight + 1).map(button => ({ text: button.textContent, height: button.clientHeight, scrollHeight: button.scrollHeight })));
       expect(clippedCandidates, `候选按钮在 ${width}px 不得压缩裁字`).toEqual([]);
-      const path = join(evidence, `candidate-${width}.png`); await page.screenshot({ path }); screenshots.push(path);
+      const path = join(evidence, `candidate-${width}.png`); await captureDesktop(desktop, page, path); screenshots.push(path);
     }
     const ref = object(candidate.event); await page.getByRole('button', { name: `事件 ${String(ref.seq)} · ID ${String(ref.event_id)}`, exact: true }).first().click(); await expect(page.getByRole('heading', { name: `定位证据 · 事件 ${String(ref.seq)}`, exact: true })).toBeFocused();
     await expect(page.locator('.focused-event')).toContainText(String(ref.event_id));

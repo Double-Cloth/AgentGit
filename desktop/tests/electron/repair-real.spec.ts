@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { JsonObject } from '../../src/shared/bridge';
 import { TOKEN, data, objects, startBackend } from '../support/real-client';
-import { desktopIdentity, launchDesktop } from '../support/desktop-runtime';
+import { captureDesktop, desktopIdentity, launchDesktop } from '../support/desktop-runtime';
 
 function object(value: unknown): JsonObject { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {}; }
 
@@ -61,7 +61,7 @@ test('真实 Repair Lab：联合搜索、字段缩减、六加四、版本竞争
     await page.getByRole('button', { name: '只读刷新', exact: true }).click(); await expect(page.getByRole('button', { name: '批准创建配置版本', exact: true })).toBeDisabled(); await expect(page.getByText('配置版本或建议绑定已变化。', { exact: false })).toBeVisible();
     await page.getByRole('button', { name: '核对并获取审阅票据', exact: true }).click(); await expect(page.getByRole('button', { name: '批准创建配置版本', exact: true })).toBeEnabled();
     const beforeApproval = await backend.command('state');
-    for (const width of [1440, 360]) { await page.setViewportSize({ width, height: 1000 }); await page.evaluate(() => window.scrollTo(0, 0)); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); const file = join(folder, `real-${width}.png`); await page.screenshot({ path: file, fullPage: true }); screenshots.push(file); }
+    for (const width of [1440, 360]) { await page.setViewportSize({ width, height: 1000 }); await page.evaluate(() => window.scrollTo(0, 0)); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true); const file = join(folder, `real-${width}.png`); await captureDesktop(desktop, page, file, true); screenshots.push(file); }
     await page.getByRole('button', { name: '批准创建配置版本', exact: true }).dblclick(); await expect(page.getByRole('heading', { name: '已记录的决定', exact: true })).toBeVisible();
     const accepted = data(await page.evaluate(proposalId => window.agentgit.getRepairProposal({ proposalId }), proposalId));
     const decision = object(object(accepted.review).decision); expect(decision.decision).toBe('approve'); expect(decision.execution).toBe('not_started'); expect(decision.new_config_version).toBe(Number(bumped.version) + 1);

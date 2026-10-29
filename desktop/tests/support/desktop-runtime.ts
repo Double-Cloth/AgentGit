@@ -1,5 +1,5 @@
 import { expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
 export const EVIDENCE = process.env.AGENTGIT_ELECTRON_EVIDENCE_PREFIX ?? 'S7-desktop';
@@ -16,6 +16,21 @@ export function launchDesktop(profile: string, url: string, token: string) {
   delete env.AGENTGIT_DESKTOP_EXECUTABLE;
   Object.assign(env, { AGENTGIT_API_TOKEN: token, AGENTGIT_API_URL: url, AGENTGIT_DESKTOP_PROFILE_DIR: profile });
   return electron.launch({ ...(executable ? { executablePath: resolve(executable), args: [], cwd: dirname(profile) } : { args: ['.'], cwd: resolve('.') }), env });
+}
+
+export async function captureDesktop(desktop: ElectronApplication, page: Page, path: string, fullPage = false) {
+  // 仅恢复、聚焦此测试拥有的窗口，保留实际视口和采集条件，不改变应用行为。
+  const native = await desktop.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    if (!window) throw new Error('测试窗口不存在');
+    if (window.isMinimized()) window.restore();
+    window.show(); window.focus();
+    return { visible: window.isVisible(), focused: window.isFocused(), bounds: window.getBounds() };
+  });
+  const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, contentHeight: document.documentElement.scrollHeight,
+    scrollY, fonts: document.fonts.status, visibility: document.visibilityState }));
+  await writeFile(path + '.capture.json', JSON.stringify({ native, viewport, fullPage }));
+  await page.screenshot({ path, fullPage, animations: 'disabled', timeout: 60000 });
 }
 
 export async function desktopIdentity(desktop: ElectronApplication, page: Page) {

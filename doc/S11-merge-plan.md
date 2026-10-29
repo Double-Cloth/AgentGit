@@ -2,6 +2,8 @@
 
 依据设计 5.5、5B.3 和实施方案 S11。用户暂缓环境/人工验收并要求继续工程实现；按实施方案 1.2 先推进开发，D2 前置、原 S8 定位未达标和最终验收不作通过处理。S11 全部验收后才进入 S12。
 
+2026-10-29 第十增量：[Windows 0.1.7](acceptance/S11-package-017.md)完成分发审计、40 桌面单元及 20 个不同包内节点复验，23 次尝试及 3 次失败保留，原始 CAS/配置/计量独立核对。Merge Review、显式新任务、既有实验/诊断/修复和只读重开均已进入候选；没有执行独立安装生命周期。完整退出仍依 [S11 门槛](acceptance/S11-gates.md)，人工预期及用户暂缓前置待补；S12 次序仅有[待选择提案](S12-engineering-order-proposal.md)，尚未开始。
+
 ## 交付顺序
 
 1. 实现有界共同祖先与只读产物候选。复用 `StateSnapshot.artifacts`、CAS BLOB、路径校验、AGJSON 和现有 `ResearchReport`；先支持 UTF-8 Markdown 章节及 `sources.json` 的明确 Schema。未知类型明确拒绝，不能把通用 JSON 递归拼接作为语义合并。

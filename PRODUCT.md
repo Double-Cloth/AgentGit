@@ -94,7 +94,7 @@ S11 第八增量[完整三方法报告](doc/S11-merge-report.md)已归档 30×3 
 
 2026-10-23 用户明确授权暂缓当前环境/原生验收、先继续 S7 开发与测试；S6/D1 保持未完整验收，最终交付前补验。具体范围见[实施方案第 1.2 节](doc/AgentGit_实施方案_v1.0.0.md)。
 
-当前候选为 [0.1.6](doc/acceptance/S10-package-016.md)，36 个运行构建文件、字体与授权审计、35 单元和 17 条打包 Electron 流程通过，包含受控实验、故障报告和 Repair Lab。联合修复、候选交接、取消/未知及观测禁采纳均从新 ZIP 实测；原始 CAS 独立审计通过。旧 0.1.5/0.1.4 四件套按原摘要保留。本轮未安装/升级/卸载；0.1.3 的 MSIX 安装生命周期只保留为历史证据，[D1 操作指南](doc/D1-desktop-demo.md)及[独立 Windows 清单](doc/S6-windows-acceptance.md)已更新到新候选。以下旧版本及包内容修正保留历史事实；原生保存和独立 Windows 验收仍未完成。
+当前候选为 [0.1.7](doc/acceptance/S11-package-017.md)，38 个运行构建文件、字体与授权审计、40 单元和 20 个不同打包 Electron 测试节点通过，包含受控实验、故障报告、Repair Lab 和 Merge Review。23 次实际尝试保留 3 次失败及后续复验；合并/显式新任务、联合修复、候选交接、取消/未知及观测禁采纳均从新 ZIP 实测，原始 CAS 独立审计通过。旧 0.1.6/0.1.5/0.1.4 四件套按原摘要保留。本轮未安装/升级/卸载；0.1.3 的 MSIX 安装生命周期只保留为历史证据，[D1 操作指南](doc/D1-desktop-demo.md)及[独立 Windows 清单](doc/S6-windows-acceptance.md)已更新到新候选。以下旧版本及包内容修正保留历史事实；原生保存和独立 Windows 验收仍未完成。[S11 阶段门槛](doc/acceptance/S11-gates.md)保留人工预期及完整前置，S12 工程尚未开始。
 
 真实 PostgreSQL、固定 Linux 容器、完整五工具来源、CLI 与 API、逐检查点 Replay 证明、A/B Live 文件与预算隔离均有本机记录。原始运行证据在忽略的 `.agentgit/evidence/`；可提交的验收说明位于 `doc/acceptance/`。真实 Electron 与从 ZIP 解压的程序已通过独立测试库/Worker/容器五工具→Fork→Recorded/Live→Diff 联调，应用进程没有构建用 Node/npm 的 PATH。Windows x64 0.1.1 开发候选安装程序和 ZIP 已构建、均未签名；Codex MSIX 上下文中实际覆盖升级/卸载/重装及业务数据保留已验证。导出测试仍替换了原生对话框返回值，尚无独立 Windows 用户安装/升级/卸载证据，各项不能互相替代。
 

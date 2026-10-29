@@ -71,4 +71,3 @@ test('真实 Merge Review：三方来源、完整修订、双父批准、独立�
     console.log(`真实合并失败证据：${folder}`); throw failure;
   } finally { try { await desktop.close(); } finally { await backend.stop(); } }
 });
-
