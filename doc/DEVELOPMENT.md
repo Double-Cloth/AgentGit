@@ -1,5 +1,7 @@
 # 本地开发与测试
 
+S12 当前在 `codex/s12-adapters` 推进，[MCP 首增量](acceptance/S12-A.md)已实现固定回环 HTTP、闭合 Schema、本地效果/精确审批及既有网关录制。839 单元、17 真实 MCP 联调、72 核心及 3 包内桌面兼容流程通过；产品源码 `source-sha256:0397fd867f3c9425ceb6d42230814e045d4e76853c502b15fe5d470c2b3f22db`，依赖和迁移未改。测试命令及可信 Server 范围见 [fixture 说明](../tests/fixtures/mcp/v1/README.md)。当前不是完整 MCP Run/Worker 或新桌面入口，继续实际任务接入与完整状态回放；旧研究 release 继续使用其冻结源码，不修改旧 guard 接受新模块。
+
 S11 已接通[Merge Review](acceptance/S11-desktop.md)与固定 IPC，并进入 [0.1.7 分发候选](acceptance/S11-package-017.md)；`playwright.merge.config.ts` 覆盖明确 HTTP fixture 和两套真实测试 Schema/API/独立 Worker/CAS。`npm run build` 后以唯一证据前缀运行，实际 Runtime 期间冻结产品、锁、迁移、构建与驱动。桌面 HTTP 修订仍受完整请求 1 MiB 限制，不能仅按两个单文件上限估计载荷。新 ZIP 的 20 个不同节点均有通过证据，3 次失败与后续复验保留；完整阶段前置见 [S11 门槛](acceptance/S11-gates.md)。
 
 实现进度与阶段证据见 [PROGRESS.md](PROGRESS.md)。README 保留项目介绍；方案和设计的 S0 描述是规划时的历史基线。
@@ -8,7 +10,7 @@ S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命
 
 ## 环境
 
-当前开发分支为 `codex/s11-merge`。S11 的共同祖先、有限状态/产物验证、[耐久提案](acceptance/S11-proposals.md)、[精确批准/双父后端](acceptance/S11-approval.md)、[合并后的独立新任务](acceptance/S11-merged-runs.md)及[再次合并/交叉历史](acceptance/S11-remerge.md)已实现。[正式三十组三方法](acceptance/S11-merge-evaluation.md)完成全量候选/双父/零基线新任务重审，结果见[报告](S11-merge-report.md)；桌面和新包工程已核对，人工预期及整体前置仍待补，用户已明确选择延续 S12 工程，S11 完整验收仍是正式前置，见[次序记录](S12-engineering-order-proposal.md)。当前核对范围见各增量记录，以下阶段记录保留历史范围。
+S11 分支 `codex/s11-merge` 的共同祖先、有限状态/产物验证、[耐久提案](acceptance/S11-proposals.md)、[精确批准/双父后端](acceptance/S11-approval.md)、[合并后的独立新任务](acceptance/S11-merged-runs.md)及[再次合并/交叉历史](acceptance/S11-remerge.md)已实现。[正式三十组三方法](acceptance/S11-merge-evaluation.md)完成全量候选/双父/零基线新任务重审，结果见[报告](S11-merge-report.md)；桌面和新包工程已核对，人工预期及整体前置仍待补，用户已明确选择延续 S12 工程，S11 完整验收仍是正式前置，见[次序记录](S12-engineering-order-proposal.md)。当前核对范围见各增量记录，以下阶段记录保留历史范围。
 
 ```powershell
 uv run --locked pytest tests/unit
