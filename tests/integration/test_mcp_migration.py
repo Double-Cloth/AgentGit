@@ -22,7 +22,7 @@ def test_mcp_kind_migration_roundtrip_without_table_changes(history):
         config = migration_config(connection)
         assert (
             connection.execute(sa.text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0027_mcp_runs"
+            == "0028_langgraph_runs"
         )
         command.downgrade(config, "0026_merge_runs")
         command.upgrade(config, "head")

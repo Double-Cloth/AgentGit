@@ -23,7 +23,7 @@ def test_merge_schema_round_trip_and_production_downgrade_guard(history):
         assert set(TABLE_ORDER) <= set(inspect(connection).get_table_names())
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0027_mcp_runs"
+            == "0028_langgraph_runs"
         )
         with pytest.raises(RuntimeError, match="正式迁移"):
             command.downgrade(config_for(connection, testing=False), "0023_repair_proposal_reviews")

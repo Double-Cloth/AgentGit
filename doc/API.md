@@ -1,6 +1,14 @@
 # 本地服务与 CLI（S4–S11 耐久提案）
 
-当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。用户准备好业务环境后运行 `uv run --locked alembic upgrade head`，当前 head 为 `0026_merge_runs`；桌面不会自动迁移后端。
+当前支持本机操作者、默认离线模型、三个基础工具，以及显式启用的 `terminal_exec/code_exec` 真容器工具；S6 另提供显式配置的真实模型 Adapter，配置和 USD 计量见[模型说明](MODEL_ADAPTER.md)。[S4 本机验收](acceptance/S4.md)已通过。配置不会自动读取 .env，本机服务以 AGENTGIT_* 进程环境为准，供应商密钥仅 Worker 从 `OPENAI_API_KEY` 读取。用户准备好后端环境后运行 `uv run --locked alembic upgrade head`，当前 head 为 `0028_langgraph_runs`；本轮仅在测试 Schema 验证，桌面不会自动迁移后端。
+
+## S12-B 固定图 Live
+
+图创建入口目前为 `langgraph-submit <repository_id> <program.json> --expected-version <version> --key <key>`，可指定 branch/head，见[演示](S12-B-langgraph-demo.md)。固定 `mcp-read-review-publish/v1` 与 LangGraph `1.2.18`，只接受已登记 READ_ONLY MCP 绑定和有界参数；默认 review 前暂停。相同身份和确切输入原键返回原 Job/Run，HEAD/版本/活动写入者变化拒绝。
+
+既有 `GET /runs/{run_id}` 的 `adapter.kind=langgraph_program/v1`，提供 SDK/checkpoint 版本、模板、工具/Schema/效果、limits、logical_usage、actual_attempts、native_ref/native_next 和 has_model=false。未知尝试为 null，不代表零次。状态/事件/产物/Commit 查询保留同项目边界；`POST /runs/{run_id}/pause|resume|cancel` 继续使用 expected_version 和原键，resume 保留原墙钟期限。
+
+`langgraph.native.checkpoint/writes` 事件的 native_checkpoint_id/native_ref 对应确切 Commit，原生日志和报告发布为 `langgraph-native.json`/`report.md`，共用程序产物预算。已有结果或 pending writes 恢复不新增工具请求；只有意图时保持未知。本增量已通过[工程核对](acceptance/S12-B.md)，独立 Run/分支 Fork、完整 Recorded 与完整桌面退出继续。
 
 ## S11 耐久合并提案
 

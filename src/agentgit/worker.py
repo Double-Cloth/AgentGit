@@ -27,6 +27,7 @@ from agentgit.core.models import (
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage, ResearchGoal, evolve
 from agentgit.core.snapshots import EventPayload, StateSnapshot
 from agentgit.core.versions import HybridReplaySpec
+from agentgit.runtime.langgraph_run import LangGraphRunRunner
 from agentgit.runtime.mcp_run import MCPRunRunner
 from agentgit.runtime.model_budget import call_budget, reserve_model
 from agentgit.runtime.ports import CallSettlement, ModelAdapter
@@ -91,6 +92,11 @@ class Worker:
             return None
         try:
             job = self.queue.get(lease.repository_id, lease.job_id)
+            if job["kind"] == "langgraph_run":
+                with LeaseHeartbeat(self.queue, lease):
+                    return LangGraphRunRunner(
+                        self.queue, lease, fault=self.fault, client_factory=self.mcp_client_factory
+                    ).run()
             if job["kind"] == "mcp_run":
                 with LeaseHeartbeat(self.queue, lease):
                     return MCPRunRunner(

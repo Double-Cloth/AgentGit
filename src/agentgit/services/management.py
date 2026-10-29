@@ -18,6 +18,7 @@ from agentgit.core.effects import ToolPolicy
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.experiments import FreezeValidator, NewExperiment
 from agentgit.core.interventions import NewIntervention
+from agentgit.core.langgraph_runs import LangGraphRunState
 from agentgit.core.management import (
     ControlRun,
     DecideApproval,
@@ -58,6 +59,7 @@ from agentgit.services.experiments import ExperimentService
 from agentgit.services.history import TABLES, HistoryService
 from agentgit.services.inspection import InspectionService
 from agentgit.services.jobs import JobService
+from agentgit.services.langgraph_runs import LangGraphRunService
 from agentgit.services.mcp_runs import MCPRunService
 from agentgit.services.merge import MergePreviewService
 from agentgit.services.merge_proposals import MergeProposalService
@@ -973,6 +975,38 @@ class ManagementService:
                         snapshots.c.commit_id == row["checkpoint_commit_id"],
                     )
                 ).first()
+            if job is not None and job["kind"] == "langgraph_run":
+                graph_service = LangGraphRunService(self.jobs)
+                graph_payload = graph_service.payload(repository_id, job["id"])
+                graph_program = graph_service.program(repository_id, graph_payload)
+                graph_state = LangGraphRunState(program_ref=graph_payload.program_ref)
+                if own is not None:
+                    restored = self.history.restore(repository_id, row["checkpoint_commit_id"])
+                    graph_state = parse_contract(encode(restored.data), LangGraphRunState)
+                    if graph_state.program_ref != graph_payload.program_ref:
+                        raise AgentGitError(
+                            ErrorCode.OBJECT_CORRUPT, "LangGraph 状态与程序引用不符"
+                        )
+                result["adapter"] = {
+                    "kind": "langgraph_program/v1",
+                    "program_ref": graph_payload.program_ref,
+                    "framework_version": graph_program.framework_version,
+                    "checkpoint_version": graph_program.checkpoint_version,
+                    "template": graph_program.graph.template,
+                    "server_identity": graph_program.binding.server.server_identity,
+                    "tool_name": graph_program.binding.tool_name,
+                    "schema_digest": graph_program.binding.schema_digest(),
+                    "effect_class": graph_program.binding.effect_class.value,
+                    "limits": graph_program.limits.model_dump(mode="json"),
+                    "logical_usage": graph_state.usage.model_dump(mode="json"),
+                    "actual_attempts": graph_state.actual_attempts,
+                    "response_ref": graph_state.trace.response_ref if graph_state.trace else None,
+                    "native_ref": graph_state.native_ref,
+                    "native_next": list(graph_state.native_next),
+                    "mode": row["mode"],
+                    "has_model": False,
+                    "recording": None,
+                }
             if job is not None and job["kind"] == "mcp_run":
                 payload = self.mcp_runs.payload(repository_id, job["id"])
                 program = self.mcp_runs.program(repository_id, payload)

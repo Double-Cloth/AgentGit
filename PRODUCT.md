@@ -1,6 +1,6 @@
 # AgentGit 产品上下文
 
-S12-B 当前实现[固定图与公共 checkpoint 日志首增量](doc/acceptance/S12-B.md)：实际 LangGraph `1.2.18` 驱动只读取证、审阅和报告，AGJSON 日志经持久化回调确认保存。当前 917 单元和 3 项真实 MCP/PostgreSQL/History 集成通过，含重新打开恢复、HEAD 竞争和项目隔离；日志与原始调用另经审计。Job/Worker、独立 Run/分支 Fork、完整 Recorded 和真实进程中断继续，正式 B/C/D 与 D3 未验收。A 的完整证据仍使用其原锁和冻结。
+S12-B 已接通[固定图的耐久 Live Worker](doc/acceptance/S12-B.md)：复用 Run/Job/History/CAS、租约和控制，提供 CLI 提交及现有 HTTP 查询/恢复，原生日志与报告共用预算。当前 933 单元和 20 项图相关集成通过，含四次实际解释器终止后零重发、未知保留、原生暂停恢复及项目边界，原始对象另经审计。独立 Run/分支 Fork、完整 Recorded、完整桌面/兼容退出继续，正式 B/C/D 与 D3 未验收。A 的完整证据仍使用其原锁和冻结。
 
 <!-- impeccable:product-schema 1 -->
 

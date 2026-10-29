@@ -24,6 +24,7 @@ from agentgit.core.debug_reports import NewDebugReport
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.experiments import FreezeValidator, NewExperiment
 from agentgit.core.interventions import NewIntervention
+from agentgit.core.langgraph import LangGraphProgram
 from agentgit.core.management import (
     ControlRun,
     DecideApproval,
@@ -54,6 +55,7 @@ from agentgit.diagnostics import sandbox_prerequisites
 from agentgit.repair.confirmation_worker import RepairConfirmationWorker
 from agentgit.repair.study_worker import RepairStudyWorker
 from agentgit.repair.worker import RepairSearchWorker
+from agentgit.services.langgraph_runs import LangGraphRunService
 from agentgit.services.management import ManagementService
 from agentgit.services.mcp_runs import MCPRunService
 from agentgit.services.versions import VersionService
@@ -142,7 +144,7 @@ def _mcp_input[T: Contract](file: Path, model: type[T], max_bytes: int = 2_097_1
     with file.open("rb") as stream:
         payload = stream.read(max_bytes + 1)
     if len(payload) > max_bytes:
-        raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "MCP 输入文件超过上限")
+        raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "适配器输入文件超过上限")
     return parse_contract(payload, model)
 
 
@@ -191,6 +193,31 @@ def mcp_submit(
             expected_head=head,
             expected_version=expected_version,
             replay=replay,
+        )
+        emit(submitted.model_dump(mode="json"))
+
+
+@app.command("langgraph-submit")
+def langgraph_submit(
+    repository_id: UUID,
+    file: Path,
+    expected_version: int = typer.Option(..., min=0),
+    key: str = typer.Option(...),
+    branch: str = "main",
+    head: str | None = None,
+    testing: bool = False,
+) -> None:
+    """提交固定只读取证图；通过现有 Worker/状态与控制命令执行和恢复。"""
+    with management(testing) as service:
+        program = _mcp_input(file, LangGraphProgram)
+        submitted = LangGraphRunService(service.jobs).submit(
+            repository_id,
+            program,
+            actor=service.actor,
+            key=key,
+            branch_name=branch,
+            expected_head=head,
+            expected_version=expected_version,
         )
         emit(submitted.model_dump(mode="json"))
 
