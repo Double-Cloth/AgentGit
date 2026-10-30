@@ -1,5 +1,7 @@
 # 本地开发与测试
 
+2026-10-31 最新补充：[组控制后端](acceptance/S12-C.md)复用不可变事件/原键，不新增表或依赖，head30/78 表保持。当前 5a74cf…8732 源码 1,081 单元、94 集成全过，包含 `test_collaboration_controls.py` 的 21 个组控制节点、既有执行/调度/准备和普通 Job；九处实际解释器终止及原始审计完成。收据的 `accepted` 仅为接受请求，须另查实际静止/未知状态；组恢复保留单角色人工暂停和原 deadline。仍没有协作公开 API/CLI、Recorded 或新包，下文源码/版本各属历史范围，业务库未自动迁移。
+
 最新 C 工程为[四角色执行/恢复和调度边界](acceptance/S12-C.md)，Schema 当前 **`0030_collaboration_exchange`**，只在独立测试 Schema 验证，业务库未自动迁移。最新源码 ef15cc…0ed7 的 1,081 单元、34 调度/执行/Job 集成通过；历史下文 head/报告各归属其原冻结版本。协作尚无公开创建 API/CLI 或新包，组控制/Recorded/桌面继续；复验可选 `tests/integration/test_collaboration_scheduler.py` 和 `test_collaboration_execution.py`，必须使用独立测试库、唯一证据目录及固定源码/锁/驱动，运行期间不得修改这些输入。
 
 S12-B 已接通 [LangGraph `1.2.18` Live/Fork/成功范围 Recorded 与受信 stdio 核对](acceptance/S12-B.md)，范围见[计划](S12-B-langgraph-plan.md)，操作见[演示](S12-B-langgraph-demo.md)。锁仍为 `13df29416247b05eb1ab2a97b9ef2d6035af2903b1e52e8562d3ef1aaa45ed3a`。当前 960 单元、64 stdio 图契约、67 HTTP 图回归与 59 相关兼容通过；全套 2,235 项联合收集通过不代表全量执行。三个 S12 单元文件使用 `_contracts.py` 避免与集成模块重名，其他命令和断言保持。运行前冻结 679 文件；从 `ee30e72` 加快照复现时还须按 `deletions-provenance-v1.json` 删除三个旧路径。Schema 仍 `0028_langgraph_runs`，无新依赖或迁移。原生边界取消/期限组合、完整桌面和正式 B/C/D/D3 继续；下文 A 保留其原源码/旧锁范围。

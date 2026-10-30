@@ -265,6 +265,16 @@ class CollaborationExchange:
                 "collaboration.artifact_observed",
                 "collaboration.stopped",
             }:
+                group_status = connection.execute(
+                    sa.select(TABLES["collaborations"].c.status)
+                    .where(TABLES["collaborations"].c.id == self.group_id)
+                    .with_for_update()
+                ).scalar_one()
+                if group_status != "running":
+                    raise AgentGitError(
+                        ErrorCode.CONTROL_REQUESTED,
+                        "pause" if group_status == "paused" else "cancel",
+                    )
                 current = self.history._run(connection, self.lease.repository_id, self.lease.run_id)
                 if current["control_status"] == "requested" and current["control_request"] in (
                     "pause",
@@ -310,7 +320,20 @@ class CollaborationExchange:
                 )
             )
             if apply_control:
-                self.queue.mark_control_applied(connection, self.lease)
+                current = self.history._run(connection, self.lease.repository_id, self.lease.run_id)
+                matches = (
+                    (current["control_request"] == "pause" and state.status == RunStatus.PAUSED)
+                    or (
+                        current["control_request"] == "cancel"
+                        and state.status == RunStatus.CANCELLED
+                    )
+                    or (
+                        current["control_request"] == "resume"
+                        and event_type == "collaboration.resumed"
+                    )
+                )
+                if matches:
+                    self.queue.mark_control_applied(connection, self.lease)
             if projection is not None:
                 projection(connection)
 

@@ -161,17 +161,19 @@ class CollaborationRoleRunner:
 
     def _stop_reason(self) -> str | None:
         control = self.queue.apply_control(self.lease)
-        if control == "resume":
-            return None
-        if control:
-            return control
+        if control == "cancel":
+            return "cancel"
         with self.history.engine.connect() as c:
             group = c.execute(
                 sa.select(TABLES["collaborations"].c.status).where(
                     TABLES["collaborations"].c.id == self.exchange.group_id
                 )
             ).scalar_one()
-        return "pause" if group == "paused" else "cancel" if group in TERMINAL else None
+        if group in TERMINAL:
+            return "cancel"
+        if control == "budget_exhausted":
+            return control
+        return "pause" if group == "paused" or control == "pause" else None
 
     def _check(self) -> None:
         reason = self._stop_reason()
@@ -291,6 +293,11 @@ class CollaborationRoleRunner:
         outcome = self.gateway.recorded(**kwargs)
         if outcome is None:
             self._check()
+            if self.state.status == RunStatus.PAUSED:
+                self.state = evolve(self.state, status=RunStatus.RUNNING, error_code=None)
+                self._save(
+                    "collaboration.resumed", apply=self.queue.apply_control(self.lease) == "resume"
+                )
 
             def invoke() -> bytes:
                 # 意图已提交后属于在途调用；仅复核租约，控制在结果结算后落实。
@@ -585,6 +592,34 @@ class CollaborationRoleRunner:
         usage = (
             self.state.usage if pending is not None else evolve(self.state.usage, reserved_tokens=0)
         )
+        if pending is None and self.state.pending is not None:
+            abandoned = self.state.pending
+            with self.history.engine.connect() as c:
+                calls = TABLES["external_calls"]
+                intent = c.execute(
+                    sa.select(calls.c.id).where(
+                        calls.c.repository_id == self.lease.repository_id,
+                        calls.c.run_id == self.lease.run_id,
+                        calls.c.logical_step_id == abandoned.step,
+                        calls.c.call_index == 0,
+                        calls.c.attempt == 1,
+                    )
+                ).scalar_one_or_none()
+            if intent is None:
+                usage = evolve(
+                    usage,
+                    steps=usage.steps - 1,
+                    model_calls=usage.model_calls - int(abandoned.category == "model"),
+                    tool_calls=usage.tool_calls - int(abandoned.category == "tool"),
+                )
+                parent_events = (
+                    *parent_events,
+                    EventInput(
+                        "collaboration.call_aborted",
+                        "collaboration",
+                        dict(step=abandoned.step, category=abandoned.category, reason="no_intent"),
+                    ),
+                )
         self.state = evolve(
             self.state,
             status=status,
@@ -663,10 +698,16 @@ class CollaborationRoleRunner:
                     self.history.objects.get(pending.request_ref, ObjectType.BLOB),
                 )
             self._check()
-            self.state = evolve(self.state, status=RunStatus.RUNNING, error_code=None)
-            self._save(
-                "collaboration.resumed", apply=self.queue.apply_control(self.lease) == "resume"
-            )
+            current = self.queue.run(self.lease.repository_id, self.lease.run_id)
+            if (
+                self.state.status != RunStatus.RUNNING
+                or current["status"] != "running"
+                or self.queue.apply_control(self.lease) == "resume"
+            ):
+                self.state = evolve(self.state, status=RunStatus.RUNNING, error_code=None)
+                self._save(
+                    "collaboration.resumed", apply=self.queue.apply_control(self.lease) == "resume"
+                )
             self.state = self.exchange.receive(self.state)
             if self.state.role == CollaborationRole.SUPERVISOR:
                 if self.state.sent:
@@ -687,11 +728,16 @@ class CollaborationRoleRunner:
                     status="lease_lost",
                     error_code=error.code.value,
                 )
-            reason = (
-                ("dependencies" if str(error) == "dependencies" else self._stop_reason())
-                if error.code == ErrorCode.CONTROL_REQUESTED
-                else None
-            )
+            reason = None
+            if error.code == ErrorCode.CONTROL_REQUESTED:
+                reason = self._stop_reason()
+                if reason is None and str(error) in (
+                    "dependencies",
+                    "pause",
+                    "cancel",
+                    "budget_exhausted",
+                ):
+                    reason = str(error)
             status = (
                 RunStatus.PAUSED
                 if reason in ("pause", "dependencies")

@@ -230,7 +230,8 @@ class CollaborationCoordinator:
                     sa.select(groups.c.repository_id, groups.c.id, groups.c.status)
                     .where(
                         sa.or_(
-                            sa.and_(groups.c.status == "running", sa.or_(failed_member, runnable)),
+                            sa.and_(groups.c.status.in_(("running", "paused")), failed_member),
+                            sa.and_(groups.c.status == "running", runnable),
                             sa.and_(groups.c.status.in_(FAILED_STATUSES), pending_stop),
                         )
                     )
@@ -242,7 +243,7 @@ class CollaborationCoordinator:
                 .all()
             )
             for row in rows:
-                if row["status"] == "running":
+                if row["status"] in ("running", "paused"):
                     failed = (
                         c.execute(
                             sa.select(runs.c.status, runs.c.id, runs.c.last_event_seq)
@@ -275,7 +276,7 @@ class CollaborationCoordinator:
                             )
                         )
                         wake_stopped(c, row["repository_id"], row["id"])
-                    else:
+                    elif row["status"] == "running":
                         wake_collaboration(self.queue, c, row["repository_id"], row["id"])
                 else:
                     wake_stopped(c, row["repository_id"], row["id"])
