@@ -8,6 +8,7 @@ import sqlalchemy as sa
 from sqlalchemy.engine import Connection, RowMapping
 
 from agentgit.core.canonical import ObjectType, encode, object_digest
+from agentgit.core.collaboration_runs import CollaborationRolePayload
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.jobs import TERMINAL_RUNS, JobPayload, Lease, Submission
 from agentgit.core.langgraph_runs import LangGraphJobPayload
@@ -388,8 +389,13 @@ class JobService:
             )
             if candidate is None:
                 return None
-            payload: JobPayload | MCPJobPayload | LangGraphJobPayload
-            if candidate["kind"] == "mcp_run":
+            payload: JobPayload | MCPJobPayload | LangGraphJobPayload | CollaborationRolePayload
+            if candidate["kind"] == "collaboration_role":
+                payload = parse_contract(
+                    self.history.objects.get(candidate["payload_ref"], ObjectType.BLOB),
+                    CollaborationRolePayload,
+                )
+            elif candidate["kind"] == "mcp_run":
                 payload = parse_contract(
                     self.history.objects.get(candidate["payload_ref"], ObjectType.BLOB),
                     MCPJobPayload,
@@ -527,6 +533,23 @@ class JobService:
             )
             if job is None:
                 raise AgentGitError(ErrorCode.NOT_FOUND, "Run 没有持久化 Job")
+            if job["kind"] == "collaboration_role":
+                tasks, groups = TABLES["collaboration_tasks"], TABLES["collaborations"]
+                prepared = connection.execute(
+                    sa.select(groups.c.status)
+                    .join(
+                        tasks,
+                        sa.and_(
+                            tasks.c.repository_id == groups.c.repository_id,
+                            tasks.c.collaboration_id == groups.c.id,
+                        ),
+                    )
+                    .where(tasks.c.repository_id == repository_id, tasks.c.job_id == job["id"])
+                ).scalar_one_or_none()
+                if prepared is None:
+                    raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "协作 Job 缺少角色任务")
+                if prepared == "prepared":
+                    raise AgentGitError(ErrorCode.FORBIDDEN, "协作组仅完成准备，须由协作调度器启动")
             connection.execute(
                 runs.update()
                 .where(runs.c.id == run_id)

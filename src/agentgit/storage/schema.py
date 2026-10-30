@@ -1,3 +1,3 @@
 """当前服务使用的元数据；历史迁移继续引用各自冻结的快照。"""
 
-from agentgit.storage.schema_langgraph_runs import build_metadata as build_metadata
+from agentgit.storage.schema_collaboration import build_metadata as build_metadata

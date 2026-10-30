@@ -3,6 +3,7 @@
 import pytest
 import sqlalchemy as sa
 from alembic import command
+from alembic.script import ScriptDirectory
 from mcp_evidence import archive_mcp_run as archive_mcp_run
 from test_mcp_adapter import server as server
 from test_mcp_runs import case
@@ -22,7 +23,7 @@ def test_mcp_kind_migration_roundtrip_without_table_changes(history):
         config = migration_config(connection)
         assert (
             connection.execute(sa.text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0028_langgraph_runs"
+            == ScriptDirectory.from_config(config).get_current_head()
         )
         command.downgrade(config, "0026_merge_runs")
         command.upgrade(config, "head")

@@ -3,6 +3,7 @@
 import pytest
 import sqlalchemy as sa
 from alembic import command
+from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import DBAPIError
 from test_kernel_migrations import config_for, schema_signature
@@ -23,7 +24,7 @@ def test_merge_schema_round_trip_and_production_downgrade_guard(history):
         assert set(TABLE_ORDER) <= set(inspect(connection).get_table_names())
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0028_langgraph_runs"
+            == ScriptDirectory.from_config(config).get_current_head()
         )
         with pytest.raises(RuntimeError, match="正式迁移"):
             command.downgrade(config_for(connection, testing=False), "0023_repair_proposal_reviews")

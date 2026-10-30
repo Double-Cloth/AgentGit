@@ -3,6 +3,7 @@
 import pytest
 import sqlalchemy as sa
 from alembic import command
+from alembic.script import ScriptDirectory
 from test_kernel_migrations import config_for
 from test_langgraph_runs import case
 from test_mcp_adapter import server as server
@@ -16,7 +17,7 @@ def test_langgraph_kind_migration_roundtrip_changes_no_tables(history):
         config = config_for(connection)
         assert (
             connection.execute(sa.text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0028_langgraph_runs"
+            == ScriptDirectory.from_config(config).get_current_head()
         )
         command.downgrade(config, "0027_mcp_runs")
         command.upgrade(config, "head")

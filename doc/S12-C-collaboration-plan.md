@@ -8,6 +8,8 @@
 
 Researcher 用既有 corpus_search/source_read 收集固定语料；Verifier 核对正文摘要、引用及冻结有效时间；Writer 消费明确导出的证据/验证结果，通过既有产物边界写 report.md/sources.json。Supervisor 负责委派、依赖与子任务控制。子 Agent 不继承操作者令牌、其他角色的私有消息/权限/预算、外部写批准或执行后端身份；首批不授予容器工具。未来如支持 Shell/Python，必须仍走 S4 策略，不能走宿主执行。
 
+耐久准备使用协作域的真实角色任务索引，绑定现有 Run/Job；不把 RolePolicy 存为普通研究 AgentConfig，也不借用 S3 研究 Task 身份。每个角色有独立新分支，准备时 Run/Job 暂停并按既有触发器持有自身分支写锁，main 不变。普通恢复/取消入口不能提前激活 prepared 组；后续协作调度器负责开始、依赖与组控制。初始私有输入只通过后端调度器持有的有效 Lease 读取，模型/IPC/envelope 不得自报 Lease 或任意 CAS 摘要。
+
 ## 消息、因果与共享产物
 
 不可变 envelope 包含 repository_id、collaboration_id、message_id、sender/receiver（实际 Run）、接收任务 task_id、correlation_id、kind、payload_ref 与 parent_event_id。parent_event_id 明确为已有耐久事件的地址：agent_run_id、commit_id、seq、payload_ref；服务必须读取原始事件核对归属，不能相信 envelope 自报。消息指向先前已保存的发送角色事件，发送事件再引用 envelope，避免 Commit/CAS 的循环摘要。跨角色因果 DAG 独立保存，不把四条时间线强行串成一个 Run。

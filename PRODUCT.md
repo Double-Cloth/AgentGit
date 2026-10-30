@@ -1,6 +1,6 @@
 # AgentGit 产品上下文
 
-S12-B 的[本机固定图工程核对](doc/acceptance/S12-B.md)已补齐 HTTP/受信 stdio、Live/安全 Fork/成功轨迹 Recorded、原生边界控制及相关核心/开发版桌面兼容，按既有工程次序授权进入 C。[S12-C 首增量](doc/acceptance/S12-C.md)已固定四角色 DAG、权限/独立预算、消息与共享版本纯契约，当前 1,081 单元通过；真实四角色 Run、耐久收据/私有上下文、Recorded 和桌面尚待接入。正式 B/C/D、最终四适配新包和 D3 未验收；已有 A/B 源码/锁及历史候选封存保持。
+S12-B 的[本机固定图工程核对](doc/acceptance/S12-B.md)已补齐 HTTP/受信 stdio、Live/安全 Fork/成功轨迹 Recorded、原生边界控制及相关核心/开发版桌面兼容，按既有工程次序授权进入 C。[S12-C](doc/acceptance/S12-C.md)已固定四角色契约，并接通真实四任务/Run/Job 的原子准备、独立预算上限和基于有效租约的初始私有输入授权；1,081 单元、26 准备/授权及 140 核心兼容通过。角色仍处于准备阶段，调度执行、耐久消息/共享产物、完整上下文恢复、Recorded 和桌面继续。正式 B/C/D、最终四适配新包和 D3 未验收；已有 A/B 源码/锁及历史候选封存保持。
 
 <!-- impeccable:product-schema 1 -->
 
