@@ -34,6 +34,30 @@ class WriteArguments(Contract):
     media_type: str
 
 
+def local_tool_signature(name: str) -> str:
+    """读取本地工具契约，不构造工作区或可执行 Registry。"""
+    schemas: dict[str, type[Contract]] = {
+        "corpus_search": SearchArguments,
+        "source_read": ReadArguments,
+        "artifact_write": WriteArguments,
+    }
+    if name not in schemas:
+        raise AgentGitError(ErrorCode.FORBIDDEN, "未知本地工具")
+    effect = EffectClass.IDEMPOTENT_WRITE if name == "artifact_write" else EffectClass.READ_ONLY
+    return object_digest(
+        ObjectType.CALL,
+        encode(
+            dict(
+                schema_version=1,
+                tool=name,
+                version="v1",
+                effect=effect.value,
+                arguments=schemas[name].model_json_schema(),
+            )
+        ),
+    )
+
+
 class ToolRegistry:
     def __init__(self, corpus: Corpus, workspace: Workspace, config: AgentConfig):
         self.corpus, self.workspace, self.allowed = corpus, workspace, frozenset(config.tools)
@@ -72,28 +96,12 @@ class ToolRegistry:
         return EffectClass.IDEMPOTENT_WRITE if name == "artifact_write" else EffectClass.READ_ONLY
 
     def signature(self, name: str) -> str:
-        effect = self.effect(name)
+        self.effect(name)
         if name in {"terminal_exec", "code_exec"}:
             if self.policy is None:
                 raise AgentGitError(ErrorCode.FORBIDDEN, "容器工具缺少固定策略")
             return execution_signature(f"tool:{name}/v1", self.policy)
-        schemas: dict[str, type[Contract]] = {
-            "corpus_search": SearchArguments,
-            "source_read": ReadArguments,
-            "artifact_write": WriteArguments,
-        }
-        return object_digest(
-            ObjectType.CALL,
-            encode(
-                {
-                    "schema_version": 1,
-                    "tool": name,
-                    "version": "v1",
-                    "effect": effect.value,
-                    "arguments": schemas[name].model_json_schema(),
-                }
-            ),
-        )
+        return local_tool_signature(name)
 
     def invoke(self, name: str, arguments: dict[str, Any]) -> bytes:
         self.effect(name)
