@@ -133,3 +133,7 @@ Repair Lab 需要已准备的 API、普通 Worker，以及分别启动的 repair
 `repair-boundaries-real.spec.ts` 在自己的测试 Worker 上验证[排队取消及确认结果未知](../doc/acceptance/S10-lab-boundaries.md)。未知试验保留预留，取消/重开不自动重发；页面显示核对要求、未知计量和未结算状态。该固定故障注入不调用供应商，独立于研究成功率评估。
 
 `repair-observation-real.spec.ts` 验证[真实观测禁采纳](../doc/acceptance/S10-lab-observation.md)：显式准备完整录制和 Hybrid 范围后实际六加四通过，仍不能批准正式配置；API 拒绝绕过，页面只保存精确实验定义且不执行。所有 Repair Lab spec 均可按需单独选择、设置唯一证据前缀运行，真实部分需测试数据库和冻结 helper。
+
+## S12 固定图展示与控制
+
+时间线区分 Graph/MCP 的逻辑历史用量与本次实际尝试，显示固定工具、图版本/next、Fork 备注及 Recorded 来源。研究分支表单限制固定程序提交，图创建继续使用后端操作者入口。`playwright.langgraph.config.ts` 的六项真实流程覆盖 HTTP/批准 stdio 的暂停/恢复/取消、产物、Fork/Recorded 来源、窄窗与重开；准备、唯一证据前缀和运行冻结要求见 [固定图演示](../doc/S12-B-langgraph-demo.md#原生控制与桌面流程)。当前验证是开发版 Electron，历史 0.1.7 候选包保持原字节；最终四适配新包及正式原生/人工验收继续待补。

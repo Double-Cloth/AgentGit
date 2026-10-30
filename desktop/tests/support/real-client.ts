@@ -7,10 +7,10 @@ import type { JsonObject, Reply } from '../../src/shared/bridge';
 export const TOKEN = 'fixture-real-desktop-token-000000000000000000000';
 export function data<T>(reply: Reply<T>): T { if (!reply.ok) throw new Error(`${reply.error.code}: ${reply.error.message}`); return reply.data; }
 export function objects(value: unknown): JsonObject[] { return Array.isArray(value) ? value as JsonObject[] : []; }
-export async function startBackend(kind: 'standard' | 'repair' | 'repair-boundaries' | 'repair-observation' | 'merge' | 'merge-negative' | 'mcp' | 'mcp-stdio' = 'standard') {
-  const script = kind === 'mcp' || kind === 'mcp-stdio' ? 'mcp_backend.py' : kind.startsWith('merge') ? 'merge_backend.py' : kind === 'repair-observation' ? 'repair_observation_backend.py' : kind === 'repair-boundaries' ? 'repair_boundaries_backend.py' : kind === 'repair' ? 'repair_backend.py' : 'real_backend.py';
+export async function startBackend(kind: 'standard' | 'repair' | 'repair-boundaries' | 'repair-observation' | 'merge' | 'merge-negative' | 'mcp' | 'mcp-stdio' | 'langgraph' | 'langgraph-stdio' | 'langgraph-boundary' | 'langgraph-stdio-boundary' = 'standard') {
+  const script = kind.startsWith('langgraph') ? 'langgraph_backend.py' : kind === 'mcp' || kind === 'mcp-stdio' ? 'mcp_backend.py' : kind.startsWith('merge') ? 'merge_backend.py' : kind === 'repair-observation' ? 'repair_observation_backend.py' : kind === 'repair-boundaries' ? 'repair_boundaries_backend.py' : kind === 'repair' ? 'repair_backend.py' : 'real_backend.py';
   const child = spawn('uv', ['run', '--locked', 'python', `desktop/tests/support/${script}`], {
-    cwd: resolve('..'), windowsHide: true, env: { ...process.env, AGENTGIT_API_TOKEN: TOKEN, PYTHONIOENCODING: 'utf-8', AGENTGIT_MCP_NATIVE_TRANSPORT: kind === 'mcp-stdio' ? 'stdio' : 'http', AGENTGIT_MERGE_CASE: kind === 'merge-negative' ? 'bad_quote' : 'clean' },
+    cwd: resolve('..'), windowsHide: true, env: { ...process.env, AGENTGIT_API_TOKEN: TOKEN, PYTHONIOENCODING: 'utf-8', AGENTGIT_MCP_NATIVE_TRANSPORT: kind.includes('stdio') ? 'stdio' : 'http', AGENTGIT_GRAPH_NATIVE_BOUNDARY: kind.endsWith('boundary') ? '1' : '0', AGENTGIT_MERGE_CASE: kind === 'merge-negative' ? 'bad_quote' : 'clean' },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   let logs = '', sequence = 0, terminal: Error | null = null;

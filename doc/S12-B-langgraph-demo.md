@@ -1,6 +1,6 @@
 # S12-B 固定图 Live 工程演示
 
-本轮提供固定图 Live/Fork 的 CLI、现有查询控制与耐久 Worker，完整 Recorded 和正式 B/D3 仍待完成。仅使用固定 `mcp-read-review-publish/v1`、已登记的本地 READ_ONLY MCP 工具，不接受任意节点、代码或命令。
+本轮提供固定图 Live/Fork/成功轨迹 Recorded 的 CLI、现有查询控制与耐久 Worker，以及开发版 Electron 的来源与计量展示。正式 B/D3 仍待完成。仅使用固定 `mcp-read-review-publish/v1`、已登记的本地 READ_ONLY MCP 工具，不接受任意节点、代码或命令。
 
 ## 可重复的自动化演示
 
@@ -115,3 +115,21 @@ uv run --locked pytest tests/unit/test_langgraph_recorded_contracts.py -q
 ```
 
 64 项 stdio 用例复用相同 Live/Fork/Recorded 契约，另外核对移除启动环境、发现到调用失租、批准脚本变更及逐个自有进程退出。联合收集命令可同时包含 unit/integration/sandbox/execution；收集成功不代表完整运行或正式验收。
+
+## 原生控制与桌面流程
+
+`test_langgraph_controls.py` 对两种传输的 fetch/review 原生边界分别请求暂停、取消和期限耗尽；Live/Recorded 均验证已保存结果不重发、逻辑用量/next 和来源不变。下面命令启动实际隔离后端/Worker/数据库、可信 Server 和 Electron 窗口，不依赖付费模型；运行期间保持源码、测试驱动、锁和构建目录不变，等待所有 Runtime 结束后再修改。
+
+```powershell
+uv run --locked pytest tests/integration/test_langgraph_controls.py -q
+Set-Location desktop
+npm run typecheck
+npm run build
+npm test
+$env:AGENTGIT_ELECTRON_EVIDENCE_PREFIX = "S12-B-graph-local-unique"
+npx.cmd playwright test --config playwright.langgraph.config.ts
+```
+
+每次复验使用新的证据前缀，保留前次报告。窗口先打开真实固定图暂停状态，展示取证身份、原生 next 和本次实际尝试；恢复后检查报告，再由测试操作者创建独立备注 Fork 和 Recorded。窗口打开这些 Run、显示实际 0/固定来源、重开只读查询；另在真实 fetch 持久边界请求 pause/resume/cancel。1440/360px 截图与捕获元数据保存在 OS 临时目录，控制台输出绝对路径。
+
+图创建仍使用本文后端 CLI，桌面的研究分支表单显示限制并禁用固定程序提交。开发版 0.1.7 与历史候选包分开，当前结果见 [B 工程记录](acceptance/S12-B.md)，不将新 UI 计入旧安装包验收。
