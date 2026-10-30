@@ -52,11 +52,23 @@ def _require(condition: bool, message: str) -> None:
 
 
 @dataclass(frozen=True)
+class CollaborationSourceEvent:
+    order: int
+    run_id: str
+    event: LogicalEvent
+
+
+@dataclass(frozen=True)
 class CollaborationSource:
     index: CollaborationSourceIndex
     # 每一项只含所属角色的录制，不能将四个来源合并供任意角色消费。
     recordings: tuple[tuple[Recording, ...], ...]
     states: tuple[tuple[CollaborationRoleState, ...], ...]
+    objects: tuple[tuple[str, ObjectType, bytes], ...]
+    events: tuple[CollaborationSourceEvent, ...]
+    messages: tuple[CollaborationMessage, ...]
+    publications: tuple[SharedArtifactHead, ...]
+    actor: str
 
 
 class CollaborationRecordingReader:
@@ -79,6 +91,9 @@ class _SourceReader:
     def __init__(self, history: HistoryService, c: Connection, repo: UUID, group: UUID, actor: str):
         self.history, self.c, self.repo, self.group, self.actor = history, c, repo, group, actor
         self.objects: dict[str, bytes] = {}
+        self.kinds: dict[str, ObjectType] = {}
+        self.envelopes: list[CollaborationMessage] = []
+        self.heads: list[SharedArtifactHead] = []
         self.bytes = 0
         self.events: dict[tuple[str, int], dict[str, Any]] = {}
         self.frames: dict[tuple[str, str], tuple[CollaborationRoleState, EventManifest]] = {}
@@ -119,6 +134,7 @@ class _SourceReader:
             raw = self.history.objects.get(ref, kind)
             _require(len(raw) == row["byte_length"], "协作来源对象长度索引不符")
             self.objects[ref] = raw
+            self.kinds[ref] = kind
             self.bytes += len(raw)
         return self.objects[ref]
 
@@ -232,7 +248,23 @@ class _SourceReader:
             object_refs=tuple(sorted(self.objects)),
             total_bytes=self.bytes,
         )
-        return CollaborationSource(index, tuple(recordings), tuple(states))
+        return CollaborationSource(
+            index,
+            tuple(recordings),
+            tuple(states),
+            tuple((ref, self.kinds[ref], raw) for ref, raw in sorted(self.objects.items())),
+            tuple(
+                CollaborationSourceEvent(
+                    e["id"],
+                    str(e["run_id"]),
+                    LogicalEvent(**self.history._logical_event(cast(RowMapping, e), e["run_id"])),
+                )
+                for e in sorted(self.events.values(), key=lambda e: e["id"])
+            ),
+            tuple(self.envelopes),
+            tuple(self.heads),
+            self.actor,
+        )
 
     def role(
         self,
@@ -662,6 +694,7 @@ class _SourceReader:
                 CollaborationMessage,
             )
             authorize_message(self.program, self.bindings, envelope)
+            self.envelopes.append(envelope)
             _require(
                 (
                     envelope.message_id,
@@ -777,6 +810,7 @@ class _SourceReader:
                 "协作共享发布事件与版本不符",
             )
             current[row["path"]] = head
+            self.heads.append(head)
             refs.append(row["head_ref"])
         _require(
             {p: h.version for p, h in current.items()}

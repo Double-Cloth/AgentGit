@@ -1,5 +1,7 @@
 # 本地开发与测试
 
+2026-10-31 重算核心补充：先用本人身份取得 `CollaborationRecordingReader(history).inspect(...)` 的已核验闭包，再调用 `CollaborationRecordedEngine(prepared).replay()`；后者不读新 CAS、不构造模型/工具/网络/进程，只在内存重算来源身份下的状态和产物。当前 70d42e…5342 源码 1,095 单元、31 不同集成通过，用例为 `tests/integration/test_collaboration_replay.py` 和原读取器集成；全套 2,496 项仅收集通过，不表示全部执行。测试证明导出父地址跨暂停/恢复保持；源码/锁守卫不放宽，必须另建同源 Live fixture，不能直接读取旧 5ee575/5a74cf 工程录制。四个新 Recorded Run/Job 的耐久入口及接管仍待接入，详见[当前工程记录](acceptance/S12-C.md)。
+
 2026-10-31 录制来源补充：`CollaborationRecordingReader(history).inspect(repository, group, actor=...)` 只核对操作者自己的完整成功四角色 Live 来源，返回有界来源索引和按角色分开的录制/状态；没有公开 API/CLI，也不执行重放。必须与来源源码/锁相同，旧 5a74cf 来源在新源码下仍拒绝，不能绕过守卫。当前 5ee575…a48d 源码 1,095 单元、21 不同集成通过，单元文件按既有约定命名为 `test_collaboration_recording_contracts.py`，与集成用例 `tests/integration/test_collaboration_recordings.py` 可联合收集；最终全套 2,486 项仅收集通过，不表示全部执行。先冻结完整 Git 基线/工作区，使用唯一证据目录及 `AGENTGIT_COLLABORATION_EXECUTION_EVIDENCE_DIR`、`AGENTGIT_COLLABORATION_RECORDING_PROOF_DIR`，Runtime 结束后再改源码或驱动。来源索引不等于严格 Recorded 已完成，下一步继续重算状态/产物和消费控制事实，详见[当前记录](acceptance/S12-C.md)。
 
 2026-10-31 最新补充：[组控制后端](acceptance/S12-C.md)复用不可变事件/原键，不新增表或依赖，head30/78 表保持。当前 5a74cf…8732 源码 1,081 单元、94 集成全过，包含 `test_collaboration_controls.py` 的 21 个组控制节点、既有执行/调度/准备和普通 Job；九处实际解释器终止及原始审计完成。收据的 `accepted` 仅为接受请求，须另查实际静止/未知状态；组恢复保留单角色人工暂停和原 deadline。仍没有协作公开 API/CLI、Recorded 或新包，下文源码/版本各属历史范围，业务库未自动迁移。
