@@ -12,6 +12,9 @@ from agentgit.services.collaboration_exchange import TERMINAL, wake_collaboratio
 from agentgit.services.history import TABLES
 from agentgit.services.jobs import JobService
 
+MAX_GROUPS_PER_TICK = 100
+FAILED_STATUSES = ("failed", "cancelled", "budget_exhausted", "outcome_unknown")
+
 
 def wake_stopped(connection: Connection, repository: UUID, group_id: UUID) -> None:
     tasks, runs, jobs = (TABLES[n] for n in ("collaboration_tasks", "runs", "jobs"))
@@ -125,24 +128,114 @@ class CollaborationCoordinator:
         return result
 
     def tick(self) -> None:
-        groups = TABLES["collaborations"]
+        groups, tasks, runs, jobs = (
+            TABLES[n] for n in ("collaborations", "collaboration_tasks", "runs", "jobs")
+        )
+        members = (
+            sa.select(tasks.c.id)
+            .join(
+                runs,
+                sa.and_(runs.c.repository_id == tasks.c.repository_id, runs.c.id == tasks.c.run_id),
+            )
+            .where(
+                tasks.c.repository_id == groups.c.repository_id,
+                tasks.c.collaboration_id == groups.c.id,
+            )
+        )
+        failed_member = members.where(runs.c.status.in_(FAILED_STATUSES)).exists()
+        pending_stop = (
+            members.join(
+                jobs,
+                sa.and_(jobs.c.repository_id == tasks.c.repository_id, jobs.c.id == tasks.c.job_id),
+            )
+            .where(runs.c.status.not_in(TERMINAL), jobs.c.status == "paused")
+            .exists()
+        )
+
+        def completed(role: str) -> sa.ColumnElement[bool]:
+            dependency = tasks.alias("dependency_" + role)
+            execution = runs.alias("completed_" + role)
+            return (
+                sa.select(dependency.c.id)
+                .join(execution, execution.c.id == dependency.c.run_id)
+                .where(
+                    dependency.c.repository_id == groups.c.repository_id,
+                    dependency.c.collaboration_id == groups.c.id,
+                    dependency.c.role == role,
+                    execution.c.status == "completed",
+                )
+                .correlate(groups)
+                .exists()
+            )
+
+        def received(role: str) -> sa.ColumnElement[bool]:
+            sender = tasks.alias("sender_" + role)
+            messages = TABLES["collaboration_messages"]
+            return (
+                sa.select(messages.c.id)
+                .join(sender, sender.c.run_id == messages.c.sender_run_id)
+                .where(
+                    sender.c.repository_id == groups.c.repository_id,
+                    sender.c.collaboration_id == groups.c.id,
+                    sender.c.role == role,
+                    messages.c.repository_id == groups.c.repository_id,
+                    messages.c.collaboration_id == groups.c.id,
+                    messages.c.receiver_run_id == runs.c.id,
+                )
+                .correlate(groups, runs)
+                .exists()
+            )
+
+        researcher_done, verifier_done, writer_done = (
+            completed(role) for role in ("researcher", "verifier", "writer")
+        )
+        dispatch, evidence, verification, result = (
+            received(role) for role in ("supervisor", "researcher", "verifier", "writer")
+        )
+        # 子任务可能在完成暂停检查点之后才释放 Job，补偿事务唤醒略过的窗口。
+        runnable = (
+            members.join(
+                jobs,
+                sa.and_(jobs.c.repository_id == tasks.c.repository_id, jobs.c.id == tasks.c.job_id),
+            )
+            .where(
+                jobs.c.status == "paused",
+                runs.c.status.not_in(TERMINAL),
+                sa.or_(
+                    runs.c.control_request.is_distinct_from("pause"),
+                    runs.c.control_status.is_distinct_from("applied"),
+                ),
+                sa.or_(
+                    sa.and_(tasks.c.role == "researcher", dispatch),
+                    sa.and_(tasks.c.role == "verifier", researcher_done, dispatch, evidence),
+                    sa.and_(
+                        tasks.c.role == "writer",
+                        researcher_done,
+                        verifier_done,
+                        dispatch,
+                        evidence,
+                        verification,
+                    ),
+                    sa.and_(
+                        tasks.c.role == "supervisor",
+                        sa.or_(runs.c.checkpoint_commit_id.is_(None), sa.and_(writer_done, result)),
+                    ),
+                ),
+            )
+            .exists()
+        )
         with self.history.engine.begin() as c:
             rows = (
                 c.execute(
                     sa.select(groups.c.repository_id, groups.c.id, groups.c.status)
                     .where(
-                        groups.c.status.in_(
-                            (
-                                "running",
-                                "failed",
-                                "cancelled",
-                                "budget_exhausted",
-                                "outcome_unknown",
-                            )
+                        sa.or_(
+                            sa.and_(groups.c.status == "running", sa.or_(failed_member, runnable)),
+                            sa.and_(groups.c.status.in_(FAILED_STATUSES), pending_stop),
                         )
                     )
                     .order_by(groups.c.created_at, groups.c.id)
-                    .limit(100)
+                    .limit(MAX_GROUPS_PER_TICK)
                     .with_for_update(skip_locked=True)
                 )
                 .mappings()
@@ -150,7 +243,6 @@ class CollaborationCoordinator:
             )
             for row in rows:
                 if row["status"] == "running":
-                    tasks, runs = TABLES["collaboration_tasks"], TABLES["runs"]
                     failed = (
                         c.execute(
                             sa.select(runs.c.status, runs.c.id, runs.c.last_event_seq)
@@ -164,9 +256,7 @@ class CollaborationCoordinator:
                             .where(
                                 tasks.c.repository_id == row["repository_id"],
                                 tasks.c.collaboration_id == row["id"],
-                                runs.c.status.in_(
-                                    ("failed", "cancelled", "budget_exhausted", "outcome_unknown")
-                                ),
+                                runs.c.status.in_(FAILED_STATUSES),
                             )
                             .order_by(tasks.c.role)
                             .limit(1)

@@ -1,5 +1,7 @@
 # 本地开发与测试
 
+最新 C 工程为[四角色执行/恢复和调度边界](acceptance/S12-C.md)，Schema 当前 **`0030_collaboration_exchange`**，只在独立测试 Schema 验证，业务库未自动迁移。最新源码 ef15cc…0ed7 的 1,081 单元、34 调度/执行/Job 集成通过；历史下文 head/报告各归属其原冻结版本。协作尚无公开创建 API/CLI 或新包，组控制/Recorded/桌面继续；复验可选 `tests/integration/test_collaboration_scheduler.py` 和 `test_collaboration_execution.py`，必须使用独立测试库、唯一证据目录及固定源码/锁/驱动，运行期间不得修改这些输入。
+
 S12-B 已接通 [LangGraph `1.2.18` Live/Fork/成功范围 Recorded 与受信 stdio 核对](acceptance/S12-B.md)，范围见[计划](S12-B-langgraph-plan.md)，操作见[演示](S12-B-langgraph-demo.md)。锁仍为 `13df29416247b05eb1ab2a97b9ef2d6035af2903b1e52e8562d3ef1aaa45ed3a`。当前 960 单元、64 stdio 图契约、67 HTTP 图回归与 59 相关兼容通过；全套 2,235 项联合收集通过不代表全量执行。三个 S12 单元文件使用 `_contracts.py` 避免与集成模块重名，其他命令和断言保持。运行前冻结 679 文件；从 `ee30e72` 加快照复现时还须按 `deletions-provenance-v1.json` 删除三个旧路径。Schema 仍 `0028_langgraph_runs`，无新依赖或迁移。原生边界取消/期限组合、完整桌面和正式 B/C/D/D3 继续；下文 A 保留其原源码/旧锁范围。
 
 S12 当前在 `codex/s12-adapters` 推进，[MCP A 本机核对](acceptance/S12-A.md)已覆盖固定 HTTP 及批准的单文件 Python stdio、有界 Run/Worker、精确审批、失租/未知恢复和完整 Recorded。最终源码 `source-sha256:aad91a9394b16d68cd2ac3d252705d8161b1fe2ee24d62fb43b46a3178da1b10`；866 Python 单元、53 个不同 MCP/API、74 核心、40 桌面单元和 5 个不同包内节点均有通过证据，失败尝试和复验保留。Schema head 仍 `0027_mcp_runs`，不新增依赖/业务表或业务迁移。命令见 [HTTP 演示](S12-A-mcp-demo.md)与 [stdio 演示](S12-A-stdio-demo.md)；stdio 必须通过后端白名单，不能使用它执行未审阅脚本或替代 S4 容器。正式前置/最终包待补，按授权进入 B 工程；旧研究 release 仍使用其冻结源码，不修改旧 guard 接受新模块。
