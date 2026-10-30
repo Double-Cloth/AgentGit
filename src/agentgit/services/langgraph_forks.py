@@ -8,6 +8,7 @@ from agentgit.adapters.langgraph import LangGraphAdapter
 from agentgit.core.canonical import ObjectType, decode, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.langgraph import LangGraphProgram
+from agentgit.core.langgraph_recorded import LangGraphRecordedSpec
 from agentgit.core.langgraph_runs import LangGraphJobPayload, LangGraphRunState
 from agentgit.core.mcp_schema import validate_value
 from agentgit.core.models import (
@@ -23,6 +24,7 @@ from agentgit.replay.recorded import RecordedAdapter, Recording
 from agentgit.runtime.langgraph_checkpoints import LangGraphCheckpointJournal
 from agentgit.services.environment import dependency_lock_digest, source_revision
 from agentgit.services.history import TABLES, HistoryService
+from agentgit.services.langgraph_recordings import load_recording
 from agentgit.services.versions import VersionService
 
 
@@ -39,6 +41,7 @@ def load_fork_source(
     family: list[UUID] = []
     current: UUID | None = source
     selected_payload: LangGraphJobPayload | None = None
+    recorded_sources: list[LangGraphRecordedSpec] = []
     with history.engine.connect() as connection:
         while current is not None:
             if current in family or len(family) >= 100:
@@ -67,8 +70,15 @@ def load_fork_source(
                 raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "Fork 来源图的源码或锁不匹配")
             if selected_payload is None:
                 selected_payload = payload
-            origin = UUID(payload.fork.source_run_id) if payload.fork is not None else None
-            if run["origin_run_id"] != origin or job["origin_run_id"] != origin:
+            if payload.replay is not None:
+                recorded_sources.append(payload.replay)
+            parent = payload.fork or payload.replay
+            origin = UUID(parent.source_run_id) if parent is not None else None
+            if (
+                run["origin_run_id"] != origin
+                or job["origin_run_id"] != origin
+                or run["mode"] != ("recorded" if payload.replay else "live")
+            ):
                 raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "图 Fork 载荷与来源索引不一致")
             current = origin
         calls = list(
@@ -143,6 +153,19 @@ def load_fork_source(
         str(call["id"]),
     )
     outcome = record.outcome()
+    # 冷启动回放的调用前 Commit 位于固定来源范围内，不是新 Run 的直接祖先。
+    # 只有重新核对完整范围及唯一原始调用，才可使用这条已证明的来源边。
+    proven_recorded_call = False
+    for spec in recorded_sources:
+        prepared = load_recording(history, repository_id, spec)
+        if (
+            prepared.bundle.call_id != str(call["id"])
+            or prepared.bundle.intent_ref != call["intent_ref"]
+            or prepared.bundle.result_ref != call["result_ref"]
+            or prepared.after.trace != state.trace
+        ):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "图回放来源与 Fork 取证不符")
+        proven_recorded_call = True
     binding = program.binding
     if (
         call["status"] != "succeeded"
@@ -158,7 +181,10 @@ def load_fork_source(
         or intent.occurrence.provider != binding.provider
         or intent.occurrence.signature_digest != binding.signature()
         or intent.max_response_bytes != binding.server.max_response_bytes
-        or intent.checkpoint not in versions.ancestors(repository_id, checkpoint)
+        or (
+            intent.checkpoint not in versions.ancestors(repository_id, checkpoint)
+            and not proven_recorded_call
+        )
         or any(
             getattr(intent.occurrence, key) != call[key]
             for key in (

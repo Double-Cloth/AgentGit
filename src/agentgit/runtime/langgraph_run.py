@@ -20,6 +20,7 @@ from agentgit.core.langgraph_runs import LangGraphRunState
 from agentgit.core.mcp import MCPBinding
 from agentgit.core.models import EnvironmentManifest, RunStatus, parse_contract
 from agentgit.core.research import BudgetUsage
+from agentgit.replay.recorded import RecordedAdapter
 from agentgit.runtime.langgraph_checkpoints import LangGraphCheckpointJournal
 from agentgit.runtime.ports import CallOutcome
 from agentgit.services.approvals import ApprovalService
@@ -27,6 +28,11 @@ from agentgit.services.calls import RecordedCallGateway
 from agentgit.services.environment import dependency_lock_digest, source_revision
 from agentgit.services.history import TABLES, ArtifactInput, EventInput, HistoryService
 from agentgit.services.langgraph_forks import load_fork_source
+from agentgit.services.langgraph_recordings import (
+    PreparedLangGraphRecording,
+    load_recording,
+    projection_digest,
+)
 from agentgit.services.langgraph_runs import LangGraphRunService
 
 if TYPE_CHECKING:
@@ -38,6 +44,8 @@ class _GraphGateway:
         self.owner = owner
 
     def recorded(self, **kwargs: Any) -> CallOutcome | None:
+        if self.owner.recording is not None:
+            return None
         return self.owner.gateway.recorded(**kwargs)
 
     def call(self, **kwargs: Any) -> CallOutcome:
@@ -74,6 +82,7 @@ class LangGraphRunRunner:
         self.call_failure: AgentGitError | None = None
         self.native_failure: AgentGitError | None = None
         self.requested_stop: str | None = None
+        self.recording: PreparedLangGraphRecording | None = None
 
     def run(self) -> dict[str, Any]:
         try:
@@ -150,12 +159,32 @@ class LangGraphRunRunner:
             random_seed=0,
         )
         with self.history.engine.begin() as connection:
-            self.queue.guard(connection, self.lease, self.lease.run_id)
+            job = self.queue.guard(connection, self.lease, self.lease.run_id)
             run = self.history._run(connection, self.lease.repository_id, self.lease.run_id)
-            if run["mode"] != "live":
-                raise AgentGitError(
-                    ErrorCode.REPLAY_MISMATCH, "LangGraph Live Job 不能借用其他模式"
+            if run["mode"] != ("recorded" if self.payload.replay else "live"):
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "LangGraph Job 不能借用其他模式")
+            origin_spec = self.payload.fork or self.payload.replay
+            origin = UUID(origin_spec.source_run_id) if origin_spec else None
+            if job["origin_run_id"] != origin or run["origin_run_id"] != origin:
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "图 Job 与 Run 来源不符")
+            if origin_spec is not None:
+                forks = TABLES["branch_forks"]
+                branch = (
+                    connection.execute(
+                        sa.select(forks).where(
+                            forks.c.repository_id == self.lease.repository_id,
+                            forks.c.branch_name == run["branch_name"],
+                        )
+                    )
+                    .mappings()
+                    .first()
                 )
+                if (
+                    branch is None
+                    or branch["source_run_id"] != origin
+                    or branch["from_commit_id"] != origin_spec.from_commit
+                ):
+                    raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "图分支与来源不符")
             self.head = run["checkpoint_commit_id"]
             own = connection.execute(
                 sa.select(TABLES["snapshots"].c.commit_id).where(
@@ -164,6 +193,18 @@ class LangGraphRunRunner:
                 )
             ).first()
         self.version = self.history.branch(self.lease.repository_id, run["branch_name"])["version"]
+        if self.payload.replay is not None:
+            replay_spec = self.payload.replay
+            if run["base_commit_id"] != replay_spec.from_commit or run["origin_run_id"] != UUID(
+                replay_spec.source_run_id
+            ):
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "图 Recorded Run 来源与载荷不符")
+            self.recording = load_recording(self.history, self.lease.repository_id, replay_spec)
+            if (
+                self.recording.bundle.program_ref != self.payload.program_ref
+                or self.recording.program != self.program
+            ):
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "图 Recorded 程序与来源不符")
         fork_source: tuple[LangGraphProgram, LangGraphRunState, bytes] | None = None
         if self.payload.fork is not None:
             spec = self.payload.fork
@@ -204,6 +245,28 @@ class LangGraphRunRunner:
                     raise AgentGitError(
                         ErrorCode.OBJECT_CORRUPT, "LangGraph 原生记录缺少确切产物引用"
                     )
+        elif self.recording is not None:
+            source_state = self.recording.before
+            if self.recording.native_raw is not None:
+                assert self.payload.replay is not None
+                self.native_raw = LangGraphCheckpointJournal(
+                    self.payload.replay.source_run_id,
+                    lambda *args: None,
+                    restored=self.recording.native_raw,
+                ).clone_thread(str(self.lease.run_id))
+            self.state = source_state.model_copy(
+                update={
+                    "actual_attempts": 0,
+                    "native_ref": object_digest(ObjectType.BLOB, self.native_raw)
+                    if self.native_raw is not None
+                    else None,
+                    "replay_control_index": 0,
+                    "replay_pause_pending": source_state.status == RunStatus.PAUSED,
+                    "replay_call_consumed": source_state.trace is not None,
+                }
+            )
+            self._save(self.state, "langgraph.recorded_initialized")
+            self.fault("langgraph.after_recorded_seed")
         elif fork_source is not None:
             assert self.payload.fork is not None
             _, source_state, raw = fork_source
@@ -219,6 +282,9 @@ class LangGraphRunRunner:
                     "actual_attempts": 0,
                     "review_boundary_reached": True,
                     "fork_initialized": False,
+                    "replay_control_index": 0,
+                    "replay_pause_pending": False,
+                    "replay_call_consumed": False,
                 }
             )
             self._save(self.state, "langgraph.fork_seeded")
@@ -232,22 +298,34 @@ class LangGraphRunRunner:
             or self.state.usage.tool_calls != 1
         ):
             raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "Fork 检查点不能伪造新的取证计量或来源")
-        if self.payload.fork is None and self.state.fork_initialized:
+        if self.recording is not None and (
+            self.state.actual_attempts != 0
+            or self.state.replay_control_index > len(self.recording.bundle.controls)
+            or self.state.replay_call_consumed != (self.state.trace is not None)
+            or (self.state.trace is not None and self.state.trace != self.recording.after.trace)
+        ):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "图回放状态、计量或取证来源不符")
+        if self.payload.fork is None and self.recording is None and self.state.fork_initialized:
             raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "普通图任务不能借用 Fork 初始化状态")
         if self.state.status.value in {"completed", "failed", "cancelled", "budget_exhausted"}:
+            if self.recording is not None and self.state.status == RunStatus.COMPLETED:
+                self._verify_recorded(self.state)
             self.queue.finish(self.lease, self.state.status.value)
             return
-        authorization = ApprovalService(
-            self.history, ToolPolicy(rules=(self.program.binding.rule(),)), actor=self.payload.actor
-        )
-        self.gateway = RecordedCallGateway(
-            self.history,
-            self.lease.repository_id,
-            self.lease.run_id,
-            lambda: (self.head, self.version),
-            authorization=authorization,
-            after_result=lambda: self.fault("langgraph.after_result"),
-        )
+        if self.recording is None:
+            authorization = ApprovalService(
+                self.history,
+                ToolPolicy(rules=(self.program.binding.rule(),)),
+                actor=self.payload.actor,
+            )
+            self.gateway = RecordedCallGateway(
+                self.history,
+                self.lease.repository_id,
+                self.lease.run_id,
+                lambda: (self.head, self.version),
+                authorization=authorization,
+                after_result=lambda: self.fault("langgraph.after_result"),
+            )
         journal = LangGraphCheckpointJournal(
             str(self.lease.run_id), self._persist_native, restored=self.native_raw
         )
@@ -263,11 +341,20 @@ class LangGraphRunRunner:
             if control in {"pause", "cancel", "budget_exhausted"}:
                 self._stop(control)
                 return
+            if self.recording is not None and self.state.replay_pause_pending:
+                self._resume_recorded()
+                continue
             if self.state.status != RunStatus.RUNNING:
                 self._save(
                     self.state.model_copy(update={"status": RunStatus.RUNNING}), "langgraph.resumed"
                 )
-            if self.payload.fork is not None and not self.state.fork_initialized:
+            if self._recorded_ready("requested"):
+                self._pause_recorded("requested")
+                continue
+            if (
+                self.payload.fork is not None
+                or (self.recording is not None and self.recording.bundle.needs_fork_initialization)
+            ) and not self.state.fork_initialized:
                 graph.update_note(self.program.review_note)
                 if not self.state.fork_initialized:
                     raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "图 Fork 原生备注更新未完成")
@@ -279,6 +366,9 @@ class LangGraphRunRunner:
                 and self.program.graph.pause_before
                 and not self.state.review_boundary_reached
             ):
+                if self.recording is not None:
+                    self._pause_recorded("native")
+                    continue
                 self._save(
                     self.state.model_copy(
                         update={"status": RunStatus.PAUSED, "review_boundary_reached": True}
@@ -294,15 +384,15 @@ class LangGraphRunRunner:
                 and self.state.values
             ):
                 code = self.state.values.get("error_code")
-                self._save(
-                    self.state.model_copy(
-                        update={
-                            "status": RunStatus.FAILED if code else RunStatus.COMPLETED,
-                            "error_code": code,
-                        }
-                    ),
-                    "langgraph.finished",
+                finished = self.state.model_copy(
+                    update={
+                        "status": RunStatus.FAILED if code else RunStatus.COMPLETED,
+                        "error_code": code,
+                    }
                 )
+                if self.recording is not None:
+                    self._verify_recorded(finished)
+                self._save(finished, "langgraph.finished")
                 self.queue.finish(self.lease, self.state.status.value)
                 return
             graph.invoke(start=self.native_raw is None)
@@ -325,6 +415,8 @@ class LangGraphRunRunner:
         ):
             raise AgentGitError(ErrorCode.FORBIDDEN, "LangGraph 调用不匹配固定取证节点")
         identity = {key: value for key, value in kwargs.items() if key != "invoke"}
+        if self.recording is not None:
+            return self._recorded_call(kwargs)
         outcome = self.gateway.recorded(**identity)
         if outcome is None:
             control = self._control()
@@ -365,6 +457,111 @@ class LangGraphRunRunner:
         )
         return outcome
 
+    def _recorded_ready(self, kind: str) -> bool:
+        if self.recording is None or self.state is None:
+            return False
+        index = self.state.replay_control_index
+        controls = self.recording.bundle.controls
+        return (
+            index < len(controls)
+            and controls[index].kind == kind
+            and controls[index].before_digest == projection_digest(self.state)
+        )
+
+    def _pause_recorded(self, kind: str) -> None:
+        assert self.recording is not None and self.state is not None
+        if not self._recorded_ready(kind):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "图缺少当前暂停的录制依据")
+        index = self.state.replay_control_index
+        paused = self.state.model_copy(
+            update={
+                "status": RunStatus.PAUSED,
+                "replay_pause_pending": True,
+                "review_boundary_reached": self.state.review_boundary_reached or kind == "native",
+            }
+        )
+        if projection_digest(paused) != self.recording.bundle.controls[index].paused_digest:
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "图录制暂停投影不符")
+        self._save(
+            paused,
+            "langgraph.native_paused" if kind == "native" else "langgraph.control_applied",
+            recorded_control=index,
+        )
+        self.fault("langgraph.after_recorded_pause")
+
+    def _resume_recorded(self) -> None:
+        assert self.recording is not None and self.state is not None
+        index = self.state.replay_control_index
+        if index >= len(self.recording.bundle.controls):
+            raise AgentGitError(ErrorCode.RECORDING_MISSING, "图暂停缺少恢复录制")
+        control = self.recording.bundle.controls[index]
+        if projection_digest(self.state) != control.paused_digest:
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "图录制恢复起点不符")
+        resumed = self.state.model_copy(
+            update={
+                "status": RunStatus.RUNNING,
+                "replay_pause_pending": False,
+                "replay_control_index": index + 1,
+            }
+        )
+        if projection_digest(resumed) != control.resumed_digest:
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "图录制恢复投影不符")
+        self._save(resumed, "langgraph.resumed", recorded_control=index)
+
+    def _recorded_call(self, kwargs: dict[str, Any]) -> CallOutcome:
+        assert self.recording is not None and self.state is not None
+        if self.state.replay_call_consumed or not self.recording.bundle.needs_fetch:
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "图回放不能重复消费取证调用")
+        control = self._control()
+        if control in {"pause", "cancel", "budget_exhausted"}:
+            self.requested_stop = control
+            raise AgentGitError(ErrorCode.FORBIDDEN, "图回放取证前已请求控制")
+        if self._recorded_ready("requested"):
+            self._pause_recorded("requested")
+            self._resume_recorded()
+        if not self.state.pending:
+            self._save(
+                self.state.model_copy(
+                    update={
+                        "pending": True,
+                        "actual_attempts": 0,
+                        "usage": BudgetUsage(steps=1, tool_calls=1),
+                    }
+                ),
+                "langgraph.fetch_prepared",
+            )
+        if self._recorded_ready("requested"):
+            self._pause_recorded("requested")
+            self._resume_recorded()
+        if self.state.usage.tool_calls != 1 or self.state.usage.steps != 1:
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "图回放取证预留不符")
+        record = self.recording.record
+        adapter = RecordedAdapter((record,), lambda: record.intent.checkpoint)
+        outcome = adapter.call(**kwargs)
+        adapter.assert_consumed()
+        self.state = self.state.model_copy(
+            update={
+                "pending": False,
+                "actual_attempts": 0,
+                "trace": outcome.trace,
+                "replay_call_consumed": True,
+            }
+        )
+        self.fault("langgraph.after_recorded_call")
+        return outcome
+
+    def _verify_recorded(self, state: LangGraphRunState) -> None:
+        assert self.recording is not None
+        if (
+            state.logical_projection() != self.recording.after.logical_projection()
+            or state.trace != self.recording.after.trace
+            or state.actual_attempts != 0
+            or not state.replay_call_consumed
+            or state.replay_pause_pending
+            or state.replay_control_index != len(self.recording.bundle.controls)
+        ):
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "图回放终点、控制消费或报告与来源不符")
+
     def _persist_native(self, raw: bytes, kind: str, native_id: str) -> None:
         try:
             self._write_native(raw, kind, native_id)
@@ -403,7 +600,13 @@ class LangGraphRunRunner:
                 "usage": usage,
                 "fork_initialized": self.state.fork_initialized
                 or (
-                    self.payload.fork is not None
+                    (
+                        self.payload.fork is not None
+                        or (
+                            self.recording is not None
+                            and self.recording.bundle.needs_fork_initialization
+                        )
+                    )
                     and kind == "checkpoint"
                     and decode(raw)["operations"][-1].get("metadata", {}).get("source") == "update"
                     and values.get("review_note") == self.program.review_note
@@ -418,6 +621,8 @@ class LangGraphRunRunner:
             self.fault("langgraph.after_fetch_" + kind)
             if self.payload.fork is not None:
                 self.fault("langgraph.after_fork_" + kind)
+        if self.recording is not None:
+            self.fault("langgraph.after_recorded_" + kind)
 
     def _control(self) -> str | None:
         action = self.queue.apply_control(self.lease)
@@ -459,6 +664,7 @@ class LangGraphRunRunner:
         *,
         native_raw: bytes | None = None,
         native_id: str | None = None,
+        recorded_control: int | None = None,
     ) -> None:
         state = parse_contract(encode(state.model_dump(mode="json")), LangGraphRunState)
         raw = native_raw if native_raw is not None else self.native_raw
@@ -486,9 +692,11 @@ class LangGraphRunRunner:
                 .values(status=state.status.value, failure_code=state.error_code)
             )
             run = self.history._run(connection, self.lease.repository_id, self.lease.run_id)
-            if state.status in {RunStatus.PAUSED, RunStatus.CANCELLED} or (
-                run["control_status"] == "requested" and run["control_request"] == "resume"
-            ):
+            if (
+                recorded_control is None
+                and event != "langgraph.recorded_initialized"
+                and state.status in {RunStatus.PAUSED, RunStatus.CANCELLED}
+            ) or (run["control_status"] == "requested" and run["control_request"] == "resume"):
                 self.queue.mark_control_applied(connection, self.lease)
 
         result = self.history.commit(
@@ -507,6 +715,21 @@ class LangGraphRunRunner:
                         "native_ref": state.native_ref,
                         "native_checkpoint_id": native_id,
                         "error_code": state.error_code,
+                        **(
+                            {"recorded_source": self.payload.replay.model_dump(mode="json")}
+                            if self.payload.replay
+                            else {}
+                        ),
+                        **(
+                            {
+                                "recorded_control": {
+                                    "bundle_ref": self.payload.replay.bundle_ref,
+                                    "index": recorded_control,
+                                }
+                            }
+                            if recorded_control is not None and self.payload.replay
+                            else {}
+                        ),
                         **(
                             {"fork_source": self.payload.fork.model_dump(mode="json")}
                             if self.payload.fork is not None

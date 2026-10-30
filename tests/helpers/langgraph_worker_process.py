@@ -28,6 +28,11 @@ def main():
         "langgraph.after_fork_seed",
         "langgraph.after_fork_writes",
         "langgraph.after_fork_checkpoint",
+        "langgraph.after_recorded_seed",
+        "langgraph.after_recorded_call",
+        "langgraph.after_recorded_writes",
+        "langgraph.after_recorded_checkpoint",
+        "langgraph.after_recorded_pause",
     }
 
     def wait(point):

@@ -1005,7 +1005,12 @@ class ManagementService:
                     "native_next": list(graph_state.native_next),
                     "mode": row["mode"],
                     "has_model": False,
-                    "recording": None,
+                    "recording": graph_payload.replay.model_dump(mode="json")
+                    if graph_payload.replay
+                    else None,
+                    "recorded_control_index": graph_state.replay_control_index,
+                    "recorded_pause_pending": graph_state.replay_pause_pending,
+                    "recorded_call_consumed": graph_state.replay_call_consumed,
                     "fork": graph_payload.fork.model_dump(mode="json")
                     if graph_payload.fork
                     else None,

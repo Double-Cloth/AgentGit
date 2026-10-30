@@ -263,8 +263,14 @@ class LangGraphCheckpointJournal(BaseCheckpointSaver[str]):
         """克隆已完成 fetch 的完整边界；仅替换已声明的物理 thread 字段。"""
         with self._lock:
             self.require_review()
+            return self.clone_thread(thread_id)
+
+    def clone_thread(self, thread_id: str) -> bytes:
+        """来源校验由范围服务负责；这里只克隆所属配置，不执行节点。"""
+        with self._lock:
+            self._active()
             if not _uuid(thread_id) or thread_id == self.thread_id:
-                raise _invalid("LangGraph Fork 必须使用独立目标 thread")
+                raise _invalid("LangGraph 必须使用独立目标 thread")
             bundle = decode(self._raw)
             bundle["thread_id"] = thread_id
             for operation in bundle["operations"]:

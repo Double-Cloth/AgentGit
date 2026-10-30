@@ -65,4 +65,32 @@ uv run --locked agentgit worker --once --testing
 uv run --locked agentgit status <repository_id> <new_run_id> --testing
 ```
 
-创建返回独立 Job/Run，分支、Run 和 Job 同事务发布。新 Worker 复制已完成取证的逻辑一步/一次工具、保留来源 trace，实际取证为 0；在独立 thread 使用原生 update_state 修改备注后继续 review/publish。状态 API 的 adapter.fork 指明来源，fork_initialized 表示原生更新已耐久完成。来源分支、状态、事件和产物不变；可从已初始化 Fork 的安全历史点再次 Fork。该功能不等同于完整 Recorded，后者仍在实现。
+创建返回独立 Job/Run，分支、Run 和 Job 同事务发布。新 Worker 复制已完成取证的逻辑一步/一次工具、保留来源 trace，实际取证为 0；在独立 thread 使用原生 update_state 修改备注后继续 review/publish。状态 API 的 adapter.fork 指明来源，fork_initialized 表示原生更新已耐久完成。来源分支、状态、事件和产物不变；可从已初始化 Fork 的安全历史点再次 Fork。独立 Fork 与下述 Recorded 分别记录模式和来源。
+
+## 成功轨迹范围 Recorded
+
+选择同一固定图来源 Run 的起止点；终点须为完整 completed 检查点。起点支持冷初始化、已预留取证、原生 pending writes、review 暂停、Fork 原生备注更新前后，以及已完成点。Fork 的基点会使用来源自身的种子检查点初始化，范围说明同时固定这两个点。起终点相同是零步恢复，不宣称重新执行原运行。
+
+准备 UTF-8 的 `graph-recorded.json`：
+
+```json
+{
+  "schema_version": 1,
+  "source_run_id": "来源 Run UUID",
+  "from_commit": "来源起点 Commit 摘要",
+  "to_commit": "来源成功终点 Commit 摘要",
+  "name": "graph-recorded-check",
+  "expected_version": 0
+}
+```
+
+```powershell
+uv run --locked agentgit langgraph-recorded <repository_id> graph-recorded.json --key graph-recorded-once --testing
+uv run --locked agentgit worker --once --testing
+uv run --locked agentgit status <repository_id> <new_run_id> --testing
+uv run --locked pytest tests/integration/test_langgraph_recorded.py -q
+```
+
+相同键与输入返回原 Job/Run；不同范围不能复用原键。adapter.recording 指明不可变范围说明，actual_attempts 为 0；历史逻辑 steps/tool_calls 和来源 trace 保留。来源暂停/恢复由录制依据自动消费；新任务当前的暂停/取消和原期限仍有效。没有真实模型、HTTP 工具或 stdio 进程，缺录制/控制/环境失败，不能回退 Live。可再次 Recorded 或从回放的安全 review 点创建新 Fork；后者通过固定范围核对原始取证，不能把同 hash 当成任意授权。
+
+报告字节与完整逻辑投影必须等于来源；新 thread/checkpoint ID、时间和物理日志单独保留，不要求 native JSON 字节相同。测试同时覆盖来源不变、真实解释器终止接管、缺依赖、伪造说明及开启 tracing 环境后的零连接尝试。这里只声明成功轨迹范围，完整 B-T06/stdio 图路径和桌面展示仍须补齐。

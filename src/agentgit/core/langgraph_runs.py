@@ -4,6 +4,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field, model_validator
 
+from agentgit.core.langgraph_recorded import LangGraphRecordedSpec
 from agentgit.core.models import Contract, Digest, Identifier, RunStatus
 from agentgit.core.research import BudgetUsage, CallTrace
 from agentgit.core.versions import NewBranch
@@ -28,6 +29,13 @@ class LangGraphJobPayload(Contract):
     dependency_lock_digest: Digest
     max_wall_ms: Annotated[int, Field(ge=1, le=900_000)]
     fork: LangGraphForkSpec | None = Field(default=None, exclude_if=lambda v: v is None)
+    replay: LangGraphRecordedSpec | None = Field(default=None, exclude_if=lambda v: v is None)
+
+    @model_validator(mode="after")
+    def distinct_mode(self) -> "LangGraphJobPayload":
+        if self.fork is not None and self.replay is not None:
+            raise ValueError("图 Fork 与 Recorded 初始化不能混用")
+        return self
 
 
 class LangGraphRunState(Contract):
@@ -44,6 +52,9 @@ class LangGraphRunState(Contract):
     values: dict[str, Any] = Field(default_factory=dict)
     review_boundary_reached: bool = False
     fork_initialized: bool = False
+    replay_control_index: Annotated[int, Field(ge=0, le=64)] = 0
+    replay_pause_pending: bool = False
+    replay_call_consumed: bool = False
     error_code: str | None = None
 
     @model_validator(mode="after")

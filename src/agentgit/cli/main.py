@@ -25,6 +25,7 @@ from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.experiments import FreezeValidator, NewExperiment
 from agentgit.core.interventions import NewIntervention
 from agentgit.core.langgraph import LangGraphProgram
+from agentgit.core.langgraph_recorded import NewLangGraphRecorded
 from agentgit.core.langgraph_runs import NewLangGraphFork
 from agentgit.core.management import (
     ControlRun,
@@ -221,6 +222,19 @@ def langgraph_submit(
             expected_version=expected_version,
         )
         emit(submitted.model_dump(mode="json"))
+
+
+@app.command("langgraph-recorded")
+def langgraph_recorded(
+    repository_id: UUID, file: Path, key: str = typer.Option(...), testing: bool = False
+) -> None:
+    """固定来源范围并提交只消费录制的独立图任务。"""
+    with management(testing) as service:
+        request = _mcp_input(file, NewLangGraphRecorded, 16384)
+        result = LangGraphRunService(service.jobs).recorded(
+            repository_id, request, actor=service.actor, key=key
+        )
+        emit(result.model_dump(mode="json"))
 
 
 @app.command("langgraph-fork")

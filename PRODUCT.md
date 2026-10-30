@@ -1,6 +1,6 @@
 # AgentGit 产品上下文
 
-S12-B 已接通[耐久 Live 与安全 Fork](doc/acceptance/S12-B.md)：固定图复用 Run/Job/History/CAS、租约和控制；完整 review 边界可创建独立分支/Run/thread，仅修改备注，来源不变且不重复取证。当前 939 单元、36 项图集成和 41 项历史/版本/合并兼容通过，七处实际解释器终止及原始关系独立核对。完整 Recorded、更多控制/stdio 与完整桌面退出继续，正式 B/C/D 和 D3 未验收。A 的原源/锁封存保持。
+S12-B 已接通[耐久 Live、安全 Fork 与成功轨迹范围 Recorded](doc/acceptance/S12-B.md)：回放固定来源 Run/起止点、程序和控制，重算逻辑状态及报告，实际取证为 0；原生物理 ID 单列。当前 946 单元、67 图集成、118 核心兼容及 19 真实终端/Python 回放兼容通过，12 处图解释器终止和原始关系独立核对。更多控制/stdio 与完整桌面退出继续，正式 B/C/D 和 D3 未验收。A 的原源/锁封存保持。
 
 <!-- impeccable:product-schema 1 -->
 
