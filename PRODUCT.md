@@ -1,6 +1,6 @@
 # AgentGit 产品上下文
 
-S12-B 已接通[耐久 Live、安全 Fork 与成功轨迹范围 Recorded](doc/acceptance/S12-B.md)，已核对 HTTP 与受信 stdio 两种传输、严格父控制来源和零启动回放。当前 960 单元、64 stdio 图契约、67 HTTP 图回归及 59 相关兼容通过，24 处图解释器终止和原始关系独立核对。原生边界控制组合与完整桌面退出继续，正式 B/C/D 和 D3 未验收；A 的原源/锁封存保持。
+S12-B 的[本机固定图工程核对](doc/acceptance/S12-B.md)已补齐 HTTP/受信 stdio、Live/安全 Fork/成功轨迹 Recorded、原生边界控制及相关核心/开发版桌面兼容，按既有工程次序授权进入 C。[S12-C 首增量](doc/acceptance/S12-C.md)已固定四角色 DAG、权限/独立预算、消息与共享版本纯契约，当前 1,081 单元通过；真实四角色 Run、耐久收据/私有上下文、Recorded 和桌面尚待接入。正式 B/C/D、最终四适配新包和 D3 未验收；已有 A/B 源码/锁及历史候选封存保持。
 
 <!-- impeccable:product-schema 1 -->
 
