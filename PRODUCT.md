@@ -1,6 +1,6 @@
 # AgentGit 产品上下文
 
-S12-B 已接通[耐久 Live、安全 Fork 与成功轨迹范围 Recorded](doc/acceptance/S12-B.md)：回放固定来源 Run/起止点、程序和控制，重算逻辑状态及报告，实际取证为 0；原生物理 ID 单列。当前 946 单元、67 图集成、118 核心兼容及 19 真实终端/Python 回放兼容通过，12 处图解释器终止和原始关系独立核对。更多控制/stdio 与完整桌面退出继续，正式 B/C/D 和 D3 未验收。A 的原源/锁封存保持。
+S12-B 已接通[耐久 Live、安全 Fork 与成功轨迹范围 Recorded](doc/acceptance/S12-B.md)，已核对 HTTP 与受信 stdio 两种传输、严格父控制来源和零启动回放。当前 960 单元、64 stdio 图契约、67 HTTP 图回归及 59 相关兼容通过，24 处图解释器终止和原始关系独立核对。原生边界控制组合与完整桌面退出继续，正式 B/C/D 和 D3 未验收；A 的原源/锁封存保持。
 
 <!-- impeccable:product-schema 1 -->
 

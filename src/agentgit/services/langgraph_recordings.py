@@ -558,6 +558,7 @@ def _controls(
     ) = None
     previous: LangGraphRunState | None = None
     last_resume_seq = 0
+    recorded_pause_index: int | None = None
     for index, cid in enumerate(path):
         state = states[cid]
         if state.status == RunStatus.PAUSED and (
@@ -588,15 +589,14 @@ def _controls(
                 else "requested"
             )
             pause_request = None
+            recorded_pause_index = None
             if recorded is not None:
+                inherited = _parent_control(parent, recorded)
+                recorded_pause_index = recorded["index"]
                 if (
-                    parent is None
-                    or recorded.get("index") not in range(len(parent.bundle.controls))
-                    or recorded.get("bundle_ref") is None
+                    projection_digest(state) != inherited.paused_digest
+                    or recorded["index"] != state.replay_control_index
                 ):
-                    raise _mismatch("图回放暂停缺少父控制依据")
-                inherited = parent.bundle.controls[recorded["index"]]
-                if projection_digest(state) != inherited.paused_digest:
                     raise _mismatch("图回放暂停投影不符")
                 pause_request = inherited.pause_request_ref
             elif kind == "requested":
@@ -618,6 +618,7 @@ def _controls(
                 ):
                     raise _mismatch("图初始暂停依据不符")
                 pause_request = inherited.pause_request_ref
+                recorded_pause_index = state.replay_control_index
             pending = index, previous, state, event, kind, pause_request
         elif (
             state.status == RunStatus.RUNNING
@@ -630,11 +631,12 @@ def _controls(
             body = bodies[event["seq"]]
             recorded = body.get("recorded_control")
             if recorded is not None:
-                if parent is None or recorded.get("index") not in range(
-                    len(parent.bundle.controls)
+                inherited = _parent_control(parent, recorded)
+                if (
+                    recorded["index"] != recorded_pause_index
+                    or state.replay_control_index != recorded["index"] + 1
                 ):
-                    raise _mismatch("图回放恢复缺少父控制依据")
-                inherited = parent.bundle.controls[recorded["index"]]
+                    raise _mismatch("图回放恢复不能借用另一暂停的父控制")
                 if projection_digest(state) != inherited.resumed_digest:
                     raise _mismatch("图回放恢复投影不符")
                 resume_request = inherited.resume_request_ref
@@ -666,3 +668,19 @@ def _controls(
     if pending is not None:
         raise AgentGitError(ErrorCode.RECORDING_MISSING, "图录制暂停尚未恢复")
     return pairs
+
+
+def _parent_control(
+    parent: PreparedLangGraphRecording | None, recorded: Any
+) -> LangGraphRecordedControl:
+    if (
+        parent is None
+        or not isinstance(recorded, dict)
+        or set(recorded) != {"bundle_ref", "index"}
+        or type(recorded.get("index")) is not int
+        or not 0 <= recorded["index"] < len(parent.bundle.controls)
+        or recorded["bundle_ref"]
+        != object_digest(ObjectType.BLOB, encode(parent.bundle.model_dump(mode="json")))
+    ):
+        raise _mismatch("图回放控制必须绑定确切的父范围说明及整数索引")
+    return parent.bundle.controls[recorded["index"]]

@@ -21,7 +21,7 @@ from agentgit.core.canonical import ObjectType, encode
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.langgraph import LangGraphDefinition, LangGraphProgram
 from agentgit.core.langgraph_runs import LangGraphRunState
-from agentgit.core.mcp import MCPArguments
+from agentgit.core.mcp import MCPArguments, MCPStdioServer
 from agentgit.core.models import EffectClass, parse_contract
 from agentgit.core.research import BudgetLimits
 from agentgit.services.environment import dependency_lock_digest, source_revision
@@ -40,7 +40,7 @@ def archive(history, server, request):
     destination = os.environ.get("AGENTGIT_LANGGRAPH_EVIDENCE_DIR")
     if destination is None:
         return
-    _, counts, _ = server
+    config, counts, _ = server
     with history.engine.connect() as connection:
         tables = {
             name: [dict(row) for row in connection.execute(sa.select(TABLES[name])).mappings()]
@@ -82,6 +82,16 @@ def archive(history, server, request):
         "objects": objects,
         "counts": counts(),
     }
+    if isinstance(config, MCPStdioServer):
+        _, approved, _, _, _ = request.getfixturevalue("mcp_stdio")
+        packet["stdio"] = {
+            "server": config.model_dump(mode="json"),
+            "approved_program": approved.model_dump(mode="json"),
+            "script_base64": base64.b64encode(Path(approved.script).read_bytes()).decode("ascii"),
+            "interpreter_sha256": hashlib.sha256(
+                Path(approved.interpreter).read_bytes()
+            ).hexdigest(),
+        }
     folder = Path(destination)
     folder.mkdir(parents=True, exist_ok=True)
     name = hashlib.sha256(request.node.nodeid.encode()).hexdigest()[:16] + ".json"

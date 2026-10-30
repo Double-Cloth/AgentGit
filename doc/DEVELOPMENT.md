@@ -1,6 +1,6 @@
 # 本地开发与测试
 
-S12-B 已接通 [LangGraph `1.2.18` 耐久 Live、安全 Fork 与成功轨迹范围 Recorded](acceptance/S12-B.md)，支持范围见[计划](S12-B-langgraph-plan.md)，CLI 与自动化入口见[演示](S12-B-langgraph-demo.md)。锁仍为 `13df29416247b05eb1ab2a97b9ef2d6035af2903b1e52e8562d3ef1aaa45ed3a`，`langsmith_plugin` 不自动参与 pytest。当前 946 单元、67 图集成、118 核心兼容和 19 真实执行回放兼容通过；12 处图解释器终止包含 5 处 Recorded。成功轨迹回放固定来源/范围/控制和逻辑用量，实际调用 0，缺依赖拒绝；原生日志的物理 ID/时间独立保留。Schema 仍 `0028_langgraph_runs`，本增量无新依赖或迁移。更多控制/stdio 和完整桌面退出继续；正式 B/C/D、D3 与用户暂缓项保持。下文 A 保留原源码/旧锁范围。
+S12-B 已接通 [LangGraph `1.2.18` Live/Fork/成功范围 Recorded 与受信 stdio 核对](acceptance/S12-B.md)，范围见[计划](S12-B-langgraph-plan.md)，操作见[演示](S12-B-langgraph-demo.md)。锁仍为 `13df29416247b05eb1ab2a97b9ef2d6035af2903b1e52e8562d3ef1aaa45ed3a`。当前 960 单元、64 stdio 图契约、67 HTTP 图回归与 59 相关兼容通过；全套 2,235 项联合收集通过不代表全量执行。三个 S12 单元文件使用 `_contracts.py` 避免与集成模块重名，其他命令和断言保持。运行前冻结 679 文件；从 `ee30e72` 加快照复现时还须按 `deletions-provenance-v1.json` 删除三个旧路径。Schema 仍 `0028_langgraph_runs`，无新依赖或迁移。原生边界取消/期限组合、完整桌面和正式 B/C/D/D3 继续；下文 A 保留其原源码/旧锁范围。
 
 S12 当前在 `codex/s12-adapters` 推进，[MCP A 本机核对](acceptance/S12-A.md)已覆盖固定 HTTP 及批准的单文件 Python stdio、有界 Run/Worker、精确审批、失租/未知恢复和完整 Recorded。最终源码 `source-sha256:aad91a9394b16d68cd2ac3d252705d8161b1fe2ee24d62fb43b46a3178da1b10`；866 Python 单元、53 个不同 MCP/API、74 核心、40 桌面单元和 5 个不同包内节点均有通过证据，失败尝试和复验保留。Schema head 仍 `0027_mcp_runs`，不新增依赖/业务表或业务迁移。命令见 [HTTP 演示](S12-A-mcp-demo.md)与 [stdio 演示](S12-A-stdio-demo.md)；stdio 必须通过后端白名单，不能使用它执行未审阅脚本或替代 S4 容器。正式前置/最终包待补，按授权进入 B 工程；旧研究 release 仍使用其冻结源码，不修改旧 guard 接受新模块。
 

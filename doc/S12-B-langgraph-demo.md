@@ -93,4 +93,25 @@ uv run --locked pytest tests/integration/test_langgraph_recorded.py -q
 
 相同键与输入返回原 Job/Run；不同范围不能复用原键。adapter.recording 指明不可变范围说明，actual_attempts 为 0；历史逻辑 steps/tool_calls 和来源 trace 保留。来源暂停/恢复由录制依据自动消费；新任务当前的暂停/取消和原期限仍有效。没有真实模型、HTTP 工具或 stdio 进程，缺录制/控制/环境失败，不能回退 Live。可再次 Recorded 或从回放的安全 review 点创建新 Fork；后者通过固定范围核对原始取证，不能把同 hash 当成任意授权。
 
-报告字节与完整逻辑投影必须等于来源；新 thread/checkpoint ID、时间和物理日志单独保留，不要求 native JSON 字节相同。测试同时覆盖来源不变、真实解释器终止接管、缺依赖、伪造说明及开启 tracing 环境后的零连接尝试。这里只声明成功轨迹范围，完整 B-T06/stdio 图路径和桌面展示仍须补齐。
+报告字节与完整逻辑投影必须等于来源；新 thread/checkpoint ID、时间和物理日志单独保留，不要求 native JSON 字节相同。测试同时覆盖来源不变、真实解释器终止接管、缺依赖、伪造说明及开启 tracing 环境后的零连接尝试。这里只声明成功轨迹范围，完整 B-T06 与桌面展示仍须补齐，stdio 路径见下文。
+
+## 受信 stdio 图路径
+
+先按 [MCP stdio 演示](S12-A-stdio-demo.md)审阅并登记可信单文件 Server，准备独立测试后端；当前 head 为 `0028_langgraph_runs`。保留该步骤生成的程序引用和 `AGENTGIT_MCP_STDIO_REGISTRY`，这里使用 READ_ONLY：
+
+```powershell
+$binding = uv run --locked agentgit mcp-stdio-bind stdio-demo $mcpStdioProgramRef echo --effect READ_ONLY --testing | ConvertFrom-Json
+$program = @{ schema_version=1; binding=$binding; request=@{schema_version=1;arguments=@{value='graph-fixture-value'}}; review_note='来源已核对' }
+[IO.File]::WriteAllText([IO.Path]::GetFullPath('graph-program.json'), ($program | ConvertTo-Json -Depth 100), [Text.UTF8Encoding]::new($false))
+```
+
+从本文 `langgraph-submit` 步骤继续，使用新的项目/分支及键。仍默认 review 前暂停，经现有 resume 完成；Fork 和 Recorded 文件与 HTTP 图相同，不能覆盖工具、预算或权限。正常图来源有一次绑定发现和一次取证；标准库 fixture 为三个独立 Server 进程、六帧协议请求，其中一次工具调用。原生恢复、Fork 和 Recorded 不追加取证。
+
+成功录制后，即使移除登记与原脚本，Recorded 仍须使用固定来源完成，并保持 Server 日志和计数不变。Live 脚本摘要变化拒绝；发现到工具帧之间失租不发送取证，之后保持 unknown，不通过恢复重发。这里只启动可信 MCP Server，不将 stdio 用作任意 Shell/Python 执行入口。
+
+```powershell
+uv run --locked pytest tests/integration/test_langgraph_stdio.py -q
+uv run --locked pytest tests/unit/test_langgraph_recorded_contracts.py -q
+```
+
+64 项 stdio 用例复用相同 Live/Fork/Recorded 契约，另外核对移除启动环境、发现到调用失租、批准脚本变更及逐个自有进程退出。联合收集命令可同时包含 unit/integration/sandbox/execution；收集成功不代表完整运行或正式验收。

@@ -16,6 +16,8 @@
 
 `adapter.recording` 返回 source_run_id/from_commit/to_commit/bundle_ref；recorded_control_index、recorded_pause_pending、recorded_call_consumed 表示耐久消费进度。回放重算固定 SDK 图，消费已录制工具结果及暂停/恢复，比较逻辑投影、trace 和报告；不构造真实客户端、模型或进程。当前任务的 pause/cancel/墙钟仍独立生效，历史控制不创建新的权限请求。逻辑工具用量保留历史值，actual_attempts=0；损坏/缺失来源与伪造说明失败，无 Live 回退。原生物理日志不作为字节相等目标。
 
+图程序的 binding 也可来自 `mcp-stdio-bind`，仅接受后端已批准的 program_ref 与 READ_ONLY 工具，见[stdio 图演示](S12-B-langgraph-demo.md#受信-stdio-图路径)。不能通过图输入指定 executable/args/env/cwd 或登记程序。Recorded 不需要原 stdio 登记/脚本存在，不启动 Server；连续回放的控制元数据须绑定确切父 bundle_ref、整数索引及同一暂停/恢复对。
+
 ## S11 耐久合并提案
 
 当前实现提案→编辑→硬验证→准备审阅→精确批准/拒绝，耐久定义见 [S11-proposals.md](acceptance/S11-proposals.md)，桌面入口见[Merge Review](acceptance/S11-desktop.md)。准备审阅不代表批准；批准必须显式提交本人票据、确切候选和修订，原子创建双父 Commit 并仅推进 ours 的 HEAD/version。所有这些操作不启动 Run 或外部调用。更新分发包、人工预期和完整阶段前置仍待完成。
