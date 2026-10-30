@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from agentgit.core.collaboration import CollaborationRole
 from agentgit.core.models import Contract, Digest, Identifier
@@ -20,6 +20,7 @@ class CollaborationFrozenInput(Contract):
     bindings_ref: Digest
     corpus_ref: Digest
     corpus_digest: Digest
+    recording_ref: Digest | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
 class CollaborationRolePayload(Contract):
@@ -34,6 +35,14 @@ class CollaborationRolePayload(Contract):
     code_revision: str
     dependency_lock_digest: Digest
     max_wall_ms: Annotated[int, Field(ge=1, le=900_000)]
+    recording_ref: Digest | None = Field(default=None, exclude_if=lambda v: v is None)
+    source_run_id: Identifier | None = Field(default=None, exclude_if=lambda v: v is None)
+
+    @model_validator(mode="after")
+    def recording_identity(self) -> "CollaborationRolePayload":
+        if (self.recording_ref is None) != (self.source_run_id is None):
+            raise ValueError("Recorded 角色必须同时固定来源索引和所属来源 Run")
+        return self
 
 
 class CollaborationSubmission(Contract):

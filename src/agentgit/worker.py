@@ -99,6 +99,12 @@ class Worker:
             job = self.queue.get(lease.repository_id, lease.job_id)
             if job["kind"] == "collaboration_role":
                 with LeaseHeartbeat(self.queue, lease):
+                    if self.queue.run(lease.repository_id, lease.run_id)["mode"] == "recorded":
+                        from agentgit.runtime.collaboration_recorded import (
+                            CollaborationRecordedRoleRunner,
+                        )
+
+                        return CollaborationRecordedRoleRunner(self.queue, lease).run()
                     return CollaborationRoleRunner(
                         self.queue,
                         lease,

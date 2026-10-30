@@ -19,6 +19,8 @@ from agentgit.core.collaboration import (
     RoleBinding,
     RolePolicy,
 )
+from agentgit.core.collaboration_identities import CollaborationIdentityMap, RoleJobIdentity
+from agentgit.core.collaboration_recordings import CollaborationSourceIndex
 from agentgit.core.collaboration_runs import (
     CollaborationFrozenInput,
     CollaborationRolePayload,
@@ -34,6 +36,7 @@ from agentgit.services.environment import dependency_lock_digest, source_revisio
 from agentgit.services.history import TABLES
 
 if TYPE_CHECKING:
+    from agentgit.services.collaboration_recordings import CollaborationSource
     from agentgit.services.jobs import JobService
 
 
@@ -60,6 +63,49 @@ class CollaborationService:
         key: str,
         private_inputs: tuple[RolePrivateInput, ...] = (),
     ) -> CollaborationSubmission:
+        return self._prepare(
+            repository_id, program, actor=actor, key=key, private_inputs=private_inputs
+        )
+
+    def prepare_recorded(
+        self, repository_id: UUID, source_group: UUID, *, actor: str, key: str
+    ) -> CollaborationSubmission:
+        from agentgit.replay.collaboration import CollaborationRecordedEngine
+        from agentgit.services.collaboration_recordings import CollaborationRecordingReader
+
+        if not actor.strip() or not key.strip() or len(actor) > 200 or len(key) > 200:
+            raise AgentGitError(ErrorCode.VALIDATION, "Recorded 准备必须提供有界身份及原键")
+        source = CollaborationRecordingReader(self.history).inspect(
+            repository_id, source_group, actor=actor
+        )
+        CollaborationRecordedEngine(source).replay()
+        raw = {ref: data for ref, _, data in source.objects}
+        program = parse_contract(raw[source.index.program_ref], CollaborationProgram)
+        corpus = parse_contract(raw[source.index.corpus_ref], FrozenCorpus)
+        private = tuple(
+            parse_contract(raw[r.private_input_ref], RolePrivateInput) for r in source.index.roles
+        )
+        return self._prepare(
+            repository_id,
+            program,
+            actor=actor,
+            key=key,
+            private_inputs=private,
+            _source=source,
+            _corpus=Corpus(corpus.sources, evaluation_time=corpus.evaluation_time),
+        )
+
+    def _prepare(
+        self,
+        repository_id: UUID,
+        program: CollaborationProgram,
+        *,
+        actor: str,
+        key: str,
+        private_inputs: tuple[RolePrivateInput, ...] = (),
+        _source: "CollaborationSource | None" = None,
+        _corpus: Corpus | None = None,
+    ) -> CollaborationSubmission:
         program = parse_contract(encode(program.model_dump(mode="json")), CollaborationProgram)
         if not actor.strip() or not key.strip() or len(actor) > 200 or len(key) > 200:
             raise AgentGitError(ErrorCode.VALIDATION, "协作操作者及原键必须有界且非空")
@@ -85,7 +131,7 @@ class CollaborationService:
             role: store.put_json(ObjectType.BLOB, p.model_dump(mode="json"))
             for role, p in private.items()
         }
-        corpus = self.queue.research.corpus
+        corpus = _corpus or self.queue.research.corpus
         if set(program.goal.frameworks) != {source.framework for source in corpus.sources.values()}:
             raise AgentGitError(ErrorCode.VALIDATION, "协作目标必须匹配冻结的三框架语料")
         frozen_corpus = FrozenCorpus(
@@ -94,6 +140,16 @@ class CollaborationService:
         )
         corpus_obj = store.put_json(ObjectType.BLOB, frozen_corpus.model_dump(mode="json"))
         revision, lock = source_revision(), dependency_lock_digest()
+        recording_obj = None
+        if _source is not None:
+            if (
+                _source.actor,
+                _source.index.repository_id,
+                _source.index.code_revision,
+                _source.index.dependency_lock_digest,
+            ) != (actor, str(repository_id), revision, lock):
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "Recorded 来源身份、源码或锁已改变")
+            recording_obj = store.put_json(ObjectType.BLOB, _source.index.model_dump(mode="json"))
         request_digest = object_digest(
             ObjectType.BLOB,
             encode(
@@ -106,10 +162,16 @@ class CollaborationService:
                     dependency_lock_digest=lock,
                     runtime_version=__version__,
                     python_version=platform.python_version(),
+                    **(dict(recording_ref=recording_obj.id) if recording_obj is not None else {}),
                 )
             ),
         )
         route = f"POST /repositories/{repository_id}/collaborations/prepare"
+        if _source is not None:
+            route = (
+                f"POST /repositories/{repository_id}/collaborations/"
+                f"{_source.index.collaboration_id}/recorded"
+            )
         with self.history.engine.begin() as connection:
             connection.execute(
                 sa.select(
@@ -167,11 +229,33 @@ class CollaborationService:
                 ),
             )
             bindings_obj = store.put_json(ObjectType.BLOB, bindings.model_dump(mode="json"))
+            jobs = {a.role: uuid4() for a in bindings.agents}
+            identity_obj = None
+            origins = {r.role: r for r in _source.index.roles} if _source is not None else {}
+            if _source is not None:
+                source_bindings = parse_contract(
+                    dict((ref, raw) for ref, _, raw in _source.objects)[_source.index.bindings_ref],
+                    CollaborationBindings,
+                )
+                identities = CollaborationIdentityMap(
+                    source=source_bindings,
+                    target=bindings,
+                    jobs=tuple(
+                        RoleJobIdentity(
+                            role=role,
+                            source_job_id=origins[role].job_id,
+                            target_job_id=str(jobs[role]),
+                        )
+                        for role in CollaborationRole
+                    ),
+                )
+                identity_obj = store.put_json(ObjectType.BLOB, identities.model_dump(mode="json"))
             frozen = CollaborationFrozenInput(
                 program_ref=program_obj.id,
                 bindings_ref=bindings_obj.id,
                 corpus_ref=corpus_obj.id,
                 corpus_digest=corpus.digest(),
+                recording_ref=recording_obj.id if recording_obj is not None else None,
             )
             input_obj = store.put_json(ObjectType.BLOB, frozen.model_dump(mode="json"))
             environment = EnvironmentManifest(
@@ -212,11 +296,31 @@ class CollaborationService:
                     actor=actor,
                 )
             )
-            jobs = {}
+            if _source is not None:
+                assert recording_obj is not None and identity_obj is not None
+                for name, obj in (("source_index", recording_obj), ("identities", identity_obj)):
+                    self.history._ref(
+                        connection,
+                        repository_id,
+                        obj,
+                        "collaboration_recording",
+                        str(group_id),
+                        name,
+                    )
+                connection.execute(
+                    TABLES["collaboration_recordings"]
+                    .insert()
+                    .values(
+                        repository_id=repository_id,
+                        collaboration_id=group_id,
+                        source_collaboration_id=UUID(_source.index.collaboration_id),
+                        source_index_ref=recording_obj.id,
+                        identity_map_ref=identity_obj.id,
+                    )
+                )
             for agent in bindings.agents:
                 role, task_id, run_id = agent.role, UUID(agent.task_id), UUID(agent.agent_run_id)
-                job_id = uuid4()
-                jobs[role] = job_id
+                job_id = jobs[role]
                 policy = program.policy(role)
                 policy_obj = store.put_json(ObjectType.BLOB, policy.model_dump(mode="json"))
                 budget_obj = store.put_json(ObjectType.BLOB, policy.limits.model_dump(mode="json"))
@@ -231,6 +335,8 @@ class CollaborationService:
                     code_revision=revision,
                     dependency_lock_digest=lock,
                     max_wall_ms=policy.limits.max_wall_ms,
+                    recording_ref=recording_obj.id if recording_obj is not None else None,
+                    source_run_id=origins[role].run_id if _source is not None else None,
                 )
                 payload_obj = store.put_json(ObjectType.BLOB, payload.model_dump(mode="json"))
                 for name, obj in [
@@ -255,7 +361,8 @@ class CollaborationService:
                         id=run_id,
                         repository_id=repository_id,
                         branch_name=branch,
-                        mode="live",
+                        mode="recorded" if _source is not None else "live",
+                        origin_run_id=UUID(origins[role].run_id) if _source is not None else None,
                         status="paused",
                     )
                 )
@@ -269,6 +376,7 @@ class CollaborationService:
                         kind="collaboration_role",
                         status="paused",
                         payload_ref=payload_obj.id,
+                        origin_run_id=UUID(origins[role].run_id) if _source is not None else None,
                     )
                 )
                 connection.execute(
@@ -369,11 +477,20 @@ class CollaborationService:
                 .mappings()
                 .all()
             )
+            recordings = TABLES["collaboration_recordings"]
+            source_group = connection.execute(
+                sa.select(recordings.c.source_collaboration_id).where(
+                    recordings.c.repository_id == repository_id,
+                    recordings.c.collaboration_id == collaboration_id,
+                )
+            ).scalar_one_or_none()
         return dict(
             collaboration_id=str(collaboration_id),
             status=group["status"],
             program_ref=group["program_ref"],
             bindings_ref=group["bindings_ref"],
+            mode="recorded" if source_group is not None else "live",
+            source_collaboration_id=str(source_group) if source_group is not None else None,
             roles=[
                 dict(
                     role=a["role"],
@@ -523,6 +640,99 @@ class CollaborationService:
                 ),
                 CollaborationRolePayload,
             )
+            recordings = TABLES["collaboration_recordings"]
+            link = (
+                connection.execute(
+                    sa.select(recordings).where(
+                        recordings.c.repository_id == repo,
+                        recordings.c.collaboration_id == group["id"],
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            run = self.history._run(connection, repo, lease.run_id)
+            recording_ref = source_run = None
+            if link is None:
+                if (
+                    frozen.recording_ref is not None
+                    or run["mode"] != "live"
+                    or run["origin_run_id"] is not None
+                    or job["origin_run_id"] is not None
+                ):
+                    raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "Live 协作不能继承 Recorded 来源")
+            else:
+                source_index = parse_contract(
+                    self._owned(
+                        connection,
+                        repo,
+                        link["source_index_ref"],
+                        "collaboration_recording",
+                        identity,
+                        "source_index",
+                    ),
+                    CollaborationSourceIndex,
+                )
+                mapping = parse_contract(
+                    self._owned(
+                        connection,
+                        repo,
+                        link["identity_map_ref"],
+                        "collaboration_recording",
+                        identity,
+                        "identities",
+                    ),
+                    CollaborationIdentityMap,
+                )
+                lane = next(r for r in source_index.roles if r.role.value == row["role"])
+                mapped_job = next(j for j in mapping.jobs if j.role.value == row["role"])
+                if (
+                    (
+                        source_index.repository_id,
+                        source_index.collaboration_id,
+                        source_index.program_ref,
+                        source_index.code_revision,
+                        source_index.dependency_lock_digest,
+                        mapping.target,
+                        mapping.source.collaboration_id,
+                        run["mode"],
+                        str(run["origin_run_id"]),
+                        str(job["origin_run_id"]),
+                        mapped_job.source_job_id,
+                        mapped_job.target_job_id,
+                        lane.private_input_ref,
+                        lane.policy_ref,
+                        lane.budget_ref,
+                        frozen.recording_ref,
+                    )
+                    != (
+                        str(repo),
+                        str(link["source_collaboration_id"]),
+                        group["program_ref"],
+                        environment.code_revision,
+                        environment.dependency_lock_digest,
+                        bindings,
+                        source_index.collaboration_id,
+                        "recorded",
+                        lane.run_id,
+                        lane.run_id,
+                        lane.job_id,
+                        str(lease.job_id),
+                        row["private_input_ref"],
+                        row["policy_ref"],
+                        row["budget_ref"],
+                        link["source_index_ref"],
+                    )
+                    or object_digest(
+                        ObjectType.BLOB, encode(mapping.source.model_dump(mode="json"))
+                    )
+                    != source_index.bindings_ref
+                    or mapping.run(lane.run_id) != str(lease.run_id)
+                ):
+                    raise AgentGitError(
+                        ErrorCode.OBJECT_CORRUPT, "Recorded 来源、角色新身份或冻结输入不符"
+                    )
+                recording_ref, source_run = link["source_index_ref"], lane.run_id
             expected = CollaborationRolePayload(
                 collaboration_id=identity,
                 role=CollaborationRole(row["role"]),
@@ -534,6 +744,8 @@ class CollaborationService:
                 code_revision=environment.code_revision,
                 dependency_lock_digest=environment.dependency_lock_digest,
                 max_wall_ms=policy.limits.max_wall_ms,
+                recording_ref=recording_ref,
+                source_run_id=source_run,
             )
             if (
                 payload != expected

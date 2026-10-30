@@ -219,6 +219,7 @@ def test_real_four_role_flow_has_causal_messages_and_independent_model_contexts(
             connection.execute(sa.text("SELECT version_num FROM alembic_version")).scalar_one()
             == "0030_collaboration_exchange"
         )
+        command.upgrade(config_for(connection), "head")
 
 
 @pytest.mark.parametrize("bad_role", ["researcher", "verifier"])

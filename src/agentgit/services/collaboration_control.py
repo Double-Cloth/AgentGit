@@ -83,6 +83,20 @@ class CollaborationCoordinator:
                 raise AgentGitError(ErrorCode.NOT_FOUND, "协作组不可访问")
             if group["actor"] != actor:
                 raise AgentGitError(ErrorCode.FORBIDDEN, "协作开始身份与准备操作者不符")
+            recordings = TABLES["collaboration_recordings"]
+            if (
+                c.execute(
+                    sa.select(recordings.c.collaboration_id).where(
+                        recordings.c.repository_id == repository,
+                        recordings.c.collaboration_id == group_id,
+                    )
+                ).first()
+                is not None
+            ):
+                raise AgentGitError(
+                    ErrorCode.UNSUPPORTED_SCHEMA,
+                    "Recorded 成功轨迹 Worker 尚未接通，准备态不能开始",
+                )
             cached = (
                 c.execute(
                     sa.select(idem).where(

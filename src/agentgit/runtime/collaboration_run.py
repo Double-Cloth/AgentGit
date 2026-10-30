@@ -49,6 +49,10 @@ class CollaborationRoleRunner:
         self.queue, self.lease, self.fault = queue, lease, fault
         self.exchange = CollaborationExchange(queue, lease, fault=fault)
         self.scope = self.exchange.scope
+        if self.exchange.payload.recording_ref is not None:
+            raise AgentGitError(
+                ErrorCode.FORBIDDEN, "Recorded 角色不能落入 Live 模型或工具构造路径"
+            )
         self.model = (
             model_factory(self.scope.policy.role.value)
             if model_factory
