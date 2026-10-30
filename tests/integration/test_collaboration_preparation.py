@@ -386,23 +386,29 @@ def test_database_rejects_mutation_and_commit_of_incomplete_group(case):
 
 def test_migration_roundtrip_adds_only_two_domain_tables(history):
     with history.engine.begin() as connection:
-        before = schema_signature(connection)
         config = config_for(connection)
+        full = schema_signature(connection)
+        command.downgrade(config, "0029_collaboration_preparation")
+        before = schema_signature(connection)
         command.downgrade(config, "0028_langgraph_runs")
         assert set(before) - set(sa.inspect(connection).get_table_names()) == {
             "collaborations",
             "collaboration_tasks",
         }
-        command.upgrade(config, "head")
+        command.upgrade(config, "0029_collaboration_preparation")
         assert schema_signature(connection) == before
+        command.upgrade(config, "head")
+        assert schema_signature(connection) == full
 
 
 def test_existing_group_blocks_destructive_or_non_testing_downgrade(case):
     _, queue, _, _, _ = case
     prepare(case)
     with queue.history.engine.begin() as connection:
+        command.downgrade(config_for(connection), "0029_collaboration_preparation")
         with pytest.raises(RuntimeError, match="已有协作数据"):
             command.downgrade(config_for(connection), "0028_langgraph_runs")
         with pytest.raises(RuntimeError, match="正式迁移"):
             command.downgrade(config_for(connection, testing=False), "0028_langgraph_runs")
+        command.upgrade(config_for(connection), "head")
     assert counts(queue.history)["collaboration_tasks"] == 4

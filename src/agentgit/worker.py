@@ -27,12 +27,14 @@ from agentgit.core.models import (
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage, ResearchGoal, evolve
 from agentgit.core.snapshots import EventPayload, StateSnapshot
 from agentgit.core.versions import HybridReplaySpec
+from agentgit.runtime.collaboration_run import CollaborationRoleRunner
 from agentgit.runtime.langgraph_run import LangGraphRunRunner
 from agentgit.runtime.mcp_run import MCPRunRunner
 from agentgit.runtime.model_budget import call_budget, reserve_model
 from agentgit.runtime.ports import CallSettlement, ModelAdapter
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.calls import RecordedCallGateway
+from agentgit.services.collaboration_control import CollaborationCoordinator
 from agentgit.services.environment import source_revision
 from agentgit.services.execution_recovery import discard_stopped, occurrence_of, validate_retry
 from agentgit.services.executions import ExecutionService
@@ -79,19 +81,30 @@ class Worker:
         model_factory: Callable[[], ModelAdapter] | None = None,
         fault: Callable[[str], None] | None = None,
         mcp_client_factory: Callable[[MCPBinding], MCPClient] | None = None,
+        collaboration_model_factory: Callable[[str], ModelAdapter] | None = None,
     ):
         self.queue, self.name = queue, name or f"worker-{uuid4()}"
         self.model_factory = model_factory
         self.fault = fault or (lambda _: None)
         self.mcp_client_factory = mcp_client_factory
+        self.collaboration_model_factory = collaboration_model_factory
 
     def run_once(self) -> dict[str, Any] | None:
         ApprovalService.expire_pending(self.queue.history)
+        CollaborationCoordinator(self.queue).tick()
         lease = self.queue.claim(self.name)
         if lease is None:
             return None
         try:
             job = self.queue.get(lease.repository_id, lease.job_id)
+            if job["kind"] == "collaboration_role":
+                with LeaseHeartbeat(self.queue, lease):
+                    return CollaborationRoleRunner(
+                        self.queue,
+                        lease,
+                        fault=self.fault,
+                        model_factory=self.collaboration_model_factory,
+                    ).run()
             if job["kind"] == "langgraph_run":
                 with LeaseHeartbeat(self.queue, lease):
                     return LangGraphRunRunner(
