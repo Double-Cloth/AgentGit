@@ -1,5 +1,7 @@
 # 本地开发与测试
 
+2026-11-01 最新D：[成功来源读取／纯重算](acceptance/S12-D-recorded-core.md)已实现。先以 `A2ARecordingReader(history).inspect(repository, A2ARecordedSpec(...), actor=...)` 核对本人完整成功Live范围，再用 `A2ARecordedEngine(source).replay()` 离线重算；同源码／锁守卫保持，不能直接消费旧32f82f…5630来源。`test_a2a_recordings.py` 的31项及35项Live／恢复共66集成通过，1,245单元归属相同dfc244…2cf1源码；v2仅改测试驱动，原五次不可变保护注入失败保留。head33／80表及锁不变。尚无新Recorded Job或公开入口，继续耐久执行／控制／接管；复验仍须独立Schema、唯一原始包目录和先冻结后运行。
+
 2026-11-01 最新D：[A2A耐久Live](acceptance/S12-D-live.md)已接通；当前32f82f…5630源码、head `0033_a2a_runs`，79业务表加版本表共80，锁不变。`test_a2a_runs.py`／`test_a2a_run_recovery.py` 合计35项，使用独立测试Schema及唯一 `AGENTGIT_A2A_RUN_PROOF_DIR`、`AGENTGIT_A2A_FIXTURE_PROOF_DIR` 保存原始包。实际base解释器子进程必须显式获得src及venv site-packages；六次真实终止和一次存活旧Worker接管已核对。1,245单元、35新增及124相关兼容通过，早期失败保留。完整Recorded／入口／桌面继续；运行前冻结全部输入，实际Runtime终态前禁止修改相关源码、驱动、锁、迁移及构建。
 
 2026-10-31 最新D：[有界客户端／wire／原调用网关](acceptance/S12-D-transport.md)已接通，当前ad9fcd…ede28源码，锁和head32不变。`uv run --locked pytest tests/integration/test_a2a_fixture.py tests/integration/test_a2a_transport.py` 运行13＋36个独立进程用例；`test_a2a_gateway.py`／`test_a2a_secrets.py` 另需原隔离PostgreSQL，分别6／2项。用唯一 `AGENTGIT_A2A_FIXTURE_PROOF_DIR`／`AGENTGIT_A2A_GATEWAY_PROOF_DIR` 导出无秘密的服务观察和数据库／CAS包。当前1,219单元、v3完整91集成及v4新增2项通过，不代表完整A2A Run／Recorded／桌面或T04–T07退出。v1时钟前提错误、v2校准及v3守卫保护各属原冻结输入；相关Runtime终态前不修改源码、驱动、迁移、锁或构建。

@@ -6,7 +6,7 @@ from pydantic import Field, model_validator
 
 from agentgit.core.a2a import A2ABinding
 from agentgit.core.a2a_wire import STATES, A2ACall
-from agentgit.core.models import Contract, Digest, RunStatus
+from agentgit.core.models import Contract, Digest, Identifier, RunStatus
 from agentgit.core.research import BudgetLimits, BudgetUsage, CallTrace
 
 
@@ -45,6 +45,13 @@ class A2AProgram(Contract):
         ):
             raise ValueError("A2A 程序必须声明消息、轮询、取消、响应及产物的有界预算")
         return self
+
+
+class A2ARecordedSpec(Contract):
+    mode: Literal["recorded"] = "recorded"
+    source_run_id: Identifier
+    from_commit: Digest
+    to_commit: Digest
 
 
 class A2AJobPayload(Contract):
