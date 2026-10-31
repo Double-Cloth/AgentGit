@@ -7,6 +7,8 @@ import os
 import re
 import socket
 import sys
+import time
+from contextlib import suppress
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -38,6 +40,7 @@ def main():
             pass
 
         def reply(self, status, value, *, reason=None, disconnect=False):
+            mode = json.loads(control.read_text("utf-8"))["mode"]
             if reason:
                 value = {"error": {"code": status, "message": "fixture request rejected"}}
                 if reason in {
@@ -60,6 +63,7 @@ def main():
                     "status": status,
                     "disconnected": disconnect,
                     "actor": self.actor,
+                    "mode": mode,
                 }
             )
             persist()
@@ -67,17 +71,82 @@ def main():
                 self.connection.shutdown(socket.SHUT_RDWR)
                 self.close_connection = True
                 return
+            value = copy.deepcopy(value)
+            target = value.get("task", value) if isinstance(value, dict) else {}
+            if status == 200 and "id" in target:
+                if mode == "echo_credential":
+                    target["artifacts"] = [
+                        {"artifactId": "echo", "parts": [{"text": credentials[self.actor]}]}
+                    ]
+                elif mode == "wrong_task":
+                    target["id"] = "task-999"
+                elif mode == "wrong_context":
+                    target["contextId"] = "context-other"
+                elif mode == "bad_state":
+                    target["status"]["state"] = "TASK_STATE_UNSPECIFIED"
+                elif mode == "data_float":
+                    target["artifacts"] = [{"artifactId": "float", "parts": [{"data": 0.5}]}]
+                elif mode == "external_artifact":
+                    target["artifacts"] = [
+                        {"artifactId": "url", "parts": [{"url": "http://127.0.0.1:1/private"}]}
+                    ]
+                elif mode == "server_error_after_accept":
+                    status, value = 500, {"error": {"code": 500, "message": "fixture error"}}
+                elif mode == "malformed_401":
+                    status, value = 401, {"unexpected": True}
+                elif mode == "redirect_write":
+                    status = 307
+                elif mode == "direct_message":
+                    value = {
+                        "message": {
+                            "messageId": "direct",
+                            "role": "ROLE_AGENT",
+                            "contextId": "direct-context",
+                            "parts": [{"text": "direct reply"}],
+                        }
+                    }
             payload = json.dumps(value, ensure_ascii=False).encode()
+            if mode == "duplicate_json":
+                payload = b'{"task":{},"task":{}}'
+            elif mode == "oversized":
+                payload = b'"' + b"x" * 1_048_577 + b'"'
+            state["requests"][-1]["reply_status"] = status
+            persist()
             self.send_response(status)
-            self.send_header("Content-Type", "application/a2a+json")
-            self.send_header("Content-Length", str(len(payload)))
+            self.send_header(
+                "Content-Type",
+                "text/event-stream"
+                if mode == "wrong_media"
+                else "application/json"
+                if mode == "json_media"
+                else "application/a2a+json",
+            )
+            if mode not in {"no_length", "chunked"}:
+                self.send_header(
+                    "Content-Length", str(len(payload) + (10 if mode == "truncated" else 0))
+                )
+            if mode == "ambiguous_length":
+                self.send_header("Content-Length", str(len(payload) + 1))
+            if mode in {"chunked", "mixed_framing"}:
+                self.send_header("Transfer-Encoding", "chunked")
+            if mode == "compressed":
+                self.send_header("Content-Encoding", "gzip")
             self.send_header("Connection", "close")
             if status == 401:
                 self.send_header("WWW-Authenticate", "Bearer")
             if status == 307:
                 self.send_header("Location", "http://127.0.0.1:1/message:send")
             self.end_headers()
-            self.wfile.write(payload)
+            with suppress(OSError):
+                if mode == "slow_body":
+                    self.wfile.write(payload[:1])
+                    self.wfile.flush()
+                    time.sleep(1)
+                    payload = payload[1:]
+                if mode == "chunked":
+                    self.wfile.write(f"{len(payload):x}\r\n".encode() + payload + b"\r\n0\r\n\r\n")
+                else:
+                    self.wfile.write(payload)
 
         def do_GET(self):
             self.handle_request()
@@ -209,6 +278,25 @@ def main():
                             "parts": [{"text": "公开输入已整理。"}],
                         }
                     )
+                if mode == "structured" and target == "TASK_STATE_COMPLETED":
+                    task["artifacts"] = [
+                        {
+                            "artifactId": "summary",
+                            "name": "summary.json",
+                            "parts": [
+                                {
+                                    "data": {
+                                        "frameworks": ["Aster", "Birch", "Cedar"],
+                                        "verified": True,
+                                    },
+                                    "mediaType": "application/json",
+                                }
+                            ],
+                        }
+                    ]
+                    task["history"][-1]["parts"] = [
+                        {"data": {"public_input_only": True}, "mediaType": "application/json"}
+                    ]
                 state["messages"][key] = {"body": copy.deepcopy(body), "task_id": task_id}
                 state["accepted_messages"] += 1
             self.reply(200, {"task": task}, disconnect=mode == "disconnect_after_accept")

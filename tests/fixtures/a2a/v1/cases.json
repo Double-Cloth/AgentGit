@@ -2,7 +2,7 @@
   "schema_version": 1,
   "kind": "a2a-fixture-spec/v1",
   "profile": "public-research-summary/v1",
-  "request": {"message": {"messageId": "fixture-message-1", "role": "ROLE_USER", "parts": [{"text": "整理公开资料：Aster、Birch、Cedar。", "mediaType": "text/plain"}]}, "configuration": {"acceptedOutputModes": ["text/plain"], "returnImmediately": true}},
+  "request": {"message": {"messageId": "fixture-message-1", "role": "ROLE_USER", "parts": [{"text": "整理公开资料：Aster、Birch、Cedar。", "mediaType": "text/plain"}]}, "configuration": {"acceptedOutputModes": ["text/plain", "application/json"], "returnImmediately": true}},
   "artifact": {"artifactId": "summary", "name": "summary.txt", "parts": [{"text": "Aster、Birch、Cedar：已整理显式公开输入。", "mediaType": "text/plain"}]},
   "injections": ["missing_identity", "wrong_identity", "expired_identity", "duplicate_message", "changed_duplicate", "cross_identity_task", "disconnect_after_accept", "task_expired", "cancel", "duplicate_cancel", "disconnect_after_cancel", "redirect", "wrong_protocol", "missing_recording", "tampered_artifact"],
   "expected": {"duplicate_accepted_tasks": 1, "changed_duplicate_rejected": true, "unknown_write_auto_retry": false, "recorded_network_requests": 0, "missing_recording_live_fallback": false, "secrets_in_history": false},

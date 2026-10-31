@@ -13,18 +13,26 @@ from pathlib import Path
 
 import pytest
 
+from agentgit.services.environment import dependency_lock_digest, source_revision
+
 pytestmark = pytest.mark.integration
 ASSETS = Path(__file__).parents[1] / "fixtures/a2a/v1"
 CASES = json.loads((ASSETS / "cases.json").read_text("utf-8"))
 
 
 @pytest.fixture
-def server(tmp_path, request):
+def server(tmp_path, request, monkeypatch):
     ready, journal, control = (
         tmp_path / name for name in ("ready.json", "state.json", "mode.json")
     )
     control.write_text('{"mode":"success"}', encoding="utf-8")
     tokens = {role: secrets.token_hex(24) for role in ("owner", "other", "expired")}
+    credential_envs = {}
+    for role, token in tokens.items():
+        principal = "operator" if role == "owner" else role
+        name = "AGENTGIT_A2A_LOCAL_RESEARCH_" + principal.upper() + "_TOKEN"
+        monkeypatch.setenv(name, token)
+        credential_envs[role] = name
     environment = dict(os.environ)
     environment.update(
         {f"AGENTGIT_A2A_FIXTURE_{role.upper()}_TOKEN": token for role, token in tokens.items()}
@@ -47,6 +55,7 @@ def server(tmp_path, request):
                 time.sleep(0.01)
             observed = json.loads(ready.read_text("utf-8"))
             assert observed["pid"] == process.pid != os.getpid()
+            observed["credential_envs"] = credential_envs
 
             def call(method, path, body=None, *, actor="owner", version="1.0"):
                 headers = {"A2A-Version": version, "Content-Type": "application/a2a+json"}
@@ -90,6 +99,8 @@ def server(tmp_path, request):
                 driver_pid=os.getpid(),
                 process_exit=process.returncode,
                 fixture_sha256=hashlib.sha256(script.read_bytes()).hexdigest(),
+                source=source_revision(),
+                lock=dependency_lock_digest(),
                 state=json.loads(raw),
             )
             with (directory / (name + ".json")).open("x", encoding="utf-8") as stream:

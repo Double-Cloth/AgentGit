@@ -7,6 +7,6 @@
   "securitySchemes": {"fixtureBearer": {"httpAuthSecurityScheme": {"scheme": "Bearer"}}},
   "securityRequirements": [{"schemes": {"fixtureBearer": {"list": []}}}],
   "defaultInputModes": ["text/plain"],
-  "defaultOutputModes": ["text/plain"],
-  "skills": [{"id": "public-research-summary", "name": "公开资料整理", "description": "整理显式传入的公开文本", "tags": ["fixture", "research"], "inputModes": ["text/plain"], "outputModes": ["text/plain"]}]
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [{"id": "public-research-summary", "name": "公开资料整理", "description": "整理显式传入的公开文本", "tags": ["fixture", "research"], "inputModes": ["text/plain"], "outputModes": ["text/plain", "application/json"]}]
 }

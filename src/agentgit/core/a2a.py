@@ -110,9 +110,11 @@ def validate_card(value: Any, server: A2AServer) -> None:
         raise ValueError("A2A 本地配置仅支持固定 Bearer 认证声明")
     if card["securityRequirements"] != [{"schemes": {"fixtureBearer": {"list": []}}}]:
         raise ValueError("A2A 认证要求与本地配置不符")
-    for name in ("defaultInputModes", "defaultOutputModes"):
-        if card[name] != ["text/plain"]:
-            raise ValueError("A2A 卡片媒体类型超出本地配置")
+    if card["defaultInputModes"] != ["text/plain"] or card["defaultOutputModes"] != [
+        "text/plain",
+        "application/json",
+    ]:
+        raise ValueError("A2A 卡片媒体类型超出本地配置")
     skills = card["skills"]
     if not isinstance(skills, list) or len(skills) != 1:
         raise ValueError("A2A 仅支持固定公开资料整理能力")
@@ -125,7 +127,10 @@ def validate_card(value: Any, server: A2AServer) -> None:
         raise ValueError("A2A 能力标签无效")
     for tag in skill["tags"]:
         _text(tag, 100)
-    if skill["inputModes"] != ["text/plain"] or skill["outputModes"] != ["text/plain"]:
+    if skill["inputModes"] != ["text/plain"] or skill["outputModes"] != [
+        "text/plain",
+        "application/json",
+    ]:
         raise ValueError("A2A 能力媒体类型超出本地配置")
 
 
