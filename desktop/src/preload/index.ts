@@ -9,6 +9,9 @@ function method(operation: Operation) {
   };
 }
 const api: DesktopApi = {
+  listCollaborations: method('listCollaborations'), getCollaboration: method('getCollaboration'), prepareCollaboration: method('prepareCollaboration'),
+  startCollaboration: method('startCollaboration'), recordCollaboration: method('recordCollaboration'), controlCollaboration: method('controlCollaboration'),
+  getCollaborationMessages: method('getCollaborationMessages'), getCollaborationShared: method('getCollaborationShared'),
   listMergeProposals: method('listMergeProposals'), getMergeBases: method('getMergeBases'), createMergeProposal: method('createMergeProposal'),
   getMergeProposal: method('getMergeProposal'), getMergeReview: method('getMergeReview'), replaceMergeRevision: method('replaceMergeRevision'),
   validateMergeRevision: method('validateMergeRevision'), beginMergeReview: method('beginMergeReview'), approveMergeProposal: method('approveMergeProposal'),

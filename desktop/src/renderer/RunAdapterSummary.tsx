@@ -11,6 +11,13 @@ export default function RunAdapterSummary({ run, openSource }: { run: JsonObject
   if (!kind) return null;
   const graph = kind === 'langgraph_program/v1', origin = fixedProgramOrigin(run);
   const usage = object(adapter.logical_usage), recording = object(adapter.recording), fork = object(adapter.fork);
+  if (kind === 'collaboration_role/v1') return <section className="budget-summary adapter-summary" aria-labelledby={id}><h2 id={id}>四角色协作 · {str(adapter.role)}</h2>
+    <p>协作 <code>{str(adapter.collaboration_id)}</code> · 当前阶段 {str(adapter.phase)}。下方运行控制只作用于本角色；整组控制请回到运行页的四角色协作。</p>
+    <dl className="facts"><div><dt>逻辑模型 / 工具 / 步数</dt><dd>{count(usage.model_calls)} / {count(usage.tool_calls)} / {count(usage.steps)}</dd></div><div><dt>本次物理调用意图</dt><dd>{count(adapter.physical_call_intents)}</dd></div><div><dt>复用来源调用</dt><dd>{count(adapter.reused_calls)}</dd></div><div><dt>未知调用</dt><dd>{count(adapter.unknown_calls)}</dd></div></dl>
+    <p className="small muted">物理意图是尝试登记，不等于已执行次数或账单。Mock 用量按 UTF-8 字节记。Recorded 保留历史逻辑用量，本次执行与复用分别核对。</p>
+    {origin && <button onClick={() => openSource(origin)}>打开来源角色运行</button>}
+    <details><summary>角色预算、权限与来源原文</summary><JsonView value={adapter} /></details>
+  </section>;
   return <section className="budget-summary adapter-summary" aria-labelledby={id}><h2 id={id}>{fixedProgramTitle(run)}</h2>
     <p className="small muted">{adapter.has_model === false ? '无模型调用' : '模型范围见原文'} · {str(adapter.server_identity) || '工具来源待核对'} / {str(adapter.tool_name) || '工具待核对'} · 本地效果 {str(adapter.effect_class) || '未知'}</p>
     <dl className="facts"><div><dt>逻辑步骤</dt><dd>{count(usage.steps)}</dd></div><div><dt>逻辑工具用量</dt><dd>{count(usage.tool_calls)}</dd></div><div><dt>本次工具尝试</dt><dd>{count(adapter.actual_attempts)}</dd></div>

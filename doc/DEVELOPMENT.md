@@ -261,3 +261,9 @@ uv run --locked pytest tests/unit tests/integration tests/sandbox tests/executio
 当前控制另保存目标事件/检查点，历史控制沿冻结来源核验。取消撤回尚未消费的预留并保留已知复用；单角色取消/到期原子发布组失败因果、唤醒其他角色结算。Supervisor 是否派发依据实际 outgoing 消息，不能依据有没有 checkpoint。head32/80 表仅测试 Schema 迁移；有录制关联时禁止降级。最终 1,106 单元/36 集成通过和前版 150 集成分别绑定源码，不合算成最终完整兼容结论。
 
 Recorded 恢复检查点在事务中遇到 `budget_exhausted` 必须直接保存预算停止，不能作为普通控制竞争重复核验来源。恢复应用后仍复查原截止时间；已到期回归固定为两步、零复用、一次核验，并清空未消费预留。最终 559 份冻结代码/测试/迁移/锁与 Git 暂存字节一致。
+
+## S12-C 开发版桌面
+
+[桌面接入记录](acceptance/S12-C-desktop.md)说明固定 IPC、公开模板、角色来源、消息／共享版本、组控制和未确认请求的原键重试。`useRead` 的可选 `enabled` 只暂停读取并保留同范围已确认数据；默认行为保持，其他页面不因此暂停。模板只描述程序，不表示 Worker 就绪，也不自动执行。
+
+复现新联调：先 `cd desktop`，运行 `npm run typecheck`、`npm test`、`npm run build`；冻结完整源码／迁移／锁／驱动及实际 `.build` 后，设置独立的 `AGENTGIT_COLLABORATION_DESKTOP_QA` 输出目录，再执行 `npx --no-install playwright test --config playwright.collaboration.config.ts`。帮助进程仅创建受限的临时测试 Schema/CAS，停止时 await Worker/API 实际结束再清理该 Schema；不得用此驱动迁移业务库。Runtime 运行期间不编辑源码、驱动、构建或锁文件。

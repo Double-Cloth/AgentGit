@@ -1,20 +1,25 @@
-import React, { useRef, useState } from 'react';
+import React, { Suspense, lazy, useRef, useState } from 'react';
 import type { JsonObject } from '../shared/bridge';
 import { buildRunConfig, modelChoices, parseUsd, usd } from '../shared/model-config';
 import { call, date, Empty, JsonView, Notice, object, rows, short, Status, str, useAction, useRead, type PageProps } from './ui';
 
+const Collaboration = lazy(() => import('./Collaboration'));
+
 interface Submission { config: JsonObject; goal: JsonObject; branch: string; branchVersion: number; head: string | null; expectedConfigVersion?: number; configId?: string; configVersion?: number; taskId?: string; keys: string[] }
-export function Runs(props: PageProps) {
+export function Runs(props: PageProps & { active?: boolean }) {
+  const [mode, setMode] = useState(props.collaborationId ? 'collaboration' : 'single');
   const [after, setAfter] = useState<string | undefined>(), [newRun, setNewRun] = useState(false), [lookup, setLookup] = useState(''), [kind, setKind] = useState<'run' | 'job'>('run');
   const list = useRead(() => call(window.agentgit.listRuns({ ...(after ? { afterId: after } : {}), limit: 20 })), [after], 3000);
   const find = useAction();
-  return <><div className="page-heading"><div><span className="eyebrow">RUNS</span><h1>运行</h1><p>从一次任务开始，保留每个决策与产物的来路。</p></div><button className="primary" onClick={() => setNewRun(value => !value)} aria-expanded={newRun}>{newRun ? '收起新建' : '新建运行'}</button></div>
+  return <><div className="page-heading"><div><span className="eyebrow">RUNS</span><h1>运行</h1><p>从一次任务开始，保留每个决策与产物的来路。</p></div><button hidden={mode !== 'single'} className="primary" onClick={() => setNewRun(value => !value)} aria-expanded={newRun}>{newRun ? '收起新建' : '新建运行'}</button></div>
+    <div className="tabs" aria-label="运行类型">{[['single', '单次运行'], ['collaboration', '四角色协作']].map(([value, label]) => <button key={value} className={mode === value ? 'active' : ''} aria-pressed={mode === value} onClick={() => setMode(value!)}>{label}</button>)}</div>
+    {mode === 'collaboration' ? <Suspense fallback={<p role="status">正在打开协作…</p>}><Collaboration {...props} active={props.active ?? true} /></Suspense> : <>
     {newRun && <NewRun onAccepted={id => { list.refresh(); props.openTimeline(id); }} />}
     <div className="section-heading"><h2>项目运行记录</h2><button disabled={list.loading} onClick={list.refresh}>刷新</button></div><Notice>{list.error}</Notice>
     {list.loading ? <p role="status">正在读取运行…</p> : !rows(list.data?.items).length ? <Empty title={after ? '没有更多运行' : '还没有运行记录'}>创建固定离线研究任务，或按已有 Job / Run ID 打开。</Empty> : <div className="table-scroll"><table><thead><tr><th>目标 / Run</th><th>分支</th><th>模式</th><th>状态</th><th>创建时间</th><th><span className="sr-only">操作</span></th></tr></thead><tbody>{rows(list.data?.items).map(item => <tr key={str(item.id)}><td><strong className="table-goal">{str(object(item.goal).text) || '历史运行'}</strong><code title={str(item.id)}>{short(item.id)}</code>{item.job_id && <span className="small muted"> · Job {short(item.job_id)}</span>}</td><td><code>{str(item.branch_name)}</code></td><td>{str(item.mode) || 'standard'}</td><td><Status value={item.status} /></td><td className="nowrap small">{date(item.created_at)}</td><td><button className="text-button" onClick={() => props.openTimeline(str(item.id))}>查看时间线 →</button></td></tr>)}</tbody></table></div>}
     <div className="pagination"><span className="small muted">每页最多 20 项 · 按创建时间倒序</span><button disabled={!after} onClick={() => setAfter(undefined)}>回到最新</button><button disabled={!list.data?.next_after_id} onClick={() => setAfter(str(list.data?.next_after_id))}>更早运行</button></div>
     <form className="lookup panel" onSubmit={event => { event.preventDefault(); void find.run(async () => { const value = kind === 'job' ? await call(window.agentgit.getJob({ jobId: lookup.trim() })) : await call(window.agentgit.getRun({ runId: lookup.trim() })); props.openTimeline(str(kind === 'job' ? value.run_id : value.id)); }); }}><h2>按 ID 打开</h2><div className="inline-form"><label>类型<select value={kind} onChange={event => setKind(event.target.value as 'run' | 'job')}><option value="run">Run</option><option value="job">Job（查询最新 Run）</option></select></label><label className="grow">标识<input value={lookup} onChange={event => setLookup(event.target.value)} placeholder="粘贴 UUID" spellCheck={false} /></label><button disabled={find.busy || !lookup.trim()}>打开</button></div><Notice>{find.error}</Notice></form>
-  </>;
+  </>}</>;
 }
 
 function NewRun({ onAccepted }: { onAccepted: (id: string) => void }) {

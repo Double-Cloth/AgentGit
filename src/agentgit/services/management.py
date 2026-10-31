@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
+from importlib.resources import files
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -567,6 +568,9 @@ class ManagementService:
             "version": __version__,
             "default_config": config.model_dump(mode="json"),
             "execution_config": execution.model_dump(mode="json"),
+            "collaboration_template": NewCollaboration.model_validate_json(
+                files("agentgit.adapters.fixtures").joinpath("collaboration.json").read_bytes()
+            ).model_dump(mode="json"),
             "models": [
                 {
                     "id": config.model,
@@ -613,6 +617,7 @@ class ManagementService:
                 "repair_reviews",
                 "semantic_merge",
                 "merged_run_initialization",
+                "collaboration",
             ],
             "worker": {"status": "unknown", "reason": "no_readiness_probe"},
             "execution_environment": {"status": "unknown", "reason": "policy_is_not_readiness"},

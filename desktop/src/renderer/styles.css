@@ -279,3 +279,12 @@ dd { margin: 0; color: var(--ink); }
 .merge-conflicts { padding-left: 20px; overflow-wrap: anywhere; }
 .merge-conflicts li { border-bottom: 1px solid var(--line); padding-block: 12px; }
 @media (max-width: 1023px) { .merge-origins { grid-template-columns: minmax(0, 1fr); } .merge-origins > section + section { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); } }
+
+.collaboration-detail { padding-block: 24px; border-top: 1px solid var(--line); }
+.collaboration-evidence { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 24px; }
+.collaboration-evidence > h3 { margin-top: 0; }
+.collaboration-evidence > details { border-bottom: 1px solid var(--line); }
+.collaboration-policy { border-top: 1px solid var(--line); padding-block: 16px; }
+.collaboration-policy h3 { margin-top: 0; }
+.collaboration-detail .meter-attention { margin-block: 16px; }
+.collaboration-detail > p > code { overflow-wrap: anywhere; }

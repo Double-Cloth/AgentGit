@@ -302,7 +302,34 @@ export class BusinessController {
         throw new DesktopError('unsupported', '当前后端未提供此合并能力，请更新后端并重新检查连接');
       }
     }
+    const collaborationOperations = ['listCollaborations', 'getCollaboration', 'prepareCollaboration', 'startCollaboration', 'recordCollaboration', 'controlCollaboration', 'getCollaborationMessages', 'getCollaborationShared'];
+    if (collaborationOperations.includes(operation)) {
+      this.connected();
+      if (!Array.isArray(this.descriptor?.features) || !this.descriptor.features.includes('collaboration')) {
+        throw new DesktopError('unsupported', '当前后端未提供四角色协作，请更新后端并重新检查连接');
+      }
+    }
+    const collaborationPath = () => `/repositories/${this.state.repositoryId!}/collaborations`;
     switch (operation) {
+      case 'listCollaborations': input = fields(raw, [], ['afterId', 'limit']); return page(collaborationPath());
+      case 'getCollaboration': input = fields(raw, ['groupId']); return get(`${collaborationPath()}/${id(input.groupId)}`);
+      case 'prepareCollaboration': input = fields(raw, ['request', 'key']); return post(`${collaborationPath()}/prepare`, jsonObject(input.request));
+      case 'startCollaboration': case 'recordCollaboration':
+        input = fields(raw, ['groupId', 'key']); return post(`${collaborationPath()}/${id(input.groupId)}/${operation === 'startCollaboration' ? 'start' : 'recorded'}`, {});
+      case 'controlCollaboration': {
+        input = fields(raw, ['groupId', 'action', 'expectedRevision', 'key']);
+        if (input.expectedRevision === undefined) throw new DesktopError('validation', '组控制必须提供确切修订');
+        if (!['pause', 'resume', 'cancel'].includes(String(input.action))) throw new DesktopError('validation', '组控制动作无效');
+        return post(`${collaborationPath()}/${id(input.groupId)}/control`, { action: input.action as string, expected_revision: number(input.expectedRevision, -1, Number.MAX_SAFE_INTEGER) });
+      }
+      case 'getCollaborationMessages': input = fields(raw, ['groupId'], ['afterId', 'limit']); return page(`${collaborationPath()}/${id(input.groupId)}/messages`);
+      case 'getCollaborationShared': {
+        input = fields(raw, ['groupId'], ['afterPath', 'afterVersion', 'limit']);
+        if ((input.afterPath === undefined) !== (input.afterVersion === undefined)) throw new DesktopError('validation', '共享版本游标必须同时提供路径和版本');
+        if (input.afterPath !== undefined && !['evidence.json', 'verification.json', 'report.md', 'sources.json'].includes(String(input.afterPath))) throw new DesktopError('validation', '共享路径无效');
+        return get(query(`${collaborationPath()}/${id(input.groupId)}/shared`, { after_path: input.afterPath as string | undefined,
+          after_version: input.afterVersion === undefined ? undefined : number(input.afterVersion, -1, Number.MAX_SAFE_INTEGER, 1), limit: number(input.limit, 30, 100, 1) }));
+      }
       case 'listMergeProposals': input = fields(raw, [], ['afterId', 'limit']); return page(`/repositories/${this.state.repositoryId!}/merge-proposals`);
       case 'getMergeBases': {
         input = fields(raw, ['ours', 'theirs'], ['selected']);

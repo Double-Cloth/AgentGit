@@ -15,6 +15,7 @@ type Page = typeof PAGES[number]['id'];
 export function App() {
   const [page, setPage] = useState<Page>('runs'), [connection, setConnection] = useState<ConnectionState | null>(null);
   const [settings, setSettings] = useState(false), [problem, setProblem] = useState('');
+  const [collaborationId, setCollaborationId] = useState('');
   const [runId, setRunId] = useState(''), [commit, setCommit] = useState('');
   const [eventFocus, setEventFocus] = useState<EvidenceTarget | null>(null), [diagnosisRunId, setDiagnosisRunId] = useState('');
   const [experimentPreset, setExperimentPreset] = useState<CandidateExperimentPreset | null>(null);
@@ -37,8 +38,8 @@ export function App() {
   const workspace = connection?.repositoryId ? connection.repositoryId + ':' + connection.baseUrl : '';
   useEffect(() => { if (ready && workspace) setConfirmedWorkspace(workspace); }, [ready, workspace]);
   const retainWorkspace = Boolean(workspace && (ready || confirmedWorkspace === workspace));
-  function changeConnection(value: ConnectionState) { setConnection(value); setRunId(''); setCommit(''); setEventFocus(null); setDiagnosisRunId(''); setExperimentPreset(null); setRepairPreset(null); }
-  const props = { runId, setRunId, selectedCommit: commit, setSelectedCommit: setCommit,
+  function changeConnection(value: ConnectionState) { setCollaborationId(''); setConnection(value); setRunId(''); setCommit(''); setEventFocus(null); setDiagnosisRunId(''); setExperimentPreset(null); setRepairPreset(null); }
+  const props = { collaborationId, openCollaboration: (id: string) => { setCollaborationId(id); setPage('runs'); }, runId, setRunId, selectedCommit: commit, setSelectedCommit: setCommit,
     openTimeline: (id: string) => { setRunId(id); setEventFocus(null); setPage('timeline'); },
     openDiagnosis: (id: string) => { setDiagnosisRunId(id); setPage('diff'); }, eventFocus,
     openRepair: (id: string, selected = '') => { setRunId(id); setCommit(selected); setRepairPreset(null); setPage('repair'); },
@@ -51,7 +52,7 @@ export function App() {
       {settings && <Connection key={connection?.baseUrl ?? 'initial'} state={connection} onChange={changeConnection} onClose={() => setSettings(false)} />}
       {!retainWorkspace && <section className="welcome"><span className="eyebrow">执行历史 · 隔离分支 · 可审计回放</span><h1>让每次执行有据可查。</h1><p>连接本机 API 后选择项目，查看运行、追溯检查点，并比较独立分支的结果。</p><p className="muted">桌面只展示和管理任务。Worker 与固定容器是否就绪，以实际任务证据为准。</p>{!settings && <button className="primary" onClick={() => setSettings(true)}>配置连接与项目</button>}</section>}
       {retainWorkspace && <fieldset className="workspace" disabled={!ready} aria-label="当前项目工作区" key={workspace}><Suspense fallback={<p role="status">正在打开页面…</p>}>
-          {page === 'runs' ? <Runs {...props} /> : page === 'timeline' ? <Timeline {...props} /> : page === 'branch' ? <Branch {...props} /> : page === 'merge' ? <MergeReview {...props} active={ready} /> : page === 'repair' ? <RepairLab {...props} active={ready} preset={repairPreset} /> : <Diff diagnosisRunId={diagnosisRunId} openEvent={target => { setEventFocus(target); setRunId(target.runId); setPage('timeline'); }} openExperiment={preset => { setRunId(preset.sourceRunId); setCommit(preset.fromCommit); setExperimentPreset(preset); setPage('branch'); }} openRepair={preset => { setRunId(preset.sourceRunId); setCommit(preset.fromCommit); setRepairPreset(preset); setPage('repair'); }} />}
+          {page === 'runs' ? <Runs {...props} active={ready} /> : page === 'timeline' ? <Timeline {...props} /> : page === 'branch' ? <Branch {...props} /> : page === 'merge' ? <MergeReview {...props} active={ready} /> : page === 'repair' ? <RepairLab {...props} active={ready} preset={repairPreset} /> : <Diff diagnosisRunId={diagnosisRunId} openEvent={target => { setEventFocus(target); setRunId(target.runId); setPage('timeline'); }} openExperiment={preset => { setRunId(preset.sourceRunId); setCommit(preset.fromCommit); setExperimentPreset(preset); setPage('branch'); }} openRepair={preset => { setRunId(preset.sourceRunId); setCommit(preset.fromCommit); setRepairPreset(preset); setPage('repair'); }} />}
         </Suspense></fieldset>}
     </main><footer className="shell footer"><span>AgentGit {__AGENTGIT_DESKTOP_VERSION__}</span><span>状态可恢复、历史可验证与修复有效，分别判断。</span></footer></>;
 }

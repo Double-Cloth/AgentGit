@@ -25,6 +25,14 @@ export interface ConnectionState {
   message: string;
 }
 export interface Inputs {
+  listCollaborations: Page;
+  getCollaboration: { groupId: string };
+  prepareCollaboration: { request: JsonObject; key: string };
+  startCollaboration: { groupId: string; key: string };
+  recordCollaboration: { groupId: string; key: string };
+  controlCollaboration: { groupId: string; action: 'pause' | 'resume' | 'cancel'; expectedRevision: number; key: string };
+  getCollaborationMessages: Page & { groupId: string };
+  getCollaborationShared: { groupId: string; afterPath?: string; afterVersion?: number; limit?: number };
   listMergeProposals: Page;
   getMergeBases: { ours: string; theirs: string; selected?: string };
   createMergeProposal: { request: JsonObject; key: string };

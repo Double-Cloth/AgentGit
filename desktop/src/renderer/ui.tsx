@@ -14,11 +14,13 @@ export async function call<T>(request: Promise<Reply<T>>): Promise<T> {
   if (!reply.ok) throw new Error(`${reply.error.message}（${reply.error.code}）`);
   return reply.data;
 }
-export function useRead<T>(read: () => Promise<T>, deps: React.DependencyList, interval = 0, retainScope?: string) {
+export function useRead<T>(read: () => Promise<T>, deps: React.DependencyList, interval = 0, retainScope?: string, enabled = true) {
   const [data, setData] = useState<T | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
   const previousScope = useRef<string | undefined>(undefined);
   useEffect(() => {
+    // 断连只停止读取，保留当前范围已确认的数据与尚待核对的原请求。
+    if (!enabled) { setLoading(false); return; }
     let active = true, timer: ReturnType<typeof setTimeout> | undefined;
     // 同一 Run 内刷新列表保留已确认数据，避免重建详情区而丢失用户选择。
     if (retainScope === undefined || previousScope.current !== retainScope) setData(null);
@@ -31,7 +33,7 @@ export function useRead<T>(read: () => Promise<T>, deps: React.DependencyList, i
     }
     void load();
     return () => { active = false; clearTimeout(timer); };
-  }, [...deps, revision, retainScope]);
+  }, [...deps, revision, retainScope, enabled]);
   return { data, error, loading, refresh: useCallback(() => setRevision(value => value + 1), []) };
 }
 export function useAction() {
@@ -44,7 +46,7 @@ export function useAction() {
   }
   return { busy, error, run, clearError: () => setError('') };
 }
-const STATUS: Record<string, string> = { queued: '排队中', planning: '规划中', running: '运行中', completed: '已完成', failed: '失败',
+const STATUS: Record<string, string> = { prepared: '已准备', queued: '排队中', planning: '规划中', running: '运行中', completed: '已完成', failed: '失败',
   cancelled: '已取消', paused: '已暂停', waiting_approval: '等待审批', outcome_unknown: '结果未知', interrupted: '已中断',
   pending: '待处理', approved: '已批准', rejected: '已拒绝', expired: '已过期', budget_exhausted: '预算耗尽', needs_confirmation: '筛选通过，待独立验证', awaiting_samples: '候选已锁，待开启样本', verified_under_fixture: '固定条件下验证通过', empirically_confirmed: '经验验证通过', needs_review: '证据不足，待审阅', needs_attention: '需要处理', validation_ready: '待执行独立复测', waiting_reconciliation: '等待核对未知结果', cancelling: '取消中，等待安全结算' };
 export function Status({ value }: { value: Json | undefined }) {
@@ -55,4 +57,4 @@ export function Notice({ children }: { children?: React.ReactNode }) { return ch
 export function Empty({ title, children }: { title: string; children?: React.ReactNode }) { return <div className="empty"><h2>{title}</h2><p>{children}</p></div>; }
 export function JsonView({ value }: { value: Json | undefined }) { return <pre className="code" tabIndex={0}>{pretty(value)}</pre>; }
 export type { EvidenceTarget } from '../shared/diagnosis';
-export type PageProps = { runId: string; setRunId: (value: string) => void; openTimeline: (id: string) => void; openBranch: (id: string, commit: string) => void; selectedCommit: string; setSelectedCommit: (id: string) => void; openDiagnosis: (id: string) => void; openRepair: (id: string, commit?: string) => void; eventFocus: EvidenceTarget | null; experimentPreset: CandidateExperimentPreset | null };
+export type PageProps = { collaborationId?: string; openCollaboration?: (id: string) => void; runId: string; setRunId: (value: string) => void; openTimeline: (id: string) => void; openBranch: (id: string, commit: string) => void; selectedCommit: string; setSelectedCommit: (id: string) => void; openDiagnosis: (id: string) => void; openRepair: (id: string, commit?: string) => void; eventFocus: EvidenceTarget | null; experimentPreset: CandidateExperimentPreset | null };

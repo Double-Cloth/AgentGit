@@ -6,11 +6,11 @@ function text(value: unknown): string { return typeof value === 'string' ? value
 export function fixedProgramKind(run: JsonObject | null | undefined): string { return text(object(run?.adapter).kind); }
 export function fixedProgramOrigin(run: JsonObject): string {
   const adapter = object(run.adapter);
-  return text(object(adapter.recording).source_run_id) || text(object(adapter.fork).source_run_id) || text(run.origin_run_id);
+  return text(object(adapter.recording).source_run_id) || text(object(adapter.fork).source_run_id) || text(adapter.source_run_id) || text(run.origin_run_id);
 }
 export function fixedProgramTitle(run: JsonObject): string {
   const kind = fixedProgramKind(run);
-  return kind === 'langgraph_program/v1' ? 'LangGraph 固定图' : kind === 'mcp_single_call/v1' ? 'MCP 固定工具' : '适配器任务';
+  return kind === 'collaboration_role/v1' ? '四角色协作' : kind === 'langgraph_program/v1' ? 'LangGraph 固定图' : kind === 'mcp_single_call/v1' ? 'MCP 固定工具' : '适配器任务';
 }
 export function nativeNext(adapter: JsonObject): string {
   if (!text(adapter.native_ref)) return '尚无原生检查点';

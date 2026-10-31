@@ -13,6 +13,54 @@ const OTHER = '00000000-0000-4000-8000-000000000002';
 const FEATURES = ['run_pagination', 'historical_artifacts', 'execution_evidence', 'recorded', 'live', 'structural_diff'];
 const rejected = (code: string) => (error: unknown) => error instanceof DesktopError && error.code === code;
 
+test('S12-C 固定桥接路由绑定所选项目，组版本和成对游标在 HTTP 前验证', async () => {
+  const posts: { path: string; body: unknown; key: string | undefined }[] = [];
+  const f = await fixture({ features: [...FEATURES, 'collaboration'], respond: (request, response) => {
+    if (request.method !== 'POST') return false;
+    const chunks: Buffer[] = [];
+    request.on('data', chunk => chunks.push(chunk)); request.on('end', () => {
+      posts.push({ path: request.url!, body: JSON.parse(Buffer.concat(chunks).toString()), key: request.headers['idempotency-key'] as string });
+      response.end(JSON.stringify({ accepted: true }));
+    }); return true;
+  } });
+  try {
+    await connect(f.controller);
+    const path = `/repositories/${REPO}/collaborations`;
+    for (const [operation, input, expected] of [
+      ['listCollaborations', { afterId: OTHER, limit: 20 }, `${path}?after_id=${OTHER}&limit=20`],
+      ['getCollaboration', { groupId: OTHER }, `${path}/${OTHER}`],
+      ['getCollaborationMessages', { groupId: OTHER, afterId: REPO, limit: 2 }, `${path}/${OTHER}/messages?after_id=${REPO}&limit=2`],
+      ['getCollaborationShared', { groupId: OTHER, afterPath: 'evidence.json', afterVersion: 2, limit: 2 }, `${path}/${OTHER}/shared?after_path=evidence.json&after_version=2&limit=2`],
+    ] as const) { await f.controller.handle(operation, input); assert.equal(f.requests.at(-1)!.url, expected); assert.equal(f.requests.at(-1)!.headers['x-repository-id'], REPO); }
+    await f.controller.handle('prepareCollaboration', { request: { program: {} }, key: 'prepare' });
+    await f.controller.handle('startCollaboration', { groupId: OTHER, key: 'start' });
+    await f.controller.handle('recordCollaboration', { groupId: OTHER, key: 'recorded' });
+    await f.controller.handle('controlCollaboration', { groupId: OTHER, action: 'pause', expectedRevision: 0, key: 'pause' });
+    assert.deepEqual(posts, [
+      { path: `${path}/prepare`, body: { schema_version: 1, program: {} }, key: 'prepare' },
+      { path: `${path}/${OTHER}/start`, body: { schema_version: 1 }, key: 'start' },
+      { path: `${path}/${OTHER}/recorded`, body: { schema_version: 1 }, key: 'recorded' },
+      { path: `${path}/${OTHER}/control`, body: { schema_version: 1, action: 'pause', expected_revision: 0 }, key: 'pause' },
+    ]);
+    const before = f.requests.length;
+    for (const [operation, input] of [
+      ['getCollaboration', { groupId: '../private' }], ['listCollaborations', { limit: 101 }],
+      ['prepareCollaboration', { request: {}, key: 'x', url: 'http://evil.invalid' }],
+      ['getCollaborationMessages', { groupId: OTHER, afterId: '../private' }],
+      ['getCollaborationShared', { groupId: OTHER, afterPath: 'evidence.json' }],
+      ['getCollaborationShared', { groupId: OTHER, afterVersion: 1 }],
+      ['getCollaborationShared', { groupId: OTHER, afterPath: '../private', afterVersion: 1 }],
+      ['getCollaborationShared', { groupId: OTHER, afterPath: 'report.md', afterVersion: Number.MAX_SAFE_INTEGER + 1 }],
+      ...[undefined, true, -1, Number.MAX_SAFE_INTEGER + 1].map(expectedRevision => ['controlCollaboration', { groupId: OTHER, action: 'pause', expectedRevision, key: 'x' }] as const),
+      ['controlCollaboration', { groupId: OTHER, action: 'execute', expectedRevision: 0, key: 'x' }],
+    ] as const) await assert.rejects(f.controller.handle(operation, input), rejected('validation'));
+    assert.equal(f.requests.length, before);
+  } finally { await f.close(); }
+  const old = await fixture();
+  try { await connect(old.controller); const before = old.requests.length; await assert.rejects(old.controller.handle('listCollaborations', {}), rejected('unsupported')); assert.equal(old.requests.length, before); }
+  finally { await old.close(); }
+});
+
 test('S10 桥接固定搜索、缩减、复测及精确审阅路由，不提供任意 URL 或自动采纳', async () => {
   const posts: { path: string; body: unknown; key: string | undefined; repository: string | undefined }[] = [];
   const f = await fixture({ respond: (request, response) => {

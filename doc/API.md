@@ -574,4 +574,6 @@ uv run --locked agentgit repair-review-decision $repo.repository_id $proposal.pr
 
 角色 Run adapter 为 collaboration_role/v1，返回权限/预算/逻辑用量、新意图/复用/未知计数，不返回私有 notes；协作历史、Diff、行为、执行和产物查询均校验所属操作者。消息和共享版本只返回真实已归属的公开投影及因果地址，不提供任意 CAS/宿主路径读取。现有报告下载路由是 `/artifacts/{artifact_id}/content`。
 
-API 继续按后端数据库/数据目录配置运行，serve 没有 --testing 参数；连接专用演示测试环境的方法见上述演示，后端不自动迁移。当前 head32 为 79 业务表加版本表共80，桌面和正式 C/T05/D3 仍待完成。
+API 继续按后端数据库/数据目录配置运行，serve 没有 --testing 参数；连接专用演示测试环境的方法见上述演示，后端不自动迁移。当前 head32 为 79 业务表加版本表共80。
+
+`GET /capabilities` 的 `features` 新增 `collaboration`，`collaboration_template` 提供严格校验的固定四角色 NewCollaboration，私有输入为空。模板与 `examples/collaboration/research.json` 一致。开发版桌面在“运行 → 四角色协作”准备、显式开始、查询角色／消息／共享版本及整组控制；请求未确认时保留原键，只允许手动重试。[桌面工程与验证范围](acceptance/S12-C-desktop.md)不替代正式 C/T05/D3 或最终分发包。

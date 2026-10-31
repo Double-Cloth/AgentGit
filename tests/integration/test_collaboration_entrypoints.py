@@ -71,6 +71,19 @@ def prepare(case):
     return receipt, f"/repositories/{repo}/collaborations/{receipt['collaboration_id']}"
 
 
+def test_capability_template_matches_public_example_and_is_fresh(case):
+    client, _, repo, _ = case
+    first = client.get("/capabilities").json()
+    template = first["collaboration_template"]
+    assert "collaboration" in first["features"]
+    assert template == json.loads(Path("examples/collaboration/research.json").read_text("utf-8"))
+    assert template["private_inputs"] == []
+    assert len(template["program"]["roles"]) == 4
+    assert post(client, f"/repositories/{repo}/collaborations/prepare", template).status_code == 201
+    template["program"]["goal"]["text"] = "本次响应的本地修改"
+    assert client.get("/capabilities").json()["collaboration_template"] != template
+
+
 def counts(service):
     with service.history.engine.connect() as c:
         return {
