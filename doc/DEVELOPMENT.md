@@ -249,3 +249,13 @@ uv run --locked pytest tests/unit tests/integration tests/sandbox tests/executio
 清理后新 attempt 已实现：`stopped_executions` 记录已确认停止但没有完整结果的稳定调用身份，不冒充成功；丢弃决定和旧尝试预算同检查点原子保存，新尝试从相同输入创建新容器并另计预算。固定上限两次，取消/到期/预算不足先结算再停止。清理失败的 Job 每 30 秒有界重查，未确认时不创建新尝试，普通模型/外部写仍须可信核对。新尝试在 stage 与意图事务内复核停止依据、源链、输入和策略。
 
 [S4 本机验收](acceptance/S4.md)与 [S5 本机验收](acceptance/S5.md)已完成；`doctor --sandbox` 共用执行器的只读前提检查，固定镜像和隔离能力可用才返回就绪，不启动容器或执行命令。继续按实施方案进入 S6 Electron 桌面；必选 S11/S12 的完整交付不变。
+
+## S12-C Recorded 角色耐久执行
+
+[Recorded Worker 工程记录](acceptance/S12-C-recorded-worker.md)限定完整成功 Live 组为来源。`verified_role_lane` 使用准备时固定的后端委托核验整组，只向当前有效租约返回自己的重算状态/录制。角色不构造模型、工具、工作区或网络客户端；私有字节及普通文本 UUID 不替换。
+
+新 `collaboration_recorded_steps` 在真实 History 事务内，与目标检查点、调用来源、消息/收据和发布一起提交；必须是自身来源的完整前缀。接管沿同 Run 新 fencing token 继续，已知来源调用只登记 `call.reused`，原意图 checkpoint 仍表示来源。通用实际调用网关的 HEAD 校验保持。
+
+当前控制另保存目标事件/检查点，历史控制沿冻结来源核验。取消撤回尚未消费的预留并保留已知复用；单角色取消/到期原子发布组失败因果、唤醒其他角色结算。Supervisor 是否派发依据实际 outgoing 消息，不能依据有没有 checkpoint。head32/80 表仅测试 Schema 迁移；有录制关联时禁止降级。最终 1,106 单元/36 集成通过和前版 150 集成分别绑定源码，不合算成最终完整兼容结论。
+
+Recorded 恢复检查点在事务中遇到 `budget_exhausted` 必须直接保存预算停止，不能作为普通控制竞争重复核验来源。恢复应用后仍复查原截止时间；已到期回归固定为两步、零复用、一次核验，并清空未消费预留。最终 559 份冻结代码/测试/迁移/锁与 Git 暂存字节一致。

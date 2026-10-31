@@ -212,15 +212,16 @@ def test_missing_source_bytes_create_no_recorded_group(completed):
         path.write_bytes(raw)
 
 
-def test_prepared_recorded_cannot_start_or_construct_live_runner_but_lease_reads_only_own_input(
+def test_started_recorded_cannot_construct_live_runner_and_lease_reads_only_own_input(
     completed, request
 ):
     queue, service, coordinator, repo, _, _ = completed
     receipt = prepare(completed)
     summary = service.summary(repo, UUID(receipt.collaboration_id))
-    with pytest.raises(AgentGitError) as error:
-        coordinator.start(repo, UUID(receipt.collaboration_id), actor=ACTOR, key="start")
-    assert error.value.code == ErrorCode.UNSUPPORTED_SCHEMA
+    assert (
+        coordinator.start(repo, UUID(receipt.collaboration_id), actor=ACTOR, key="start")["status"]
+        == "running"
+    )
     role = next(r for r in summary["roles"] if r["role"] == "supervisor")
     with queue.history.engine.begin() as c:
         c.execute(
@@ -400,8 +401,12 @@ def test_recorded_preparation_requires_successful_source(flow):
 def test_migration_roundtrip_adds_one_table_and_restores_previous_shape(history):
     with history.engine.begin() as c:
         config = config_for(c)
+        latest = schema_signature(c)
+        command.downgrade(config, "0031_collaboration_recordings")
         full = schema_signature(c)
         command.downgrade(config, "0030_collaboration_exchange")
         assert set(full) - set(schema_signature(c)) == {"collaboration_recordings"}
-        command.upgrade(config, "head")
+        command.upgrade(config, "0031_collaboration_recordings")
         assert schema_signature(c) == full
+        command.upgrade(config, "head")
+        assert schema_signature(c) == latest

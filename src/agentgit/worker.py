@@ -104,7 +104,7 @@ class Worker:
                             CollaborationRecordedRoleRunner,
                         )
 
-                        return CollaborationRecordedRoleRunner(self.queue, lease).run()
+                        return CollaborationRecordedRoleRunner(self.queue, lease, self.fault).run()
                     return CollaborationRoleRunner(
                         self.queue,
                         lease,

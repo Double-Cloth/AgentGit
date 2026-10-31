@@ -98,8 +98,16 @@ def wake_collaboration(
             "verifier": ("researcher",),
             "writer": ("researcher", "verifier"),
         }[role]
-        if role == "supervisor" and run["checkpoint_commit_id"] is None:
-            dependencies = ()
+        if role == "supervisor":
+            dispatched = connection.execute(
+                sa.select(msgs.c.id).where(
+                    msgs.c.repository_id == repository,
+                    msgs.c.collaboration_id == group_id,
+                    msgs.c.sender_run_id == run["run_id"],
+                )
+            ).first()
+            if dispatched is None:
+                dependencies = ()
         if any(by_role[dep]["status"] != "completed" for dep in dependencies):
             continue
         expected = {
@@ -552,9 +560,24 @@ class CollaborationExchange:
             result.append((dict(row), envelope, payload))
         return result
 
-    def receive(self, state: CollaborationRoleState) -> CollaborationRoleState:
+    def receive(
+        self,
+        state: CollaborationRoleState,
+        *,
+        order: tuple[str, ...] | None = None,
+        expected_state: CollaborationRoleState | None = None,
+        after_project: Callable[[Connection], None] | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> CollaborationRoleState:
         state = self.load()
         messages = [m for m in self.inbox() if m[1].message_id not in state.received]
+        if order is not None:
+            by_id = {m[1].message_id: m for m in messages}
+            if len(set(order)) != len(order) or set(order) - by_id.keys():
+                raise AgentGitError(
+                    ErrorCode.RECORDING_MISSING, "Recorded 收件顺序缺少实际自身消息"
+                )
+            messages = [by_id[i] for i in order]
         if not messages:
             return state
         events = tuple(
@@ -570,6 +593,8 @@ class CollaborationExchange:
         updated = evolve(
             state, received=(*state.received, *(env.message_id for _, env, _ in messages))
         )
+        if expected_state is not None and updated != expected_state:
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "实际接收与重算状态不符")
 
         def project(c: Connection) -> None:
             current = self.history._run(c, self.lease.repository_id, self.lease.run_id)
@@ -585,8 +610,16 @@ class CollaborationExchange:
                         received_seq=current["last_event_seq"] - len(messages) + index,
                     )
                 )
+            if after_project is not None:
+                after_project(c)
 
-        self.save(updated, "collaboration.inbox_observed", events=events, projection=project)
+        self.save(
+            updated,
+            "collaboration.inbox_observed",
+            events=events,
+            projection=project,
+            details=details,
+        )
         return updated
 
     def head(self, path: SharedPath) -> SharedArtifactHead | None:
@@ -635,6 +668,9 @@ class CollaborationExchange:
         publications: tuple[tuple[SharedPath, int, str], ...],
         status: RunStatus,
         phase: Any,
+        expected_state: CollaborationRoleState | None = None,
+        after_project: Callable[[Connection], None] | None = None,
+        details: dict[str, Any] | None = None,
     ) -> CollaborationRoleState:
         address = self.address()
         if address.agent_run_id != str(self.lease.run_id):
@@ -709,6 +745,8 @@ class CollaborationExchange:
             status=status,
             phase=phase,
         )
+        if expected_state is not None and updated != expected_state:
+            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "实际交换批次与重算状态不符")
 
         def project(c: Connection) -> None:
             groups = TABLES["collaborations"]
@@ -823,8 +861,16 @@ class CollaborationExchange:
                 )
             wake_collaboration(self.queue, c, self.lease.repository_id, self.group_id)
             self.history.fault("collaboration.exchange_projected")
+            if after_project is not None:
+                after_project(c)
 
-        self.save(updated, "collaboration.role_transition", events=events, projection=project)
+        self.save(
+            updated,
+            "collaboration.role_transition",
+            events=events,
+            projection=project,
+            details=details,
+        )
         self.history.fault("collaboration.exchange_committed")
         return updated
 

@@ -83,20 +83,6 @@ class CollaborationCoordinator:
                 raise AgentGitError(ErrorCode.NOT_FOUND, "协作组不可访问")
             if group["actor"] != actor:
                 raise AgentGitError(ErrorCode.FORBIDDEN, "协作开始身份与准备操作者不符")
-            recordings = TABLES["collaboration_recordings"]
-            if (
-                c.execute(
-                    sa.select(recordings.c.collaboration_id).where(
-                        recordings.c.repository_id == repository,
-                        recordings.c.collaboration_id == group_id,
-                    )
-                ).first()
-                is not None
-            ):
-                raise AgentGitError(
-                    ErrorCode.UNSUPPORTED_SCHEMA,
-                    "Recorded 成功轨迹 Worker 尚未接通，准备态不能开始",
-                )
             cached = (
                 c.execute(
                     sa.select(idem).where(
@@ -206,6 +192,16 @@ class CollaborationCoordinator:
         dispatch, evidence, verification, result = (
             received(role) for role in ("supervisor", "researcher", "verifier", "writer")
         )
+        outgoing = TABLES["collaboration_messages"]
+        has_dispatched = (
+            sa.select(outgoing.c.id)
+            .where(
+                outgoing.c.repository_id == tasks.c.repository_id,
+                outgoing.c.collaboration_id == tasks.c.collaboration_id,
+                outgoing.c.sender_run_id == runs.c.id,
+            )
+            .exists()
+        )
         # 子任务可能在完成暂停检查点之后才释放 Job，补偿事务唤醒略过的窗口。
         runnable = (
             members.join(
@@ -232,7 +228,7 @@ class CollaborationCoordinator:
                     ),
                     sa.and_(
                         tasks.c.role == "supervisor",
-                        sa.or_(runs.c.checkpoint_commit_id.is_(None), sa.and_(writer_done, result)),
+                        sa.or_(~has_dispatched, sa.and_(writer_done, result)),
                     ),
                 ),
             )

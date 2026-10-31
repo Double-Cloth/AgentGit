@@ -132,6 +132,28 @@ def test_group_pause_at_durable_boundaries_settles_then_resumes_once(flow, point
     assert current.usage.model_calls == 1 and current.usage.reserved_tokens == 0
 
 
+def test_supervisor_paused_before_dispatch_is_runnable_after_resume(flow):
+    queue, _, _, repo, _, roles = flow
+    start(flow)
+    target = UUID(roles["supervisor"]["run_id"])
+    paused = []
+
+    def pause(point):
+        if point == "collaboration.resumed_saved" and not paused:
+            queue.request_control(
+                repo, target, "pause", expected_version=queue.run(repo, target)["state_version"]
+            )
+            paused.append(True)
+
+    assert Worker(queue, fault=pause).run_once()["status"] == "paused"
+    held = queue.run(repo, target)
+    assert held["checkpoint_commit_id"] is not None
+    assert not rows(queue, "collaboration_messages") and not rows(queue, "external_calls")
+    queue.request_control(repo, target, "resume", expected_version=held["state_version"])
+    drain(queue)
+    assert view(flow)["status"] == "completed" and len(rows(queue, "external_calls")) == 20
+
+
 def test_individual_human_pause_is_not_owned_or_cleared_by_group_resume(flow):
     queue, _, _, repo, _, roles = flow
     start(flow)

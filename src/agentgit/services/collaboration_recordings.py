@@ -38,6 +38,7 @@ from agentgit.core.collaboration_runs import (
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.experiments import FrozenCorpus
 from agentgit.core.models import CallIntent, CommitManifest, EnvironmentManifest, parse_contract
+from agentgit.core.paths import validate_artifact_paths
 from agentgit.core.research import BudgetLimits, SavedCallOutcome, evolve
 from agentgit.core.snapshots import EventManifest, EventPayload, LogicalEvent, StateSnapshot
 from agentgit.replay.recorded import Recording
@@ -94,6 +95,7 @@ class _SourceReader:
         self.kinds: dict[str, ObjectType] = {}
         self.envelopes: list[CollaborationMessage] = []
         self.heads: list[SharedArtifactHead] = []
+        self.ownership: dict[tuple[str, str, str, str], Any] | None = None
         self.bytes = 0
         self.events: dict[tuple[str, int], dict[str, Any]] = {}
         self.frames: dict[tuple[str, str], tuple[CollaborationRoleState, EventManifest]] = {}
@@ -111,19 +113,23 @@ class _SourceReader:
     def owned(self, ref: str, kind: ObjectType, owner: str, identity: str, role: str) -> bytes:
         refs, objects = TABLES["object_refs"], TABLES["objects"]
         row = (
-            self.c.execute(
-                sa.select(objects.c.byte_length, objects.c.object_type)
-                .join(refs, refs.c.object_id == objects.c.id)
-                .where(
-                    refs.c.repository_id == self.repo,
-                    refs.c.object_id == ref,
-                    refs.c.owner_type == owner,
-                    refs.c.owner_id == identity,
-                    refs.c.role == role,
+            self.ownership.get((owner, identity, role, ref))
+            if self.ownership is not None
+            else (
+                self.c.execute(
+                    sa.select(objects.c.byte_length, objects.c.object_type)
+                    .join(refs, refs.c.object_id == objects.c.id)
+                    .where(
+                        refs.c.repository_id == self.repo,
+                        refs.c.object_id == ref,
+                        refs.c.owner_type == owner,
+                        refs.c.owner_id == identity,
+                        refs.c.role == role,
+                    )
                 )
+                .mappings()
+                .first()
             )
-            .mappings()
-            .first()
         )
         if row is None:
             raise AgentGitError(ErrorCode.RECORDING_MISSING, "协作录制缺少实际来源引用")
@@ -137,6 +143,68 @@ class _SourceReader:
             self.kinds[ref] = kind
             self.bytes += len(raw)
         return self.objects[ref]
+
+    def prefetch(self, tasks: list[dict[str, Any]]) -> None:
+        """只批读已授权四角色的引用索引，避免每个检查点逐条往返。"""
+        refs, objects = TABLES["object_refs"], TABLES["objects"]
+        runs = [t["run_id"] for t in tasks]
+
+        def ids(name: str, field: str, condition: Any) -> Any:
+            table = TABLES[name]
+            return sa.select(sa.cast(table.c[field], sa.String)).where(
+                table.c.repository_id == self.repo, condition
+            )
+
+        scoped = [
+            sa.and_(refs.c.owner_type == owner, refs.c.owner_id.in_(values))
+            for owner, values in (
+                ("collaboration", [str(self.group)]),
+                ("collaboration_share", [str(self.group)]),
+                ("collaboration_task", [str(t["id"]) for t in tasks]),
+                ("job", [str(t["job_id"]) for t in tasks]),
+                ("collaboration_export", [str(r) for r in runs]),
+                (
+                    "commit",
+                    ids("run_commits", "commit_id", TABLES["run_commits"].c.run_id.in_(runs)),
+                ),
+                (
+                    "external_call",
+                    ids("external_calls", "id", TABLES["external_calls"].c.run_id.in_(runs)),
+                ),
+                (
+                    "collaboration_message",
+                    ids(
+                        "collaboration_messages",
+                        "id",
+                        TABLES["collaboration_messages"].c.collaboration_id == self.group,
+                    ),
+                ),
+            )
+        ]
+        events = TABLES["events"]
+        event_ids = sa.select(
+            sa.cast(events.c.run_id, sa.String) + ":" + sa.cast(events.c.seq, sa.String)
+        ).where(events.c.repository_id == self.repo, events.c.run_id.in_(runs))
+        scoped.append(sa.and_(refs.c.owner_type == "event", refs.c.owner_id.in_(event_ids)))
+        rows = list(
+            self.c.execute(
+                sa.select(
+                    refs.c.owner_type,
+                    refs.c.owner_id,
+                    refs.c.role,
+                    refs.c.object_id,
+                    objects.c.byte_length,
+                    objects.c.object_type,
+                )
+                .join(objects, objects.c.id == refs.c.object_id)
+                .where(refs.c.repository_id == self.repo, sa.or_(*scoped))
+                .limit(500001)
+            ).mappings()
+        )
+        _require(len(rows) <= 500000, "协作来源引用索引超过有界上限")
+        self.ownership = {
+            (r["owner_type"], r["owner_id"], r["role"], r["object_id"]): r for r in rows
+        }
 
     def load(self) -> CollaborationSource:
         groups = self.rows("collaborations", TABLES["collaborations"].c.id == self.group)
@@ -216,6 +284,7 @@ class _SourceReader:
             "协作录制必须包含四个实际角色任务",
         )
         sources, recordings, states = [], [], []
+        self.prefetch(tasks)
         for binding in self.bindings.agents:
             task = next(t for t in tasks if t["role"] == binding.role.value)
             source, calls, checkpoints = self.role(task, binding, environment, group)
@@ -363,6 +432,10 @@ class _SourceReader:
             "角色来源事件必须从首事件连续覆盖",
         )
         self.events.update({(run_id, e["seq"]): e for e in rows})
+        ids = [p["commit_id"] for p in paths]
+        commit_rows = {r["id"]: r for r in self.rows("commits", TABLES["commits"].c.id.in_(ids))}
+        parent_rows = self.rows("commit_parents", TABLES["commit_parents"].c.commit_id.in_(ids))
+        artifact_rows = self.rows("artifacts", TABLES["artifacts"].c.commit_id.in_(ids))
         descriptors, checkpoints = [], []
         previous, seq = None, 0
         for path in paths:
@@ -376,20 +449,46 @@ class _SourceReader:
                 and manifest.event_range.first_seq == seq + 1,
                 "角色来源父链或事件边界不符",
             )
-            restored = self.history.restore(self.repo, commit)
+            indexed = commit_rows.get(commit)
+            parents = tuple(
+                r["parent_id"]
+                for r in sorted(
+                    (r for r in parent_rows if r["commit_id"] == commit),
+                    key=lambda r: r["parent_order"],
+                )
+            )
+            _require(
+                indexed is not None
+                and all(
+                    indexed[k] == getattr(manifest, k)
+                    for k in ("state_ref", "environment_ref", "event_manifest_ref")
+                )
+                and manifest.parents == parents,
+                "来源 Commit 数据库索引或父边与内容不符",
+            )
             snapshot = parse_contract(
                 self.owned(manifest.state_ref, ObjectType.STATE, "commit", commit, "state"),
                 StateSnapshot,
             )
             _require(
-                restored == snapshot
-                and any(
+                any(
                     s["commit_id"] == commit
                     and s["state_ref"] == manifest.state_ref
                     and s["event_seq"] == manifest.event_range.last_seq
                     for s in snapshots
                 ),
                 "角色快照索引不符",
+            )
+            validate_artifact_paths(a.path for a in snapshot.artifacts)
+            actual_artifacts = sorted(
+                (r["relative_path"], r["object_id"], r["media_type"])
+                for r in artifact_rows
+                if r["commit_id"] == commit
+            )
+            _require(
+                actual_artifacts
+                == [(a.path, a.object_ref, a.media_type) for a in snapshot.artifacts],
+                "来源产物索引与快照不符",
             )
             frame_env = parse_contract(
                 self.owned(
@@ -437,6 +536,10 @@ class _SourceReader:
             )
             selected = rows[seq : manifest.event_range.last_seq]
             _require(
+                len(selected) == manifest.event_range.last_seq - manifest.event_range.first_seq + 1,
+                "来源事件范围未完整覆盖",
+            )
+            _require(
                 tuple(
                     LogicalEvent(**self.history._logical_event(cast(RowMapping, e), task["run_id"]))
                     for e in selected
@@ -445,12 +548,15 @@ class _SourceReader:
                 "角色来源事件索引与 Commit 清单不符",
             )
             for event in selected:
-                self.owned(
-                    event["payload_ref"],
-                    ObjectType.EVENT,
-                    "event",
-                    f"{run_id}:{event['seq']}",
-                    "payload",
+                parse_contract(
+                    self.owned(
+                        event["payload_ref"],
+                        ObjectType.EVENT,
+                        "event",
+                        f"{run_id}:{event['seq']}",
+                        "payload",
+                    ),
+                    EventPayload,
                 )
             state = parse_contract(encode(snapshot.data), CollaborationRoleState)
             _require(
