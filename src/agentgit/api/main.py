@@ -20,6 +20,8 @@ from agentgit import __version__
 from agentgit.api.security import LocalBoundary, RequestStats, error_response
 from agentgit.config import Settings
 from agentgit.core.canonical import encode
+from agentgit.core.collaboration_controls import CollaborationControlRequest
+from agentgit.core.collaboration_runs import NewCollaboration
 from agentgit.core.debug_reports import NewDebugReport
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.experiments import FreezeValidator, NewExperiment
@@ -177,6 +179,124 @@ def create_app(
         if repository_id != repo:
             raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
         return service.runs(repo, after_id=after_id, limit=limit)
+
+    @app.post("/repositories/{repository_id}/collaborations/prepare", status_code=201)
+    def prepare_collaboration(
+        repository_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.prepare_collaboration(
+            repo, parse_contract(encode(body), NewCollaboration), key
+        )
+
+    @app.get("/repositories/{repository_id}/collaborations")
+    def collaborations(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.collaboration_views.list(
+            repo, actor=service.actor, after_id=after_id, limit=limit
+        )
+
+    @app.get("/repositories/{repository_id}/collaborations/{group_id}")
+    def collaboration(
+        repository_id: UUID,
+        group_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.collaboration_views.summary(repo, group_id, actor=service.actor)
+
+    @app.post("/repositories/{repository_id}/collaborations/{group_id}/start", status_code=202)
+    def start_collaboration(
+        repository_id: UUID,
+        group_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        parse_contract(encode(body), Contract)
+        return service.start_collaboration(repo, group_id, key)
+
+    @app.post("/repositories/{repository_id}/collaborations/{group_id}/recorded", status_code=201)
+    def recorded_collaboration(
+        repository_id: UUID,
+        group_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        parse_contract(encode(body), Contract)
+        return service.recorded_collaboration(repo, group_id, key)
+
+    @app.post("/repositories/{repository_id}/collaborations/{group_id}/control", status_code=202)
+    def control_collaboration(
+        repository_id: UUID,
+        group_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.control_collaboration(
+            repo, group_id, parse_contract(encode(body), CollaborationControlRequest), key
+        )
+
+    @app.get("/repositories/{repository_id}/collaborations/{group_id}/messages")
+    def collaboration_messages(
+        repository_id: UUID,
+        group_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.collaboration_views.messages(
+            repo, group_id, actor=service.actor, after_id=after_id, limit=limit
+        )
+
+    @app.get("/repositories/{repository_id}/collaborations/{group_id}/shared")
+    def collaboration_shared(
+        repository_id: UUID,
+        group_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_path: Annotated[str | None, Query(max_length=32)] = None,
+        after_version: Annotated[int | None, Query(ge=1, le=9_007_199_254_740_991)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.collaboration_views.publications(
+            repo,
+            group_id,
+            actor=service.actor,
+            after_path=after_path,
+            after_version=after_version,
+            limit=limit,
+        )
 
     @app.post("/agents", status_code=201)
     def agent(

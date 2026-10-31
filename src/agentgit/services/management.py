@@ -13,6 +13,8 @@ from agentgit import __version__
 from agentgit.adapters.execution.policy import bundled_policy
 from agentgit.config import Settings
 from agentgit.core.canonical import ObjectType, encode, object_digest
+from agentgit.core.collaboration_controls import CollaborationControlRequest
+from agentgit.core.collaboration_runs import NewCollaboration
 from agentgit.core.debug_reports import NewDebugReport
 from agentgit.core.effects import ToolPolicy
 from agentgit.core.errors import AgentGitError, ErrorCode
@@ -51,6 +53,10 @@ from agentgit.core.research import AgentConfig, AgentState, BudgetUsage
 from agentgit.core.versions import LiveReplay, NewBranch, RecordedRange, RecordedReplay
 from agentgit.runtime.model_budget import call_budget
 from agentgit.services.approvals import ApprovalService
+from agentgit.services.collaboration import CollaborationService
+from agentgit.services.collaboration_control import CollaborationCoordinator
+from agentgit.services.collaboration_controls import CollaborationControlService
+from agentgit.services.collaboration_views import CollaborationViewService
 from agentgit.services.debug_experiments import DebugExperimentService
 from agentgit.services.debug_reports import DebugReportService
 from agentgit.services.diagnosis import BehaviorService
@@ -97,6 +103,7 @@ class ManagementService:
         self.research, self.history, self.actor = research, research.history, actor
         self.jobs = JobService(research)
         self.mcp_runs = MCPRunService(self.jobs)
+        self.collaboration_views = CollaborationViewService(self.jobs)
         self.versions = VersionService(self.history)
         self.replays = ReplayService(research)
         self.inspection = InspectionService(self.history)
@@ -107,6 +114,42 @@ class ManagementService:
         self.debug_experiments = DebugExperimentService(self.debug_reports, self.experiments)
         self.merge_proposals = MergeProposalService(self.history)
         self.merge_runs = MergeRunService(research)
+
+    def prepare_collaboration(
+        self, repository: UUID, request: NewCollaboration, key: str
+    ) -> dict[str, Any]:
+        return (
+            CollaborationService(self.jobs)
+            .prepare(
+                repository,
+                request.program,
+                actor=self.actor,
+                key=key,
+                private_inputs=request.private_inputs,
+            )
+            .model_dump(mode="json")
+        )
+
+    def recorded_collaboration(self, repository: UUID, group: UUID, key: str) -> dict[str, Any]:
+        return (
+            CollaborationService(self.jobs)
+            .prepare_recorded(repository, group, actor=self.actor, key=key)
+            .model_dump(mode="json")
+        )
+
+    def start_collaboration(self, repository: UUID, group: UUID, key: str) -> dict[str, Any]:
+        return CollaborationCoordinator(self.jobs).start(
+            repository, group, actor=self.actor, key=key
+        )
+
+    def control_collaboration(
+        self, repository: UUID, group: UUID, request: CollaborationControlRequest, key: str
+    ) -> dict[str, Any]:
+        return (
+            CollaborationControlService(self.jobs)
+            .request(repository, group, request, actor=self.actor, key=key)
+            .model_dump(mode="json")
+        )
 
     def fork_merged_branch(
         self, repository: UUID, request: ForkMergedBranch, key: str
@@ -586,6 +629,7 @@ class ManagementService:
     def commit_artifacts(
         self, repository_id: UUID, commit_id: str, *, after_id: UUID | None = None, limit: int = 30
     ) -> dict[str, Any]:
+        self.collaboration_views.authorize_commit(repository_id, commit_id, actor=self.actor)
         result: dict[str, Any] = public(
             self.inspection.artifacts(repository_id, commit_id, after_id=after_id, limit=limit)
         )
@@ -594,12 +638,14 @@ class ManagementService:
     def executions(
         self, repository_id: UUID, run_id: UUID, *, after_id: UUID | None = None, limit: int = 30
     ) -> dict[str, Any]:
+        self.collaboration_views.authorize_run(repository_id, run_id, actor=self.actor)
         result: dict[str, Any] = public(
             self.execution_views.list(repository_id, run_id, after_id=after_id, limit=limit)
         )
         return result
 
     def execution(self, repository_id: UUID, run_id: UUID, call_id: UUID) -> dict[str, Any]:
+        self.collaboration_views.authorize_run(repository_id, run_id, actor=self.actor)
         result: dict[str, Any] = public(self.execution_views.detail(repository_id, run_id, call_id))
         return result
 
@@ -613,6 +659,7 @@ class ManagementService:
         offset: int = 0,
         limit: int = 65536,
     ) -> tuple[dict[str, Any], bytes]:
+        self.collaboration_views.authorize_run(repository_id, run_id, actor=self.actor)
         return self.execution_views.content(
             repository_id, run_id, call_id, resource, offset=offset, limit=limit
         )
@@ -668,6 +715,9 @@ class ManagementService:
         after_commit: str | None = None,
         limit: int = 100,
     ) -> dict[str, Any]:
+        head = self.history.branch(repository_id, branch_name)["head_commit_id"]
+        if head is not None:
+            self.collaboration_views.authorize_commit(repository_id, head, actor=self.actor)
         return self.versions.log(
             repository_id,
             branch_name=branch_name,
@@ -676,9 +726,11 @@ class ManagementService:
         )
 
     def checkout(self, repository_id: UUID, commit_id: str) -> dict[str, Any]:
+        self.collaboration_views.authorize_commit(repository_id, commit_id, actor=self.actor)
         return self.versions.checkout(repository_id, commit_id)
 
     def behavioral_trace(self, repository_id: UUID, run_id: UUID) -> dict[str, Any]:
+        self.collaboration_views.authorize_run(repository_id, run_id, actor=self.actor)
         return self.behavior.trace(repository_id, run_id).model_dump(mode="json")
 
     def create_debug_report(
@@ -726,11 +778,15 @@ class ManagementService:
         return self.debug_reports.listing(repository_id, after_id=after_id, limit=limit)
 
     def behavioral_diff(self, repository_id: UUID, left: UUID, right: UUID) -> dict[str, Any]:
+        self.collaboration_views.authorize_run(repository_id, left, actor=self.actor)
+        self.collaboration_views.authorize_run(repository_id, right, actor=self.actor)
         return self.behavior.compare(repository_id, left, right)
 
     def diff(
         self, repository_id: UUID, left: str, right: str, *, after: int = 0, limit: int = 100
     ) -> dict[str, Any]:
+        self.collaboration_views.authorize_commit(repository_id, left, actor=self.actor)
+        self.collaboration_views.authorize_commit(repository_id, right, actor=self.actor)
         return self.versions.diff(repository_id, left, right, after=after, limit=limit)
 
     @classmethod
@@ -896,6 +952,7 @@ class ManagementService:
     def control(
         self, repository_id: UUID, run_id: UUID, action: str, payload: ControlRun, key: str
     ) -> dict[str, Any]:
+        self.collaboration_views.authorize_run(repository_id, run_id, actor=self.actor)
         return self._mutate(
             f"POST /runs/{run_id}/{action}",
             key,
@@ -951,6 +1008,7 @@ class ManagementService:
         )
 
     def run(self, repository_id: UUID, run_id: UUID) -> dict[str, Any]:
+        self.collaboration_views.authorize_run(repository_id, run_id, actor=self.actor)
         row = self.jobs.run(repository_id, run_id)
         result: dict[str, Any] = public(row)
         branch = self.history.branch(repository_id, row["branch_name"])
@@ -975,6 +1033,10 @@ class ManagementService:
                         snapshots.c.commit_id == row["checkpoint_commit_id"],
                     )
                 ).first()
+            if job is not None and job["kind"] == "collaboration_role":
+                result["adapter"] = self.collaboration_views.role(
+                    repository_id, run_id, actor=self.actor
+                )
             if job is not None and job["kind"] == "langgraph_run":
                 graph_service = LangGraphRunService(self.jobs)
                 graph_payload = graph_service.payload(repository_id, job["id"])
@@ -1259,6 +1321,7 @@ class ManagementService:
     def events(
         self, repository_id: UUID, run_id: UUID, after_seq: int, limit: int
     ) -> dict[str, Any]:
+        self.collaboration_views.authorize_run(repository_id, run_id, actor=self.actor)
         rows = self.history.events(repository_id, run_id, after=after_seq, limit=limit)
         items = []
         for row in rows:
@@ -1270,6 +1333,7 @@ class ManagementService:
         return {"items": items, "next_after_seq": rows[-1]["seq"] if rows else after_seq}
 
     def artifacts(self, repository_id: UUID, run_id: UUID) -> dict[str, Any]:
+        self.collaboration_views.authorize_run(repository_id, run_id, actor=self.actor)
         row = self.jobs.run(repository_id, run_id)
         return {
             "items": public(self.history.artifacts(repository_id, row["checkpoint_commit_id"]))
@@ -1291,6 +1355,7 @@ class ManagementService:
             )
         if row is None:
             raise AgentGitError(ErrorCode.NOT_FOUND, "产物不可访问")
+        self.collaboration_views.authorize_commit(repository_id, row["commit_id"], actor=self.actor)
         return public(dict(row)), self.history.read_artifact(repository_id, artifact_id)
 
     def repository(self, repository_id: UUID) -> dict[str, Any]:

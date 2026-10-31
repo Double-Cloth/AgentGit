@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
-from agentgit.core.collaboration import CollaborationRole
+from agentgit.core.collaboration import CollaborationProgram, CollaborationRole
 from agentgit.core.models import Contract, Digest, Identifier
 
 
@@ -12,6 +12,11 @@ class RolePrivateInput(Contract):
     kind: Literal["collaboration-private-input/v1"] = "collaboration-private-input/v1"
     role: CollaborationRole
     notes: Annotated[tuple[Annotated[str, Field(max_length=4096)], ...], Field(max_length=16)] = ()
+
+
+class NewCollaboration(Contract):
+    program: CollaborationProgram
+    private_inputs: Annotated[tuple[RolePrivateInput, ...], Field(max_length=4)] = ()
 
 
 class CollaborationFrozenInput(Contract):

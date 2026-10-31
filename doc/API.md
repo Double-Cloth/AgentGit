@@ -567,3 +567,11 @@ uv run --locked agentgit repair-review-decision $repo.repository_id $proposal.pr
 `GET /runs/{id}` 的 MCP 结果增加 `adapter`：固定程序/Server/工具/Schema/本地效果、limits、logical_usage、actual_attempts、response_ref、mode、has_model=false。成功 Live 的 `recording` 给出明确来源 Run/起止 Commit；它不创建 Fork 或执行新任务。Recorded 的逻辑调用仍为 1，实际尝试为 0；未知实际尝试保持 null，不把未知改成零。
 
 `GET /approvals?run_id=...` 每项的 `version` 是此次读取的 Run `state_version`，供现有桌面按钮提交 `expected_version`。它不是单独的审批表版本；若读取后状态推进，后端仍返回 `version_conflict`。审批绑定精确动作/请求/效果/策略/操作者，不能因远端只读提示或重复点击扩大权限。
+
+## S12-C 固定四角色协作
+
+[完整路由、CLI、输入和分页示例](../examples/collaboration/README.md)及[工程核对范围](acceptance/S12-C-operator.md)。所有协作路由均带 `/repositories/{repository_id}/collaborations` 前缀并要求路径项目与 `X-Repository-ID` 一致：POST prepare、GET list/单组、POST start/recorded/control、GET messages/shared。修改要求原键；start/recorded 请求体仅 schema_version=1，prepare 为严格 NewCollaboration，control 为 action/expected_revision。准备不自动执行，必须显式开始。
+
+角色 Run adapter 为 collaboration_role/v1，返回权限/预算/逻辑用量、新意图/复用/未知计数，不返回私有 notes；协作历史、Diff、行为、执行和产物查询均校验所属操作者。消息和共享版本只返回真实已归属的公开投影及因果地址，不提供任意 CAS/宿主路径读取。现有报告下载路由是 `/artifacts/{artifact_id}/content`。
+
+API 继续按后端数据库/数据目录配置运行，serve 没有 --testing 参数；连接专用演示测试环境的方法见上述演示，后端不自动迁移。当前 head32 为 79 业务表加版本表共80，桌面和正式 C/T05/D3 仍待完成。

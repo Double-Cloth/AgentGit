@@ -20,6 +20,8 @@ from agentgit.adapters.execution.policy import bundled_policy
 from agentgit.adapters.mcp import configured_client
 from agentgit.config import Settings
 from agentgit.core.canonical import decode, encode
+from agentgit.core.collaboration_controls import CollaborationControlRequest
+from agentgit.core.collaboration_runs import NewCollaboration
 from agentgit.core.debug_reports import NewDebugReport
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.experiments import FreezeValidator, NewExperiment
@@ -148,6 +150,123 @@ def _mcp_input[T: Contract](file: Path, model: type[T], max_bytes: int = 2_097_1
     if len(payload) > max_bytes:
         raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "适配器输入文件超过上限")
     return parse_contract(payload, model)
+
+
+@app.command("collaboration-prepare")
+def collaboration_prepare(
+    repository_id: UUID,
+    file: Path,
+    key: str = typer.Option(...),
+    testing: bool = False,
+) -> None:
+    """准备固定四角色组；仅创建暂停任务，须另行明确开始。"""
+    with management(testing) as service:
+        request = _mcp_input(file, NewCollaboration, 1_048_576)
+        emit(service.prepare_collaboration(repository_id, request, key))
+
+
+@app.command("collaboration-start")
+def collaboration_start(
+    repository_id: UUID,
+    collaboration_id: UUID,
+    key: str = typer.Option(...),
+    testing: bool = False,
+) -> None:
+    """以原键开始已准备的组，由独立 Worker 执行。"""
+    with management(testing) as service:
+        emit(service.start_collaboration(repository_id, collaboration_id, key))
+
+
+@app.command("collaboration-recorded")
+def collaboration_recorded(
+    repository_id: UUID,
+    source_collaboration_id: UUID,
+    key: str = typer.Option(...),
+    testing: bool = False,
+) -> None:
+    """核验本人完整成功 Live 来源并准备新 Recorded 组，仍须明确开始。"""
+    with management(testing) as service:
+        emit(service.recorded_collaboration(repository_id, source_collaboration_id, key))
+
+
+@app.command("collaboration-control")
+def collaboration_control(
+    repository_id: UUID,
+    collaboration_id: UUID,
+    file: Path,
+    key: str = typer.Option(...),
+    testing: bool = False,
+) -> None:
+    """提交原版本的组暂停/恢复/取消；accepted 不表示全部角色已经停止。"""
+    with management(testing) as service:
+        request = _mcp_input(file, CollaborationControlRequest, 4096)
+        emit(service.control_collaboration(repository_id, collaboration_id, request, key))
+
+
+@app.command("collaboration-status")
+def collaboration_status(
+    repository_id: UUID, collaboration_id: UUID, testing: bool = False
+) -> None:
+    """查询本人组、四个角色及控制版本，不触发执行。"""
+    with management(testing) as service:
+        emit(
+            service.collaboration_views.summary(
+                repository_id, collaboration_id, actor=service.actor
+            )
+        )
+
+
+@app.command("collaboration-list")
+def collaboration_list(
+    repository_id: UUID,
+    after_id: UUID | None = None,
+    limit: int = typer.Option(30, min=1, max=100),
+    testing: bool = False,
+) -> None:
+    with management(testing) as service:
+        emit(
+            service.collaboration_views.list(
+                repository_id, actor=service.actor, after_id=after_id, limit=limit
+            )
+        )
+
+
+@app.command("collaboration-messages")
+def collaboration_messages(
+    repository_id: UUID,
+    collaboration_id: UUID,
+    after_id: UUID | None = None,
+    limit: int = typer.Option(30, min=1, max=100),
+    testing: bool = False,
+) -> None:
+    with management(testing) as service:
+        emit(
+            service.collaboration_views.messages(
+                repository_id, collaboration_id, actor=service.actor, after_id=after_id, limit=limit
+            )
+        )
+
+
+@app.command("collaboration-shared")
+def collaboration_shared(
+    repository_id: UUID,
+    collaboration_id: UUID,
+    after_path: str | None = None,
+    after_version: int | None = typer.Option(None, min=1, max=9_007_199_254_740_991),
+    limit: int = typer.Option(30, min=1, max=100),
+    testing: bool = False,
+) -> None:
+    with management(testing) as service:
+        emit(
+            service.collaboration_views.publications(
+                repository_id,
+                collaboration_id,
+                actor=service.actor,
+                after_path=after_path,
+                after_version=after_version,
+                limit=limit,
+            )
+        )
 
 
 @app.command("mcp-bind")

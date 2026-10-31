@@ -10,7 +10,7 @@
 
 每个新检查点由重算结果按类型映射新组/消息身份，实际新导出地址成为共享头及消息父地址。`receive`/`batch` 仍执行真实的目标消息、收据、发布和乐观版本约束；写入前比较计算状态，与进度和调用来源在同一 History 事务提交。私有 notes、响应和普通文本中的原 UUID 保持原字节。独立审计另从原始来源快照构造期望投影，逐项核对完整目标状态 hash；该审计没有替代产品的调用消费重算。
 
-新增 `0032_collab_recorded_steps` / `collaboration_recorded_steps`，当前 head32/80 业务表。不可变关联固定自身来源 Run/Commit、目标 Run/Commit 和冻结索引；数据库要求实际同项目、同角色来源及两端 Snapshot。空测试 Schema 可以往返迁移，有 Recorded 来源或进度禁止降级；旧迁移未修改，业务库未迁移。
+新增 `0032_collab_recorded_steps` / `collaboration_recorded_steps`，当前 head32/79 业务表（加迁移版本表共80）。不可变关联固定自身来源 Run/Commit、目标 Run/Commit 和冻结索引；数据库要求实际同项目、同角色来源及两端 Snapshot。空测试 Schema 可以往返迁移，有 Recorded 来源或进度禁止降级；旧迁移未修改，业务库未迁移。
 
 观测来源调用时创建带 `origin_call_id` 的复用行，request/intent/result/response 引用精确取自身已核验来源，在同事务登记对象归属及 `call.reused`，不伪造实际新请求。原 CallIntent 中的物理 checkpoint 保留来源意义；没有削弱通用 `RecordedCallGateway` 对实际调用 HEAD 的校验。进度必须是自身来源的完整前缀，接管核对当前状态后继续，不重复物化已提交调用。
 
@@ -51,3 +51,5 @@ v6 源码 4c076a…85a2 的 1,106 单元、22 控制和 13 个 Worker 通过，�
 v7 投影审计 SHA256 **`66c5c5ac4addd9427a4b028fc1c5ec111246a917c018b053b7d3a9c2b757996b`**，来源/控制/停止/进程审计 **`3df81680f321d0b41fc606920897b3b2419c70689f5e4d44ac022d48e1584303`**；**559 份代码/测试/迁移/锁的冻结、工作区、Git 暂存字节完全一致**，审计 **`04ebab39c52fb5c0d8d0c1120d388d3e608cd25d52be13438ec07570c41ae562`**。设计规范及实施方案摘要不变。
 
 `.agentgit/evidence/S12-C-recorded-worker-v7/summary-v1.json` SHA256 **`6f1fdea8b44ae1533eea6f5fb253020af1448f18a497a6fb2192b92de5089b3c`**，索引 **87,955 文件**，保留 v1–v7 全部分版输入、原始包、失败、诊断、既有封存与最终独立审计。全部 Runtime 终态后封存；文档后更新。最终仍未重跑前版 150 或完整 S2/S4/S5/S6/S11/桌面回归，不将旧报告改标至本版；其余 C/D/D3、原生/人工及最终四适配新包门槛保持。
+
+表数口径已按实际 PostgreSQL 目录更正，详见[操作者工程记录](S12-C-operator.md)；历史封存不回写。
