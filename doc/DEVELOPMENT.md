@@ -1,5 +1,7 @@
 # 本地开发与测试
 
+2026-10-31 最新D：[范围／锁定版本](S12-D-a2a-plan.md)和[设施记录](acceptance/S12-D.md)已建立。`uv run --locked pytest tests/integration/test_a2a_fixture.py` 只运行本机独立进程HTTP服务自检，不使用数据库或公网；可用唯一 `AGENTGIT_A2A_FIXTURE_PROOF_DIR` 保存不含秘密的请求／任务／PID观察。当前13项通过仅属于测试设施，产品A2A及T04／T05／T07尚未实现／通过，不能替代后续网关、Recorded和最终包核对。
+
 2026-10-31 最新 C：[本机稳定性记录](acceptance/S12-C-stability.md)核对160不同协作节点与593相关兼容覆盖（v4复验100、v2未修改493，原失败保留），含真实105组窗口、四线程／三项目和完整实际执行模块。当前生产源码914591…6078、head32/79业务表加版本表共80未变；MCP单个控制功能测试使用生产默认租约，独立短租约／心跳／fencing断言保留。固定范围本机工程可继续D，正式前置／最终包／D3保持。以下增量记录保留其当时源码、作用域与未完成状态。
 
 2026-10-31 最新 C：[操作者 API/CLI](acceptance/S12-C-operator.md)和[自动化/手动演示](../examples/collaboration/README.md)已接通。`collaboration-prepare/start/recorded/control/status/list/messages/shared` 共用后端服务，角色沿用 Run/Job/事件/产物查询；只读公开投影排除 notes，协作通用历史/Diff/行为/执行入口同样校验所属操作者。当前 66c98b…7439 源码 1,106 单元/55 不同集成通过，Ruff/format 528/mypy 219，通过证据和早期错误分版保留。Schema 仍 head32，79 业务表加版本表共 80，旧“业务表”口径勘误见记录；业务库未迁移。真实桌面、更多交错/规模、完整兼容与正式 C/T05/D3 继续。
