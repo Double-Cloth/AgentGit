@@ -61,6 +61,7 @@ class A2AJobPayload(Contract):
     code_revision: Annotated[str, Field(pattern=r"^source-sha256:[0-9a-f]{64}$")]
     dependency_lock_digest: Digest
     max_wall_ms: Annotated[int, Field(ge=1, le=900_000)]
+    replay: A2ARecordedSpec | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
 class A2AObservation(Contract):
@@ -154,3 +155,42 @@ class A2ARunState(Contract):
 
     def logical_projection(self) -> dict[str, object]:
         return self.model_dump(mode="json")
+
+
+class A2ARecordedRunState(Contract):
+    kind: Literal["a2a_recorded_run/v1"] = "a2a_recorded_run/v1"
+    program_ref: Digest
+    replay: A2ARecordedSpec
+    cursor: Annotated[int, Field(ge=0, le=128)]
+    status: RunStatus = RunStatus.RUNNING
+    logical_state: A2ARunState
+    actual_attempts: Literal[0] = 0
+    actual_response_bytes: Literal[0] = 0
+    error_code: str | None = None
+
+    @model_validator(mode="after")
+    def local_progress(self) -> "A2ARecordedRunState":
+        if (
+            self.program_ref != self.logical_state.program_ref
+            or self.cursor
+            != 2 * len(self.logical_state.observations) + (self.logical_state.pending is not None)
+            or self.logical_state.retired
+            or self.status
+            not in {
+                RunStatus.RUNNING,
+                RunStatus.PAUSED,
+                RunStatus.CANCELLED,
+                RunStatus.FAILED,
+                RunStatus.COMPLETED,
+                RunStatus.BUDGET_EXHAUSTED,
+            }
+            or (
+                self.status == RunStatus.COMPLETED
+                and self.logical_state.status != RunStatus.COMPLETED
+            )
+        ):
+            raise ValueError("A2A Recorded 本地进度与完整历史逻辑状态不符")
+        return self
+
+    def logical_projection(self) -> dict[str, object]:
+        return self.logical_state.logical_projection()

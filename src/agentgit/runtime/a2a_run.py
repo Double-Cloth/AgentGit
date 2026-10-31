@@ -118,7 +118,7 @@ class A2ARunRunner:
         with self.history.engine.begin() as connection:
             self.queue.guard(connection, self.lease, self.lease.run_id)
             run = self.history._run(connection, self.lease.repository_id, self.lease.run_id)
-        if run["mode"] != "live":
+        if run["mode"] != "live" or self.payload.replay is not None:
             raise AgentGitError(
                 ErrorCode.UNSUPPORTED_SCHEMA, "A2A 当前耐久入口只执行声明的 Live 模式"
             )

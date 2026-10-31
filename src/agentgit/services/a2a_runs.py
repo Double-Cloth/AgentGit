@@ -8,7 +8,13 @@ from uuid import UUID, uuid4
 import sqlalchemy as sa
 
 from agentgit.core.a2a import check_a2a_content
-from agentgit.core.a2a_runs import A2AJobPayload, A2AProgram, A2ARunState
+from agentgit.core.a2a_runs import (
+    A2AJobPayload,
+    A2AProgram,
+    A2ARecordedRunState,
+    A2ARecordedSpec,
+    A2ARunState,
+)
 from agentgit.core.a2a_wire import A2ACall, A2AResult, binding_digest
 from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
@@ -71,6 +77,7 @@ class A2ARunService:
         branch_name: str,
         expected_head: str | None,
         expected_version: int,
+        replay: A2ARecordedSpec | None = None,
     ) -> Submission:
         program = parse_contract(encode(program.model_dump(mode="json")), A2AProgram)
         check_program_secrets(program)
@@ -83,6 +90,13 @@ class A2ARunService:
             or not 1 <= len(key) <= 200
         ):
             raise AgentGitError(ErrorCode.VALIDATION, "A2A 提交的版本、HEAD、操作者或原键无效")
+        if replay is not None:
+            from agentgit.services.a2a_recordings import A2ARecordingReader
+
+            replay = parse_contract(encode(replay.model_dump(mode="json")), A2ARecordedSpec)
+            source = A2ARecordingReader(self.history).inspect(repository_id, replay, actor=actor)
+            if source.program != program:
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "A2A Recorded 程序与明确来源不符")
         program_obj = self.history.objects.put(
             ObjectType.BLOB, encode(program.model_dump(mode="json"))
         )
@@ -92,6 +106,7 @@ class A2ARunService:
             code_revision=source_revision(),
             dependency_lock_digest=dependency_lock_digest(),
             max_wall_ms=program.limits.max_wall_ms,
+            replay=replay,
         )
         payload_obj = self.history.objects.put(
             ObjectType.BLOB, encode(payload.model_dump(mode="json"))
@@ -111,6 +126,7 @@ class A2ARunService:
                     branch_name=branch_name,
                     head=expected_head,
                     version=expected_version,
+                    **({"replay": replay.model_dump(mode="json")} if replay else {}),
                 )
             ),
         )
@@ -157,6 +173,27 @@ class A2ARunService:
                 or branch["active_writer_run_id"] is not None
             ):
                 raise AgentGitError(ErrorCode.VERSION_CONFLICT, "A2A 分支 HEAD、版本或写入者已变化")
+            if replay is not None:
+                forks = TABLES["branch_forks"]
+                fork = (
+                    connection.execute(
+                        sa.select(forks).where(
+                            forks.c.repository_id == repository_id,
+                            forks.c.branch_name == branch_name,
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+                if (
+                    fork is None
+                    or str(fork["source_run_id"]) != replay.source_run_id
+                    or fork["from_commit_id"] != replay.from_commit
+                    or expected_head != replay.from_commit
+                ):
+                    raise AgentGitError(
+                        ErrorCode.FORBIDDEN, "A2A Recorded 必须绑定明确的独立来源分支"
+                    )
             connection.execute(
                 TABLES["runs"]
                 .insert()
@@ -166,7 +203,8 @@ class A2ARunService:
                     branch_name=branch_name,
                     base_commit_id=expected_head,
                     checkpoint_commit_id=expected_head,
-                    mode="live",
+                    mode="recorded" if replay else "live",
+                    origin_run_id=UUID(replay.source_run_id) if replay else None,
                     status="queued",
                 )
             )
@@ -185,6 +223,7 @@ class A2ARunService:
                     repository_id=repository_id,
                     run_id=run_id,
                     kind="a2a_run",
+                    origin_run_id=UUID(replay.source_run_id) if replay else None,
                     payload_ref=payload_obj.id,
                 )
             )
@@ -221,6 +260,8 @@ class A2ARunService:
 
     def state(self, repository_id: UUID, run_id: UUID, *, actor: str) -> A2ARunState | None:
         payload = self.owned(repository_id, run_id, actor)
+        if payload.replay is not None:
+            raise AgentGitError(ErrorCode.FORBIDDEN, "Recorded 状态须读取独立本地／逻辑投影")
         run = self.queue.run(repository_id, run_id)
         with self.history.engine.connect() as connection:
             snapshots = TABLES["snapshots"]
@@ -238,6 +279,32 @@ class A2ARunService:
         )
         if state.program_ref != payload.program_ref:
             raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "A2A 状态与本 Run 程序不符")
+        return state
+
+    def recorded_state(
+        self, repository_id: UUID, run_id: UUID, *, actor: str
+    ) -> A2ARecordedRunState | None:
+        payload = self.owned(repository_id, run_id, actor)
+        if payload.replay is None:
+            raise AgentGitError(ErrorCode.FORBIDDEN, "此Run没有Recorded来源")
+        run = self.queue.run(repository_id, run_id)
+        snapshots = TABLES["snapshots"]
+        with self.history.engine.connect() as c:
+            own = c.execute(
+                sa.select(snapshots.c.commit_id).where(
+                    snapshots.c.repository_id == repository_id,
+                    snapshots.c.run_id == run_id,
+                    snapshots.c.commit_id == run["checkpoint_commit_id"],
+                )
+            ).first()
+        if own is None:
+            return None
+        state = parse_contract(
+            encode(self.history.restore(repository_id, run["checkpoint_commit_id"]).data),
+            A2ARecordedRunState,
+        )
+        if state.program_ref != payload.program_ref or state.replay != payload.replay:
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "Recorded检查点来源或程序不符")
         return state
 
     def confirmed_result(

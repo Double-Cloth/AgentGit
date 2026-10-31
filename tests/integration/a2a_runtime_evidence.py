@@ -27,6 +27,7 @@ def archive_a2a_run(history, server, request, tmp_path):
         "runs",
         "jobs",
         "branches",
+        "branch_forks",
         "commits",
         "commit_parents",
         "run_commits",

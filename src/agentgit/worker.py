@@ -104,6 +104,10 @@ class Worker:
             job = self.queue.get(lease.repository_id, lease.job_id)
             if job["kind"] == "a2a_run":
                 with LeaseHeartbeat(self.queue, lease):
+                    if self.queue.run(lease.repository_id, lease.run_id)["mode"] == "recorded":
+                        from agentgit.runtime.a2a_recorded import A2ARecordedRunner
+
+                        return A2ARecordedRunner(self.queue, lease, fault=self.fault).run()
                     return A2ARunRunner(
                         self.queue, lease, fault=self.fault, client_factory=self.a2a_client_factory
                     ).run()

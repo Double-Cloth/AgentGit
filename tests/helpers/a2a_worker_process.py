@@ -26,6 +26,11 @@ def main():
         "a2a.after_result",
         "a2a.after_observation",
         "a2a.after_defer",
+        "a2a.recorded.after_source",
+        "a2a.recorded.before_checkpoint",
+        "a2a.recorded.in_projection",
+        "a2a.recorded.after_checkpoint",
+        "a2a.recorded.after_release",
     }
 
     def wait(point):

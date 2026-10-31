@@ -100,6 +100,7 @@ class _Reader:
         run = self.history._run(self.c, self.repo, self.run_id)
         require(
             run["mode"] == "live"
+            and payload.replay is None
             and run["status"] == job["status"] == "completed"
             and run["origin_run_id"] is None
             and job["origin_run_id"] is None,
