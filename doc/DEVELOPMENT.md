@@ -1,5 +1,7 @@
 # 本地开发与测试
 
+2026-11-01 最新D：[A2A耐久Live](acceptance/S12-D-live.md)已接通；当前32f82f…5630源码、head `0033_a2a_runs`，79业务表加版本表共80，锁不变。`test_a2a_runs.py`／`test_a2a_run_recovery.py` 合计35项，使用独立测试Schema及唯一 `AGENTGIT_A2A_RUN_PROOF_DIR`、`AGENTGIT_A2A_FIXTURE_PROOF_DIR` 保存原始包。实际base解释器子进程必须显式获得src及venv site-packages；六次真实终止和一次存活旧Worker接管已核对。1,245单元、35新增及124相关兼容通过，早期失败保留。完整Recorded／入口／桌面继续；运行前冻结全部输入，实际Runtime终态前禁止修改相关源码、驱动、锁、迁移及构建。
+
 2026-10-31 最新D：[有界客户端／wire／原调用网关](acceptance/S12-D-transport.md)已接通，当前ad9fcd…ede28源码，锁和head32不变。`uv run --locked pytest tests/integration/test_a2a_fixture.py tests/integration/test_a2a_transport.py` 运行13＋36个独立进程用例；`test_a2a_gateway.py`／`test_a2a_secrets.py` 另需原隔离PostgreSQL，分别6／2项。用唯一 `AGENTGIT_A2A_FIXTURE_PROOF_DIR`／`AGENTGIT_A2A_GATEWAY_PROOF_DIR` 导出无秘密的服务观察和数据库／CAS包。当前1,219单元、v3完整91集成及v4新增2项通过，不代表完整A2A Run／Recorded／桌面或T04–T07退出。v1时钟前提错误、v2校准及v3守卫保护各属原冻结输入；相关Runtime终态前不修改源码、驱动、迁移、锁或构建。
 
 2026-10-31 最新D纯契约：`core/a2a.py` 已定义固定回环地址、主体／卡片签名和原 `ToolRule` 效果边界；`uv run --locked pytest tests/unit` 的1,160项通过，含54项新契约。当前源码955460…49f9，锁／head32不变，无新网络入口或迁移。完整853份输入／基线和结果见 `S12-D-contract-v2` 及 [D记录](acceptance/S12-D.md)，v1保留其原版本；这批没有网络／数据库／桌面执行，不重标早先设施或C的原始证据。

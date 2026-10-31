@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 import sqlalchemy as sa
 from sqlalchemy.engine import Connection, RowMapping
 
+from agentgit.core.a2a_runs import A2AJobPayload
 from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.collaboration_runs import CollaborationRolePayload
 from agentgit.core.errors import AgentGitError, ErrorCode
@@ -389,8 +390,19 @@ class JobService:
             )
             if candidate is None:
                 return None
-            payload: JobPayload | MCPJobPayload | LangGraphJobPayload | CollaborationRolePayload
-            if candidate["kind"] == "collaboration_role":
+            payload: (
+                JobPayload
+                | MCPJobPayload
+                | LangGraphJobPayload
+                | CollaborationRolePayload
+                | A2AJobPayload
+            )
+            if candidate["kind"] == "a2a_run":
+                payload = parse_contract(
+                    self.history.objects.get(candidate["payload_ref"], ObjectType.BLOB),
+                    A2AJobPayload,
+                )
+            elif candidate["kind"] == "collaboration_role":
                 payload = parse_contract(
                     self.history.objects.get(candidate["payload_ref"], ObjectType.BLOB),
                     CollaborationRolePayload,

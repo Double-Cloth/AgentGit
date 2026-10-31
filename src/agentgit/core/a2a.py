@@ -65,6 +65,12 @@ class A2AServer(Contract):
     timeout_ms: Annotated[int, Field(ge=20, le=30_000)] = 2000
     max_response_bytes: Annotated[int, Field(ge=128, le=1_048_576)] = 65_536
 
+    @property
+    def credential_env(self) -> str:
+        server = self.server_identity.upper().replace("-", "_")
+        principal = self.principal_id.upper().replace("-", "_")
+        return f"AGENTGIT_A2A_{server}_{principal}_TOKEN"
+
     @model_validator(mode="after")
     def registered_loopback(self) -> "A2AServer":
         try:

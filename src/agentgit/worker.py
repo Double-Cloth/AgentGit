@@ -8,11 +8,13 @@ from uuid import UUID, uuid4
 import sqlalchemy as sa
 from sqlalchemy.engine import Connection
 
+from agentgit.adapters.a2a import A2AClient
 from agentgit.adapters.corpus import Corpus
 from agentgit.adapters.mcp import MCPClient
 from agentgit.adapters.models import select_model
 from agentgit.adapters.tools import WriteArguments
 from agentgit.adapters.workspace import ArtifactWorkspace
+from agentgit.core.a2a import A2ABinding
 from agentgit.core.canonical import ObjectType, decode, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.jobs import Lease
@@ -27,6 +29,7 @@ from agentgit.core.models import (
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage, ResearchGoal, evolve
 from agentgit.core.snapshots import EventPayload, StateSnapshot
 from agentgit.core.versions import HybridReplaySpec
+from agentgit.runtime.a2a_run import A2ARunRunner
 from agentgit.runtime.collaboration_run import CollaborationRoleRunner
 from agentgit.runtime.langgraph_run import LangGraphRunRunner
 from agentgit.runtime.mcp_run import MCPRunRunner
@@ -82,12 +85,14 @@ class Worker:
         fault: Callable[[str], None] | None = None,
         mcp_client_factory: Callable[[MCPBinding], MCPClient] | None = None,
         collaboration_model_factory: Callable[[str], ModelAdapter] | None = None,
+        a2a_client_factory: Callable[[A2ABinding], A2AClient] | None = None,
     ):
         self.queue, self.name = queue, name or f"worker-{uuid4()}"
         self.model_factory = model_factory
         self.fault = fault or (lambda _: None)
         self.mcp_client_factory = mcp_client_factory
         self.collaboration_model_factory = collaboration_model_factory
+        self.a2a_client_factory = a2a_client_factory
 
     def run_once(self) -> dict[str, Any] | None:
         ApprovalService.expire_pending(self.queue.history)
@@ -97,6 +102,11 @@ class Worker:
             return None
         try:
             job = self.queue.get(lease.repository_id, lease.job_id)
+            if job["kind"] == "a2a_run":
+                with LeaseHeartbeat(self.queue, lease):
+                    return A2ARunRunner(
+                        self.queue, lease, fault=self.fault, client_factory=self.a2a_client_factory
+                    ).run()
             if job["kind"] == "collaboration_role":
                 with LeaseHeartbeat(self.queue, lease):
                     if self.queue.run(lease.repository_id, lease.run_id)["mode"] == "recorded":

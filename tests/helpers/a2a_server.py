@@ -200,11 +200,21 @@ def main():
                 return
             value = task["value"]
             if self.command == "POST":
+                if mode == "cancel_rejected":
+                    self.reply(400, None, reason="TASK_NOT_CANCELABLE")
+                    return
+                if mode == "cancel_ack_working":
+                    self.reply(200, value)
+                    return
                 if value["status"]["state"] in {"TASK_STATE_COMPLETED", "TASK_STATE_FAILED"}:
                     self.reply(400, None, reason="TASK_NOT_CANCELABLE")
                     return
                 value["status"] = {"state": "TASK_STATE_CANCELED"}
-            elif mode == "success" and value["status"]["state"] == "TASK_STATE_WORKING":
+            elif mode == "success" and value["status"]["state"] in {
+                "TASK_STATE_WORKING",
+                "TASK_STATE_AUTH_REQUIRED",
+                "TASK_STATE_INPUT_REQUIRED",
+            }:
                 value["status"] = {"state": "TASK_STATE_COMPLETED"}
                 value["artifacts"] = [copy.deepcopy(cases["artifact"])]
             self.reply(200, value, disconnect=mode == "disconnect_after_cancel")
@@ -265,6 +275,9 @@ def main():
                     "working": "TASK_STATE_WORKING",
                     "disconnect_after_accept": "TASK_STATE_WORKING",
                     "input_required": "TASK_STATE_INPUT_REQUIRED",
+                    "auth_required": "TASK_STATE_AUTH_REQUIRED",
+                    "remote_failed": "TASK_STATE_FAILED",
+                    "remote_rejected": "TASK_STATE_REJECTED",
                 }.get(mode, "TASK_STATE_COMPLETED")
                 task["status"] = {"state": target}
                 if target == "TASK_STATE_COMPLETED":

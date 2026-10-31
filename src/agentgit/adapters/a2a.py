@@ -16,9 +16,7 @@ from agentgit.runtime.ports import CallGateway, CallOutcome
 
 
 def configured_client(server: A2AServer) -> "A2AClient":
-    name = "AGENTGIT_A2A_" + server.server_identity.upper().replace("-", "_")
-    name += "_" + server.principal_id.upper().replace("-", "_") + "_TOKEN"
-    return A2AClient(server, credential_env=name)
+    return A2AClient(server, credential_env=server.credential_env)
 
 
 def _failed(operation: str, *, sent: bool) -> AgentGitError:
