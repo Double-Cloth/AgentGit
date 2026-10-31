@@ -1,5 +1,7 @@
 # 本地开发与测试
 
+2026-10-31 最新 C：[本机稳定性记录](acceptance/S12-C-stability.md)核对160不同协作节点与593相关兼容覆盖（v4复验100、v2未修改493，原失败保留），含真实105组窗口、四线程／三项目和完整实际执行模块。当前生产源码914591…6078、head32/79业务表加版本表共80未变；MCP单个控制功能测试使用生产默认租约，独立短租约／心跳／fencing断言保留。固定范围本机工程可继续D，正式前置／最终包／D3保持。以下增量记录保留其当时源码、作用域与未完成状态。
+
 2026-10-31 最新 C：[操作者 API/CLI](acceptance/S12-C-operator.md)和[自动化/手动演示](../examples/collaboration/README.md)已接通。`collaboration-prepare/start/recorded/control/status/list/messages/shared` 共用后端服务，角色沿用 Run/Job/事件/产物查询；只读公开投影排除 notes，协作通用历史/Diff/行为/执行入口同样校验所属操作者。当前 66c98b…7439 源码 1,106 单元/55 不同集成通过，Ruff/format 528/mypy 219，通过证据和早期错误分版保留。Schema 仍 head32，79 业务表加版本表共 80，旧“业务表”口径勘误见记录；业务库未迁移。真实桌面、更多交错/规模、完整兼容与正式 C/T05/D3 继续。
 
 2026-10-31 Recorded 准备补充：`CollaborationService(queue).prepare_recorded(repository, source_group, actor=..., key=...)` 对同源成功 Live 组核验/重算，再原子创建四个暂停的新 Run/Job/任务/分支和来源关联；仅后端服务，尚无公开 API/CLI。head 已为 `0031_collaboration_recordings` /78 业务表（加版本表共79），业务库未自动迁移；下文 head30 等均属原冻结版本。成功轨迹 Worker 未接通时 `start` 明确拒绝；不可改 mode 或落入 Live 构造，准备态可组取消。当前 584ebc…3f29 源码 1,106 单元、141 不同集成通过；新用例为 `test_collaboration_recorded_preparation.py`、`test_collaboration_identity_contracts.py`，全套 2,523 项仅收集通过。运行前冻结源码/迁移/驱动和 Git 基线，使用独立测试 Schema；新原始包另设 `AGENTGIT_COLLABORATION_RECORDED_PREPARATION_PROOF_DIR`，不得将准备成功标为 Recorded 执行完成，见[工程记录](acceptance/S12-C.md)。

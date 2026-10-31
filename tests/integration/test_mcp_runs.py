@@ -39,11 +39,12 @@ def isolated_worker_credentials(monkeypatch):
     monkeypatch.delenv("AGENTGIT_MCP_TRUSTED_FIXTURE_TOKEN", raising=False)
 
 
-def case(history, server, tmp_path, effect=EffectClass.READ_ONLY):
+def case(history, server, tmp_path, effect=EffectClass.READ_ONLY, *, lease_ms=1000):
     config, counts, mode = server
     binding = MCPClient(config).bind("echo", effect)
     program = MCPProgram(binding=binding, request=MCPArguments(arguments={"value": "task-value"}))
-    queue = JobService(ResearchService(history, tmp_path / "data"), lease_ms=1000)
+    research = ResearchService(history, tmp_path / "data")
+    queue = JobService(research) if lease_ms is None else JobService(research, lease_ms=lease_ms)
     service = MCPRunService(queue)
     repo = history.create_repository("MCP 有界任务")
     submitted = service.submit(
@@ -179,16 +180,21 @@ def test_recorded_mode_without_fixed_recording_fails_before_client(history, serv
 
 
 def test_queued_pause_and_resume_execute_only_once(history, server, tmp_path):
-    queue, _, repo, _, submitted, counts, _ = case(history, server, tmp_path)
+    # 功能用例使用生产默认租约；短租约失效、心跳与 fencing 由专门用例核对。
+    queue, _, repo, _, submitted, counts, _ = case(history, server, tmp_path, lease_ms=None)
     run = UUID(submitted.run_id)
     queue.request_control(
         repo, run, "pause", expected_version=queue.run(repo, run)["state_version"]
     )
-    assert Worker(queue).run_once()["status"] == "paused" and counts()["calls"] == 0
+    paused = Worker(
+        queue, mcp_client_factory=lambda _: pytest.fail("排队暂停不能创建客户端")
+    ).run_once()
+    assert paused["status"] == "paused" and counts()["calls"] == 0, paused
     queue.request_control(
         repo, run, "resume", expected_version=queue.run(repo, run)["state_version"]
     )
-    assert Worker(queue).run_once()["status"] == "completed" and counts()["calls"] == 1
+    resumed = Worker(queue).run_once()
+    assert resumed["status"] == "completed" and counts()["calls"] == 1, resumed
     assert queue.run(repo, run)["control_status"] == "applied"
 
 
