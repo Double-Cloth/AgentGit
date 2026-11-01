@@ -1,6 +1,7 @@
 """独立真实 HTTP 进程；只允许 pytest 隔离库与显式回环监听。"""
 
 import json
+import os
 import re
 import socket
 import sys
@@ -11,6 +12,7 @@ from sqlalchemy import create_engine
 
 from agentgit.api.main import create_app
 from agentgit.config import Settings, database_url
+from agentgit.services.environment import dependency_lock_digest, source_revision
 from agentgit.services.history import HistoryService
 from agentgit.services.management import ManagementService
 from agentgit.services.research import ResearchService
@@ -36,7 +38,17 @@ def main():
             actor=settings.operator_id,
         )
         temporary = Path(ready + ".tmp")
-        temporary.write_text(json.dumps({"port": listener.getsockname()[1]}), encoding="utf-8")
+        temporary.write_text(
+            json.dumps(
+                {
+                    "port": listener.getsockname()[1],
+                    "pid": os.getpid(),
+                    "source": source_revision(),
+                    "lock": dependency_lock_digest(),
+                }
+            ),
+            encoding="utf-8",
+        )
         temporary.replace(ready)
         server = uvicorn.Server(
             uvicorn.Config(

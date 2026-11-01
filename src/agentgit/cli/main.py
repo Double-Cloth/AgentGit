@@ -19,6 +19,8 @@ from agentgit import __version__
 from agentgit.adapters.execution.policy import bundled_policy
 from agentgit.adapters.mcp import configured_client
 from agentgit.config import Settings
+from agentgit.core.a2a import A2AServer
+from agentgit.core.a2a_runs import A2AProgram, A2ARecordedSpec, NewA2ARun
 from agentgit.core.canonical import decode, encode
 from agentgit.core.collaboration_controls import CollaborationControlRequest
 from agentgit.core.collaboration_runs import NewCollaboration
@@ -60,7 +62,7 @@ from agentgit.repair.confirmation_worker import RepairConfirmationWorker
 from agentgit.repair.study_worker import RepairStudyWorker
 from agentgit.repair.worker import RepairSearchWorker
 from agentgit.services.langgraph_runs import LangGraphRunService
-from agentgit.services.management import ManagementService
+from agentgit.services.management import ManagementService, public
 from agentgit.services.mcp_runs import MCPRunService
 from agentgit.services.versions import VersionService
 from agentgit.storage.database import probe_database
@@ -150,6 +152,70 @@ def _mcp_input[T: Contract](file: Path, model: type[T], max_bytes: int = 2_097_1
     if len(payload) > max_bytes:
         raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "适配器输入文件超过上限")
     return parse_contract(payload, model)
+
+
+@app.command("a2a-bind")
+def a2a_bind(file: Path, testing: bool = False) -> None:
+    """对明确登记的本机端点发现固定公开卡片，不读取Worker凭据。"""
+    with management(testing) as service:
+        emit(service.bind_a2a(_mcp_input(file, A2AServer, 16384)))
+
+
+@app.command("a2a-submit")
+def a2a_submit(
+    repository_id: UUID,
+    file: Path,
+    expected_version: int = typer.Option(..., min=0),
+    key: str = typer.Option(...),
+    branch: str = "main",
+    head: str | None = None,
+    replay_file: Path | None = None,
+    testing: bool = False,
+) -> None:
+    """只提交固定A2A程序；Recorded须明确来源文件及独立Fork分支。"""
+    with management(testing) as service:
+        request = NewA2ARun(
+            program=_mcp_input(file, A2AProgram),
+            branch_name=branch,
+            expected_head=head,
+            expected_version=expected_version,
+            replay=_mcp_input(replay_file, A2ARecordedSpec, 4096) if replay_file else None,
+        )
+        emit(service.submit_a2a(repository_id, request, key))
+
+
+@app.command("a2a-submission")
+def a2a_submission(
+    repository_id: UUID, key: str = typer.Option(...), testing: bool = False
+) -> None:
+    """按本人原键只读确认已提交任务，不重新提交或创建客户端。"""
+    with management(testing) as service:
+        emit(service.a2a_submission(repository_id, key))
+
+
+@app.command("a2a-list")
+def a2a_list(
+    repository_id: UUID,
+    after_id: UUID | None = None,
+    limit: int = typer.Option(30, min=1, max=100),
+    testing: bool = False,
+) -> None:
+    """分页查看本人的A2A任务。"""
+    with management(testing) as service:
+        emit(
+            public(
+                service.a2a_views.listing(
+                    repository_id, actor=service.actor, after_id=after_id, limit=limit
+                )
+            )
+        )
+
+
+@app.command("a2a-program")
+def a2a_program(repository_id: UUID, run_id: UUID, testing: bool = False) -> None:
+    """读取本人任务的不可变公开消息程序，不返回凭据。"""
+    with management(testing) as service:
+        emit(service.a2a_views.program(repository_id, run_id, actor=service.actor))
 
 
 @app.command("collaboration-prepare")

@@ -54,6 +54,14 @@ class A2ARecordedSpec(Contract):
     to_commit: Digest
 
 
+class NewA2ARun(Contract):
+    program: A2AProgram
+    branch_name: Annotated[str, Field(min_length=1, max_length=100)] = "main"
+    expected_head: Digest | None
+    expected_version: Annotated[int, Field(ge=0, le=9_007_199_254_740_991)]
+    replay: A2ARecordedSpec | None = None
+
+
 class A2AJobPayload(Contract):
     kind: Literal["a2a_run"] = "a2a_run"
     program_ref: Digest

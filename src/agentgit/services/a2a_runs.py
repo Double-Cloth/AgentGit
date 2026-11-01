@@ -240,6 +240,34 @@ class A2ARunService:
             )
         return submission
 
+    def submission(self, repository_id: UUID, *, actor: str, key: str) -> Submission:
+        if not 1 <= len(key) <= 200:
+            raise AgentGitError(ErrorCode.VALIDATION, "A2A 原键必须有界且非空")
+        table = TABLES["idempotency_keys"]
+        with self.history.engine.connect() as c:
+            row = (
+                c.execute(
+                    sa.select(table).where(
+                        table.c.repository_id == repository_id,
+                        table.c.actor == actor,
+                        table.c.key == key,
+                        table.c.route == f"POST /repositories/{repository_id}/a2a-runs",
+                    )
+                )
+                .mappings()
+                .first()
+            )
+        if row is None:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "A2A 原键尚无已确认提交")
+        receipt = parse_contract(
+            self.history.objects.get(row["result_ref"], ObjectType.BLOB), Submission
+        )
+        self.owned(repository_id, UUID(receipt.run_id), actor)
+        job = self.queue.get(repository_id, UUID(receipt.job_id))
+        if str(job["run_id"]) != receipt.run_id or str(row["job_id"]) != receipt.job_id:
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "A2A 原键提交关联不符")
+        return receipt
+
     def owned(self, repository_id: UUID, run_id: UUID, actor: str) -> A2AJobPayload:
         self.queue.run(repository_id, run_id)
         with self.history.engine.connect() as connection:

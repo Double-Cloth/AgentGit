@@ -73,6 +73,9 @@ def archive_a2a_run(history, server, request, tmp_path):
     proof = tmp_path / "process-death.json"
     if proof.exists():
         packet["process_death"] = json.loads(proof.read_text("utf-8"))
+    operator = tmp_path / "operator-process.json"
+    if operator.exists():
+        packet["operator_processes"] = json.loads(operator.read_text("utf-8"))
     folder = Path(destination)
     folder.mkdir(parents=True, exist_ok=True)
     with (folder / (hashlib.sha256(request.node.nodeid.encode()).hexdigest()[:24] + ".json")).open(

@@ -1,5 +1,7 @@
 # 本地开发与测试
 
+2026-11-01 最新D：[操作者入口](acceptance/S12-D-operator.md)与[可执行演示](../examples/a2a/README.md)已就绪。API／CLI提供发现、提交、原键只读确认、本人清单／程序，状态和精确审批复用原入口；新DTO为a2a_program/v1。99956e…e1e9源码1,245单元＋122不同集成通过，真实2 API／7 CLI及Recorded零额外协议请求已核对；v1只修错误码断言后v2通过，原报告保留。head33／80表／锁不变，桌面／最终包仍须推进；每轮先冻结完整输入，实际Runtime终态后才编辑源码／驱动／迁移／锁／构建。
+
 2026-11-01 最新D：[独立Recorded任务](acceptance/S12-D-recorded-runs.md)已接原Worker／History／Job。先以原VersionService建立来源初始化点Fork分支，再 `A2ARunService.submit(..., replay=A2ARecordedSpec(...))`；载荷和Run模式必须一致，`recorded_state(..., actor=...)` 查询独立本地／历史状态。bf3f6c…57b1源码1,245单元、A2A91和相关内核124通过；新增20功能及5真实进程终止，原marker读取失败保留。全程同源码／锁、独立测试Schema；新Recorded没有客户端／实际调用，逻辑投影为完整内部状态加产物。head33／80表及锁不变，尚无公开入口或新桌面包；源码／驱动／锁／迁移必须在相关Runtime终态后才修改。
 
 2026-11-01 最新D：[成功来源读取／纯重算](acceptance/S12-D-recorded-core.md)已实现。先以 `A2ARecordingReader(history).inspect(repository, A2ARecordedSpec(...), actor=...)` 核对本人完整成功Live范围，再用 `A2ARecordedEngine(source).replay()` 离线重算；同源码／锁守卫保持，不能直接消费旧32f82f…5630来源。`test_a2a_recordings.py` 的31项及35项Live／恢复共66集成通过，1,245单元归属相同dfc244…2cf1源码；v2仅改测试驱动，原五次不可变保护注入失败保留。head33／80表及锁不变。尚无新Recorded Job或公开入口，继续耐久执行／控制／接管；复验仍须独立Schema、唯一原始包目录和先冻结后运行。

@@ -4,6 +4,7 @@ from typing import Any
 from uuid import UUID
 
 import sqlalchemy as sa
+from sqlalchemy.sql.elements import ColumnElement
 
 from agentgit.core.canonical import ObjectType
 from agentgit.core.errors import AgentGitError, ErrorCode
@@ -22,11 +23,31 @@ class InspectionService:
             raise AgentGitError(ErrorCode.VALIDATION, "列表分页大小必须为 1 至 100")
 
     def runs(
-        self, repository: UUID, *, after_id: UUID | None = None, limit: int = 30
+        self,
+        repository: UUID,
+        *,
+        after_id: UUID | None = None,
+        limit: int = 30,
+        actor: str | None = None,
     ) -> dict[str, Any]:
         self._limit(limit)
         self.history.branch(repository)
         runs, jobs, tasks = TABLES["runs"], TABLES["jobs"], TABLES["tasks"]
+        visible: ColumnElement[bool] = sa.true()
+        if actor is not None:
+            keys = TABLES["idempotency_keys"]
+            visible = sa.or_(
+                jobs.c.id.is_(None),
+                jobs.c.kind != "a2a_run",
+                sa.exists(
+                    sa.select(keys.c.job_id).where(
+                        keys.c.repository_id == repository,
+                        keys.c.job_id == jobs.c.id,
+                        keys.c.actor == actor,
+                        keys.c.route == f"POST /repositories/{repository}/a2a-runs",
+                    )
+                ),
+            )
         with self.history.engine.connect() as connection:
             statement = (
                 sa.select(
@@ -42,13 +63,16 @@ class InspectionService:
                     tasks,
                     sa.and_(tasks.c.repository_id == repository, tasks.c.id == runs.c.task_id),
                 )
-                .where(runs.c.repository_id == repository)
+                .where(runs.c.repository_id == repository, visible)
             )
             if after_id is not None:
                 anchor = connection.execute(
-                    sa.select(runs.c.created_at, runs.c.id).where(
-                        runs.c.repository_id == repository, runs.c.id == after_id
+                    sa.select(runs.c.created_at, runs.c.id)
+                    .outerjoin(
+                        jobs,
+                        sa.and_(jobs.c.repository_id == repository, jobs.c.run_id == runs.c.id),
                     )
+                    .where(runs.c.repository_id == repository, runs.c.id == after_id, visible)
                 ).first()
                 if anchor is None:
                     raise AgentGitError(ErrorCode.NOT_FOUND, "运行游标不可访问")

@@ -11,8 +11,11 @@ import sqlalchemy as sa
 from sqlalchemy.engine import Connection
 
 from agentgit import __version__
+from agentgit.adapters.a2a import A2AClient
 from agentgit.adapters.execution.policy import bundled_policy
 from agentgit.config import Settings
+from agentgit.core.a2a import A2AServer
+from agentgit.core.a2a_runs import NewA2ARun
 from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.collaboration_controls import CollaborationControlRequest
 from agentgit.core.collaboration_runs import NewCollaboration
@@ -53,6 +56,8 @@ from agentgit.core.repair_studies import NewRepairStudy
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage
 from agentgit.core.versions import LiveReplay, NewBranch, RecordedRange, RecordedReplay
 from agentgit.runtime.model_budget import call_budget
+from agentgit.services.a2a_runs import A2ARunService
+from agentgit.services.a2a_views import A2AViewService
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.collaboration import CollaborationService
 from agentgit.services.collaboration_control import CollaborationCoordinator
@@ -104,6 +109,8 @@ class ManagementService:
         self.research, self.history, self.actor = research, research.history, actor
         self.jobs = JobService(research)
         self.mcp_runs = MCPRunService(self.jobs)
+        self.a2a_runs = A2ARunService(self.jobs)
+        self.a2a_views = A2AViewService(self.jobs)
         self.collaboration_views = CollaborationViewService(self.jobs)
         self.versions = VersionService(self.history)
         self.replays = ReplayService(research)
@@ -115,6 +122,36 @@ class ManagementService:
         self.debug_experiments = DebugExperimentService(self.debug_reports, self.experiments)
         self.merge_proposals = MergeProposalService(self.history)
         self.merge_runs = MergeRunService(research)
+
+    def _authorize_run(self, repository: UUID, run: UUID) -> bool:
+        self.collaboration_views.authorize_run(repository, run, actor=self.actor)
+        return self.a2a_views.authorize_run(repository, run, actor=self.actor)
+
+    def _authorize_commit(self, repository: UUID, commit: str) -> bool:
+        self.collaboration_views.authorize_commit(repository, commit, actor=self.actor)
+        return self.a2a_views.authorize_commit(repository, commit, actor=self.actor)
+
+    def bind_a2a(self, server: A2AServer) -> dict[str, Any]:
+        return A2AClient(server).discover().model_dump(mode="json")
+
+    def submit_a2a(self, repository: UUID, request: NewA2ARun, key: str) -> dict[str, Any]:
+        if request.expected_head is not None:
+            self._authorize_commit(repository, request.expected_head)
+        return self.a2a_runs.submit(
+            repository,
+            request.program,
+            actor=self.actor,
+            key=key,
+            branch_name=request.branch_name,
+            expected_head=request.expected_head,
+            expected_version=request.expected_version,
+            replay=request.replay,
+        ).model_dump(mode="json")
+
+    def a2a_submission(self, repository: UUID, key: str) -> dict[str, Any]:
+        return self.a2a_runs.submission(repository, actor=self.actor, key=key).model_dump(
+            mode="json"
+        )
 
     def prepare_collaboration(
         self, repository: UUID, request: NewCollaboration, key: str
@@ -179,6 +216,12 @@ class ManagementService:
     def create_merge_proposal(
         self, repository: UUID, request: NewMergeProposal, key: str
     ) -> dict[str, Any]:
+        for pin in (request.ours, request.theirs):
+            self._authorize_run(repository, UUID(pin.source_run_id))
+            if self._authorize_commit(repository, pin.head):
+                raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "A2A 状态不属于研究语义合并范围")
+        if request.selected_base:
+            self._authorize_commit(repository, request.selected_base)
         return self.merge_proposals.create(repository, request, actor=self.actor, key=key)
 
     def merge_proposals_list(
@@ -189,6 +232,10 @@ class ManagementService:
     def merge_bases(
         self, repository: UUID, ours: str, theirs: str, *, selected: str | None = None
     ) -> dict[str, Any]:
+        self._authorize_commit(repository, ours)
+        self._authorize_commit(repository, theirs)
+        if selected:
+            self._authorize_commit(repository, selected)
         return (
             MergePreviewService(self.history)
             .bases(repository, ours, theirs, selected=selected)
@@ -618,6 +665,7 @@ class ManagementService:
                 "semantic_merge",
                 "merged_run_initialization",
                 "collaboration",
+                "a2a",
             ],
             "worker": {"status": "unknown", "reason": "no_readiness_probe"},
             "execution_environment": {"status": "unknown", "reason": "policy_is_not_readiness"},
@@ -627,14 +675,14 @@ class ManagementService:
         self, repository_id: UUID, *, after_id: UUID | None = None, limit: int = 30
     ) -> dict[str, Any]:
         result: dict[str, Any] = public(
-            self.inspection.runs(repository_id, after_id=after_id, limit=limit)
+            self.inspection.runs(repository_id, after_id=after_id, limit=limit, actor=self.actor)
         )
         return result
 
     def commit_artifacts(
         self, repository_id: UUID, commit_id: str, *, after_id: UUID | None = None, limit: int = 30
     ) -> dict[str, Any]:
-        self.collaboration_views.authorize_commit(repository_id, commit_id, actor=self.actor)
+        self._authorize_commit(repository_id, commit_id)
         result: dict[str, Any] = public(
             self.inspection.artifacts(repository_id, commit_id, after_id=after_id, limit=limit)
         )
@@ -643,14 +691,14 @@ class ManagementService:
     def executions(
         self, repository_id: UUID, run_id: UUID, *, after_id: UUID | None = None, limit: int = 30
     ) -> dict[str, Any]:
-        self.collaboration_views.authorize_run(repository_id, run_id, actor=self.actor)
+        self._authorize_run(repository_id, run_id)
         result: dict[str, Any] = public(
             self.execution_views.list(repository_id, run_id, after_id=after_id, limit=limit)
         )
         return result
 
     def execution(self, repository_id: UUID, run_id: UUID, call_id: UUID) -> dict[str, Any]:
-        self.collaboration_views.authorize_run(repository_id, run_id, actor=self.actor)
+        self._authorize_run(repository_id, run_id)
         result: dict[str, Any] = public(self.execution_views.detail(repository_id, run_id, call_id))
         return result
 
@@ -664,7 +712,7 @@ class ManagementService:
         offset: int = 0,
         limit: int = 65536,
     ) -> tuple[dict[str, Any], bytes]:
-        self.collaboration_views.authorize_run(repository_id, run_id, actor=self.actor)
+        self._authorize_run(repository_id, run_id)
         return self.execution_views.content(
             repository_id, run_id, call_id, resource, offset=offset, limit=limit
         )
@@ -672,6 +720,11 @@ class ManagementService:
     def replay(
         self, repository_id: UUID, payload: RecordedReplay | LiveReplay, key: str
     ) -> dict[str, Any]:
+        if self._authorize_run(repository_id, UUID(payload.source_run_id)):
+            raise AgentGitError(
+                ErrorCode.UNSUPPORTED_SCHEMA, "A2A 任务须通过明确A2A入口选择执行模式"
+            )
+        self._authorize_commit(repository_id, payload.from_commit)
         route = "POST /replays"
         body = payload.model_dump(mode="json")
         digest = self._mutation_digest(key, repository_id, body)
@@ -691,6 +744,8 @@ class ManagementService:
         )
 
     def create_branch(self, repository_id: UUID, payload: NewBranch, key: str) -> dict[str, Any]:
+        self._authorize_run(repository_id, UUID(payload.source_run_id))
+        self._authorize_commit(repository_id, payload.from_commit)
         return self._mutate(
             "POST /branches",
             key,
@@ -722,7 +777,7 @@ class ManagementService:
     ) -> dict[str, Any]:
         head = self.history.branch(repository_id, branch_name)["head_commit_id"]
         if head is not None:
-            self.collaboration_views.authorize_commit(repository_id, head, actor=self.actor)
+            self._authorize_commit(repository_id, head)
         return self.versions.log(
             repository_id,
             branch_name=branch_name,
@@ -731,16 +786,19 @@ class ManagementService:
         )
 
     def checkout(self, repository_id: UUID, commit_id: str) -> dict[str, Any]:
-        self.collaboration_views.authorize_commit(repository_id, commit_id, actor=self.actor)
+        self._authorize_commit(repository_id, commit_id)
         return self.versions.checkout(repository_id, commit_id)
 
     def behavioral_trace(self, repository_id: UUID, run_id: UUID) -> dict[str, Any]:
-        self.collaboration_views.authorize_run(repository_id, run_id, actor=self.actor)
+        self._authorize_run(repository_id, run_id)
         return self.behavior.trace(repository_id, run_id).model_dump(mode="json")
 
     def create_debug_report(
         self, repository_id: UUID, payload: NewDebugReport, key: str
     ) -> dict[str, Any]:
+        self._authorize_run(repository_id, UUID(payload.failed_run_id))
+        if payload.reference_run_id:
+            self._authorize_run(repository_id, UUID(payload.reference_run_id))
         route = "POST /debug-reports"
         body = payload.model_dump(mode="json")
         digest = self._mutation_digest(key, repository_id, body)
@@ -783,15 +841,15 @@ class ManagementService:
         return self.debug_reports.listing(repository_id, after_id=after_id, limit=limit)
 
     def behavioral_diff(self, repository_id: UUID, left: UUID, right: UUID) -> dict[str, Any]:
-        self.collaboration_views.authorize_run(repository_id, left, actor=self.actor)
-        self.collaboration_views.authorize_run(repository_id, right, actor=self.actor)
+        self._authorize_run(repository_id, left)
+        self._authorize_run(repository_id, right)
         return self.behavior.compare(repository_id, left, right)
 
     def diff(
         self, repository_id: UUID, left: str, right: str, *, after: int = 0, limit: int = 100
     ) -> dict[str, Any]:
-        self.collaboration_views.authorize_commit(repository_id, left, actor=self.actor)
-        self.collaboration_views.authorize_commit(repository_id, right, actor=self.actor)
+        self._authorize_commit(repository_id, left)
+        self._authorize_commit(repository_id, right)
         return self.versions.diff(repository_id, left, right, after=after, limit=limit)
 
     @classmethod
@@ -957,7 +1015,7 @@ class ManagementService:
     def control(
         self, repository_id: UUID, run_id: UUID, action: str, payload: ControlRun, key: str
     ) -> dict[str, Any]:
-        self.collaboration_views.authorize_run(repository_id, run_id, actor=self.actor)
+        self._authorize_run(repository_id, run_id)
         return self._mutate(
             f"POST /runs/{run_id}/{action}",
             key,
@@ -978,6 +1036,17 @@ class ManagementService:
     def decide(
         self, repository_id: UUID, approval_id: UUID, payload: DecideApproval, key: str
     ) -> dict[str, Any]:
+        with self.history.engine.connect() as connection:
+            approval_run = connection.execute(
+                sa.select(TABLES["approvals"].c.run_id).where(
+                    TABLES["approvals"].c.repository_id == repository_id,
+                    TABLES["approvals"].c.id == approval_id,
+                )
+            ).scalar_one_or_none()
+        if approval_run is None:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "审批不可访问")
+        self._authorize_run(repository_id, approval_run)
+
         def action(connection: Connection) -> dict[str, Any]:
             table = TABLES["approvals"]
             row = (
@@ -1013,7 +1082,7 @@ class ManagementService:
         )
 
     def run(self, repository_id: UUID, run_id: UUID) -> dict[str, Any]:
-        self.collaboration_views.authorize_run(repository_id, run_id, actor=self.actor)
+        self._authorize_run(repository_id, run_id)
         row = self.jobs.run(repository_id, run_id)
         result: dict[str, Any] = public(row)
         branch = self.history.branch(repository_id, row["branch_name"])
@@ -1042,6 +1111,8 @@ class ManagementService:
                 result["adapter"] = self.collaboration_views.role(
                     repository_id, run_id, actor=self.actor
                 )
+            if job is not None and job["kind"] == "a2a_run":
+                result["adapter"] = self.a2a_views.summary(repository_id, run_id, actor=self.actor)
             if job is not None and job["kind"] == "langgraph_run":
                 graph_service = LangGraphRunService(self.jobs)
                 graph_payload = graph_service.payload(repository_id, job["id"])
@@ -1326,7 +1397,7 @@ class ManagementService:
     def events(
         self, repository_id: UUID, run_id: UUID, after_seq: int, limit: int
     ) -> dict[str, Any]:
-        self.collaboration_views.authorize_run(repository_id, run_id, actor=self.actor)
+        self._authorize_run(repository_id, run_id)
         rows = self.history.events(repository_id, run_id, after=after_seq, limit=limit)
         items = []
         for row in rows:
@@ -1338,7 +1409,7 @@ class ManagementService:
         return {"items": items, "next_after_seq": rows[-1]["seq"] if rows else after_seq}
 
     def artifacts(self, repository_id: UUID, run_id: UUID) -> dict[str, Any]:
-        self.collaboration_views.authorize_run(repository_id, run_id, actor=self.actor)
+        self._authorize_run(repository_id, run_id)
         row = self.jobs.run(repository_id, run_id)
         return {
             "items": public(self.history.artifacts(repository_id, row["checkpoint_commit_id"]))
@@ -1360,7 +1431,7 @@ class ManagementService:
             )
         if row is None:
             raise AgentGitError(ErrorCode.NOT_FOUND, "产物不可访问")
-        self.collaboration_views.authorize_commit(repository_id, row["commit_id"], actor=self.actor)
+        self._authorize_commit(repository_id, row["commit_id"])
         return public(dict(row)), self.history.read_artifact(repository_id, artifact_id)
 
     def repository(self, repository_id: UUID) -> dict[str, Any]:
@@ -1402,6 +1473,7 @@ class ManagementService:
     def approvals(
         self, repository_id: UUID, run_id: UUID, after_seq: int = 0, limit: int = 100
     ) -> dict[str, Any]:
+        self._authorize_run(repository_id, run_id)
         if after_seq < 0 or not 1 <= limit <= 1000:
             raise AgentGitError(ErrorCode.VALIDATION, "审批分页参数越界")
         table = TABLES["approvals"]

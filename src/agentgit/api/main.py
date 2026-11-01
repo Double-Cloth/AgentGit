@@ -19,6 +19,8 @@ from starlette.exceptions import HTTPException
 from agentgit import __version__
 from agentgit.api.security import LocalBoundary, RequestStats, error_response
 from agentgit.config import Settings
+from agentgit.core.a2a import A2AServer
+from agentgit.core.a2a_runs import NewA2ARun
 from agentgit.core.canonical import encode
 from agentgit.core.collaboration_controls import CollaborationControlRequest
 from agentgit.core.collaboration_runs import NewCollaboration
@@ -54,7 +56,7 @@ from agentgit.core.repair_reviews import DecideRepairReview
 from agentgit.core.repair_studies import NewRepairStudy
 from agentgit.core.versions import NewBranch, parse_replay
 from agentgit.services.execution_views import ExecutionResource
-from agentgit.services.management import ManagementService
+from agentgit.services.management import ManagementService, public
 from agentgit.storage.database import probe_database
 
 Repository = Annotated[UUID, Header(alias="X-Repository-ID")]
@@ -179,6 +181,61 @@ def create_app(
         if repository_id != repo:
             raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
         return service.runs(repo, after_id=after_id, limit=limit)
+
+    @app.post("/a2a/bind")
+    def bind_a2a(
+        body: dict[str, Any], service: Annotated[ManagementService, Depends(get_manager)]
+    ) -> dict[str, Any]:
+        return service.bind_a2a(parse_contract(encode(body), A2AServer))
+
+    @app.post("/repositories/{repository_id}/a2a-runs", status_code=202)
+    def submit_a2a(
+        repository_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.submit_a2a(repo, parse_contract(encode(body), NewA2ARun), key)
+
+    @app.get("/repositories/{repository_id}/a2a-runs")
+    def a2a_runs(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        result: dict[str, Any] = public(
+            service.a2a_views.listing(repo, actor=service.actor, after_id=after_id, limit=limit)
+        )
+        return result
+
+    @app.get("/repositories/{repository_id}/a2a-submissions")
+    def a2a_submission(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        key: Annotated[str, Query(min_length=1, max_length=200)],
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.a2a_submission(repo, key)
+
+    @app.get("/repositories/{repository_id}/a2a-runs/{run_id}/program")
+    def a2a_program(
+        repository_id: UUID,
+        run_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.a2a_views.program(repo, run_id, actor=service.actor)
 
     @app.post("/repositories/{repository_id}/collaborations/prepare", status_code=201)
     def prepare_collaboration(
