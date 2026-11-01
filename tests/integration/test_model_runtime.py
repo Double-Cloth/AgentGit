@@ -1,5 +1,6 @@
 """真实 Job/Worker 和供应商 Adapter 接线；HTTP 使用离线契约替身，不声称模型质量。"""
 
+import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -576,14 +577,45 @@ def test_invalid_effective_run_budget_is_rejected_before_job_creation(history, t
         )
 
 
+@pytest.mark.parametrize(
+    "limits",
+    [
+        pytest.param(BudgetLimits(max_cost_micro_usd=0), id="zero-cost"),
+        pytest.param(
+            BudgetLimits(max_response_bytes=2047, max_cost_micro_usd=100_000),
+            id="response-below-minimum",
+        ),
+    ],
+)
 def test_invalid_effective_live_budget_returns_validation_before_creating_branch(
     history,
     tmp_path,
     monkeypatch,
+    limits,
 ):
-    service, repo, _, queue, submitted, _ = setup(history, tmp_path, monkeypatch)
+    service, repo, _, queue, submitted, http = setup(history, tmp_path, monkeypatch)
     assert Worker(queue).run_once()["status"] == "completed"
     manager = ManagementService(service)
+
+    def fingerprint():
+        with history.engine.connect() as connection:
+            rows = {
+                name: sorted(
+                    json.dumps(dict(row), sort_keys=True, default=str)
+                    for row in connection.execute(sa.select(table)).mappings()
+                )
+                for name, table in TABLES.items()
+            }
+        objects = {
+            path.relative_to(history.objects.root).as_posix(): hashlib.sha256(
+                path.read_bytes()
+            ).hexdigest()
+            for path in history.objects.root.rglob("*")
+            if path.is_file()
+        }
+        return rows, objects, len(http.calls), http.generations
+
+    before = fingerprint()
     with pytest.raises(AgentGitError) as error:
         manager.replay(
             repo,
@@ -591,11 +623,12 @@ def test_invalid_effective_live_budget_returns_validation_before_creating_branch
                 source_run_id=submitted.run_id,
                 from_commit=commits(history, repo)[8],
                 branch_name="invalid-live",
-                budget=BudgetLimits(max_cost_micro_usd=0),
+                budget=limits,
             ),
             "invalid-live",
         )
     assert error.value.code == ErrorCode.VALIDATION
+    assert fingerprint() == before
     with history.engine.connect() as connection:
         assert (
             connection.execute(

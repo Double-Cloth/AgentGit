@@ -239,7 +239,15 @@ class ReplayService:
         if request.budget is not None:
             if not request.budget.within(config.limits):
                 raise AgentGitError(ErrorCode.FORBIDDEN, "Live 预算不能扩大新配置授权上限")
-            config = evolve(config, limits=request.budget)
+            config = parse_contract(
+                encode(
+                    {
+                        **config.model_dump(mode="json"),
+                        "limits": request.budget.model_dump(mode="json"),
+                    }
+                ),
+                AgentConfig,
+            )
         live = prepare_live(snapshot, config, request.overrides, self.history.objects.get)
         state_obj = self.history.objects.put_json(
             ObjectType.STATE, live.snapshot.model_dump(mode="json")
