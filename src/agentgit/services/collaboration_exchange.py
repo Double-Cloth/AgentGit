@@ -265,6 +265,21 @@ class CollaborationExchange:
             "program_ref": state.program_ref,
             **(details or {}),
         }
+        # 与 History 提交一致：先发布不可变对象，持锁事务只登记引用和推进投影。
+        export_objects = {
+            path: self.history.objects.put(
+                ObjectType.BLOB, self.history.objects.get(ref, ObjectType.BLOB)
+            )
+            for path, ref in state.exports.items()
+        }
+        pending_object = (
+            self.history.objects.put(
+                ObjectType.BLOB,
+                self.history.objects.get(state.pending.request_ref, ObjectType.BLOB),
+            )
+            if state.pending is not None
+            else None
+        )
 
         def project(connection: Connection) -> None:
             job = self.queue.guard(connection, self.lease, self.lease.run_id)
@@ -292,10 +307,7 @@ class CollaborationExchange:
                 now = connection.execute(sa.select(sa.func.clock_timestamp())).scalar_one()
                 if job["deadline_at"] is not None and job["deadline_at"] <= now:
                     raise AgentGitError(ErrorCode.CONTROL_REQUESTED, "budget_exhausted")
-            for path, ref in state.exports.items():
-                obj = self.history.objects.put(
-                    ObjectType.BLOB, self.history.objects.get(ref, ObjectType.BLOB)
-                )
+            for path, obj in export_objects.items():
                 self.history._ref(
                     connection,
                     self.lease.repository_id,
@@ -304,15 +316,11 @@ class CollaborationExchange:
                     str(self.lease.run_id),
                     path,
                 )
-            if state.pending is not None:
-                obj = self.history.objects.put(
-                    ObjectType.BLOB,
-                    self.history.objects.get(state.pending.request_ref, ObjectType.BLOB),
-                )
+            if pending_object is not None:
                 self.history._ref(
                     connection,
                     self.lease.repository_id,
-                    obj,
+                    pending_object,
                     "collaboration_task",
                     self.task.task_id,
                     "call_input",
@@ -747,6 +755,25 @@ class CollaborationExchange:
         )
         if expected_state is not None and updated != expected_state:
             raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "实际交换批次与重算状态不符")
+        message_objects = [
+            (
+                self.history.objects.put_json(ObjectType.BLOB, envelope.model_dump(mode="json")),
+                self.history.objects.put(
+                    ObjectType.BLOB,
+                    self.history.objects.get(envelope.payload_ref, ObjectType.BLOB),
+                ),
+            )
+            for envelope in envelopes
+        ]
+        publication_objects = [
+            (
+                self.history.objects.put_json(ObjectType.BLOB, head.model_dump(mode="json")),
+                self.history.objects.put(
+                    ObjectType.BLOB, self.history.objects.get(head.object_ref, ObjectType.BLOB)
+                ),
+            )
+            for head in heads
+        ]
 
         def project(c: Connection) -> None:
             groups = TABLES["collaborations"]
@@ -773,9 +800,7 @@ class CollaborationExchange:
             if count + len(envelopes) > 32:
                 raise AgentGitError(ErrorCode.BUDGET_EXHAUSTED, "协作消息超过固定上限")
             for index, envelope in enumerate(envelopes):
-                obj = self.history.objects.put_json(
-                    ObjectType.BLOB, envelope.model_dump(mode="json")
-                )
+                obj, payload = message_objects[index]
                 self.history._ref(
                     c,
                     self.lease.repository_id,
@@ -783,9 +808,6 @@ class CollaborationExchange:
                     "collaboration_message",
                     envelope.message_id,
                     "envelope",
-                )
-                payload = self.history.objects.put(
-                    ObjectType.BLOB, self.history.objects.get(envelope.payload_ref, ObjectType.BLOB)
                 )
                 self.history._ref(
                     c,
@@ -822,7 +844,7 @@ class CollaborationExchange:
                 ).scalar_one()
                 if latest != head.version - 1:
                     raise AgentGitError(ErrorCode.VERSION_CONFLICT, "共享版本已由另一发布者推进")
-                obj = self.history.objects.put_json(ObjectType.BLOB, head.model_dump(mode="json"))
+                obj, value = publication_objects[index]
                 self.history._ref(
                     c,
                     self.lease.repository_id,
@@ -830,9 +852,6 @@ class CollaborationExchange:
                     "collaboration_share",
                     str(self.group_id),
                     f"head:{head.path}:{head.version}",
-                )
-                value = self.history.objects.put(
-                    ObjectType.BLOB, self.history.objects.get(head.object_ref, ObjectType.BLOB)
                 )
                 self.history._ref(
                     c,
