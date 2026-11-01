@@ -13,6 +13,46 @@ const OTHER = '00000000-0000-4000-8000-000000000002';
 const FEATURES = ['run_pagination', 'historical_artifacts', 'execution_evidence', 'recorded', 'live', 'structural_diff'];
 const rejected = (code: string) => (error: unknown) => error instanceof DesktopError && error.code === code;
 
+test('A2A桥接只使用固定API路由，发现无Worker凭据，原键查询只读且提交保留版本', async () => {
+  const posts: { path: string; body: unknown; key: string | undefined }[] = [];
+  const f = await fixture({ features: [...FEATURES, 'a2a'], respond: (request, response) => {
+    if (request.method !== 'POST') return false;
+    const chunks: Buffer[] = [];
+    request.on('data', chunk => chunks.push(chunk)); request.on('end', () => { posts.push({ path: request.url!, body: JSON.parse(Buffer.concat(chunks).toString()), key: request.headers['idempotency-key'] as string | undefined }); response.end('{}'); });
+    return true;
+  } });
+  const server = { endpoint: 'http://127.0.0.1:8123', server_identity: 'local-research', principal_id: 'operator' };
+  const request = { program: {}, branch_name: 'main', expected_head: null, expected_version: 0 };
+  try {
+    await connect(f.controller);
+    await f.controller.handle('bindA2A', { server });
+    await f.controller.handle('submitA2A', { request, key: 'same-key' });
+    await f.controller.handle('getA2ASubmission', { key: 'same-key' });
+    assert.equal(f.requests.at(-1)!.url, `/repositories/${REPO}/a2a-submissions?key=same-key`);
+    await f.controller.handle('listA2A', { afterId: OTHER, limit: 20 });
+    assert.equal(f.requests.at(-1)!.url, `/repositories/${REPO}/a2a-runs?after_id=${OTHER}&limit=20`);
+    await f.controller.handle('getA2AProgram', { runId: OTHER });
+    assert.equal(f.requests.at(-1)!.url, `/repositories/${REPO}/a2a-runs/${OTHER}/program`);
+    assert.equal(posts.length, 2); assert.equal(posts[0]!.path, '/a2a/bind'); assert.equal(posts[0]!.key, undefined);
+    assert.deepEqual(posts[1], { path: `/repositories/${REPO}/a2a-runs`, body: { schema_version: 1, ...request }, key: 'same-key' });
+    const before = f.requests.length;
+    for (const [operation, input] of [
+      ['bindA2A', { server: { ...server, endpoint: 'http://localhost:8123' } }],
+      ['bindA2A', { server: { ...server, access_token: 'secret' } }],
+      ['bindA2A', { server: { ...server, timeout_ms: 30000 } }],
+      ['submitA2A', { request, key: 'x', url: 'http://evil.invalid' }],
+      ['submitA2A', { request: { ...request, expected_version: undefined }, key: 'x' }],
+      ['submitA2A', { request: { ...request, expected_head: '../private' }, key: 'x' }],
+      ['submitA2A', { request: { ...request, replay: { mode: 'live', source_run_id: OTHER, from_commit: 'a'.repeat(64), to_commit: 'a'.repeat(64) } }, key: 'x' }],
+      ['getA2ASubmission', { key: 'x&other=y' }], ['getA2AProgram', { runId: '../private' }], ['listA2A', { limit: 101 }],
+    ] as const) await assert.rejects(f.controller.handle(operation, input), rejected('validation'));
+    assert.equal(f.requests.length, before);
+  } finally { await f.close(); }
+  const old = await fixture();
+  try { await connect(old.controller); const before = old.requests.length; await assert.rejects(old.controller.handle('listA2A', {}), rejected('unsupported')); assert.equal(old.requests.length, before); }
+  finally { await old.close(); }
+});
+
 test('S12-C 固定桥接路由绑定所选项目，组版本和成对游标在 HTTP 前验证', async () => {
   const posts: { path: string; body: unknown; key: string | undefined }[] = [];
   const f = await fixture({ features: [...FEATURES, 'collaboration'], respond: (request, response) => {

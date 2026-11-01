@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import type { BinaryChunk, ExecutionResource, JsonObject } from '../shared/bridge';
+import type { BinaryChunk, ExecutionResource, Inputs, JsonObject } from '../shared/bridge';
 import { matchesEvidence } from '../shared/diagnosis';
 import BudgetSummary from './BudgetSummary';
 import RunAdapterSummary from './RunAdapterSummary';
@@ -19,23 +19,29 @@ export default function Timeline(props: PageProps) {
   const commit = useRead(() => commitId ? call(window.agentgit.getCommit({ commitId })) : Promise.resolve({} as JsonObject), [commitId]);
   const calls = useRead(() => props.runId ? call(window.agentgit.listExecutions({ runId: props.runId, limit: 100 })) : Promise.resolve({} as JsonObject), [props.runId, run.data?.status, run.data?.checkpoint_commit_id], 0, props.runId);
   const events = useEvents(props.runId);
-  const control = useAction(), keys = useRef(new Map<string, string>());
-  useEffect(() => { props.setSelectedCommit(''); setCallId(''); setAfterCommit(undefined); setBranch(''); }, [props.runId]);
+  const control = useAction(), pendingControl = useRef<Inputs['controlRun'] | null>(null);
+  const [unconfirmed, setUnconfirmed] = useState<Inputs['controlRun'] | null>(null);
+  useEffect(() => { props.setSelectedCommit(''); setCallId(''); setAfterCommit(undefined); setBranch(''); pendingControl.current = null; setUnconfirmed(null); }, [props.runId]);
   if (!props.runId) return <><div className="page-heading"><div><span className="eyebrow">TIMELINE</span><h1>时间线</h1><p>选择一次运行，追溯检查点与执行证据。</p></div></div><form className="inline-form panel" onSubmit={event => { event.preventDefault(); props.setRunId(lookup.trim()); }}><label className="grow">Run ID<input value={lookup} onChange={event => setLookup(event.target.value)} placeholder="粘贴 Run UUID" /></label><button disabled={!lookup.trim()}>打开运行</button></form></>;
   const snapshot = object(commit.data?.snapshot), fixedProgram = Boolean(fixedProgramKind(run.data));
   const selectedCall = callId || str(rows(calls.data?.items)[0]?.id);
   const change = (id: string) => { props.setSelectedCommit(id); setTab('state'); };
   const doControl = (action: 'pause' | 'resume' | 'cancel') => void control.run(async () => {
-    const version = Number(run.data?.state_version), identity = `${props.runId}:${action}:${version}`;
-    if (!keys.current.has(identity)) keys.current.set(identity, crypto.randomUUID());
-    await call(window.agentgit.controlRun({ runId: props.runId, action, expectedVersion: version, key: keys.current.get(identity)! })); run.refresh();
+    const saved = pendingControl.current ?? { runId: props.runId, action, expectedVersion: Number(run.data?.state_version), key: crypto.randomUUID() };
+    pendingControl.current = saved; setUnconfirmed(saved);
+    const reply = await window.agentgit.controlRun(saved);
+    if (!reply.ok && reply.error.code === 'version_conflict') {
+      pendingControl.current = null; setUnconfirmed(null); run.refresh();
+    }
+    await call(Promise.resolve(reply)); pendingControl.current = null; setUnconfirmed(null); run.refresh();
   });
-  return <><div className="page-heading"><div><span className="eyebrow">TIMELINE</span><h1>时间线</h1><p><code>{props.runId}</code> <Status value={run.data?.status} /></p></div><button disabled={!commitId} onClick={() => props.openBranch(props.runId, commitId)}>{fixedProgram ? '分支方式说明 →' : '从所选检查点分支 →'}</button></div>
+  return <><div className="page-heading"><div><span className="eyebrow">TIMELINE</span><h1>时间线</h1><p><code>{props.runId}</code> <Status value={run.data?.status} /></p></div><button disabled={!commitId} onClick={() => props.openBranch(props.runId, commitId)}>{fixedProgramKind(run.data) === 'a2a_program/v1' ? 'A2A 成功轨迹回放 →' : fixedProgram ? '分支方式说明 →' : '从所选检查点分支 →'}</button></div>
     <Notice>{run.error || history.error || calls.error || control.error}</Notice>
+    {unconfirmed && <div className="meter-attention"><p>控制请求未确认，保留原动作、版本与键。查询状态不会重发；重试只使用原请求。</p><p className="small">{unconfirmed.action} · 版本 {unconfirmed.expectedVersion} · <code>{unconfirmed.key}</code></p><button disabled={control.busy} onClick={run.refresh}>只读刷新当前状态</button><button disabled={control.busy} onClick={() => doControl(unconfirmed.action)}>显式重试原控制</button></div>}
     {!fixedProgram && <div className="button-group"><button onClick={() => props.openDiagnosis(props.runId)}>查看故障报告</button><button onClick={() => props.openRepair(props.runId, props.selectedCommit)}>在修复实验室核对</button></div>}
     {props.eventFocus?.runId === props.runId && <FocusedEvent key={`${props.eventFocus.runId}:${props.eventFocus.seq}:${props.eventFocus.eventId}`} target={props.eventFocus} />}
     {run.data?.status === 'queued' && <p className="muted" role="status">任务尚在排队，未取得执行进展。API 可用不代表 Worker 已就绪；若持续等待，请在后端检查 Worker 的启动状态。</p>}
-    {run.data && <><div className="run-summary"><span>模式 <strong>{str(run.data.mode) || 'standard'}</strong></span><span>分支 <code>{str(run.data.branch_name)}</code></span><span>控制请求 <code>{str(run.data.control_request) || '无'}</code> / <code>{str(run.data.control_status) || '无'}</code></span><div className="button-group"><button disabled={control.busy || !['queued', 'running', 'waiting_approval'].includes(str(run.data.status))} onClick={() => doControl('pause')}>请求暂停</button><button disabled={control.busy || run.data.status !== 'paused'} onClick={() => doControl('resume')}>恢复</button><button disabled={control.busy || !['queued', 'running', 'paused', 'waiting_approval', 'outcome_unknown'].includes(str(run.data.status))} onClick={() => doControl('cancel')}>请求取消</button></div></div>
+    {run.data && <><div className="run-summary"><span>模式 <strong>{str(run.data.mode) || 'standard'}</strong></span><span>分支 <code>{str(run.data.branch_name)}</code></span><span>状态版本 {String(run.data.state_version)}</span><span>控制请求 <code>{str(run.data.control_request) || '无'}</code> / <code>{str(run.data.control_status) || '无'}</code></span><div className="button-group"><button disabled={run.loading} onClick={run.refresh}>刷新运行状态</button><button disabled={control.busy || Boolean(unconfirmed) || !['queued', 'planning', 'running'].includes(str(run.data.status))} onClick={() => doControl('pause')}>请求暂停</button><button disabled={control.busy || Boolean(unconfirmed) || run.data.status !== 'paused'} onClick={() => doControl('resume')}>恢复</button><button disabled={control.busy || Boolean(unconfirmed) || !['queued', 'running', 'paused', 'waiting_approval', 'outcome_unknown'].includes(str(run.data.status))} onClick={() => doControl('cancel')}>请求取消</button></div></div>
     {run.data.mode === 'recorded' && !fixedProgram && <div className="explanation"><strong>Recorded · 历史验证与任务成功分别判断</strong><p>本 Run 不启动执行容器。逻辑状态、历史用量、实际零调用与逐检查点证明见下方 Replay 报告。查看原执行证据须明确打开来源 Run。</p><JsonView value={run.data.replay} />{object(run.data.replay).source_run_id && <button onClick={() => props.openTimeline(str(object(run.data?.replay).source_run_id))}>打开来源运行</button>}</div>}
     {object(run.data.adapter).kind === 'collaboration_role/v1' && props.openCollaboration && <button onClick={() => props.openCollaboration!(str(object(run.data?.adapter).collaboration_id))}>打开所属协作</button>}
     <RunAdapterSummary run={run.data} openSource={props.openTimeline} /><BudgetSummary run={run.data} />{!fixedProgram && <details className="budget-details"><summary>预算与来源原文</summary><JsonView value={{ budget: run.data.budget ?? null, replay: run.data.replay ?? null, origin_run_id: run.data.origin_run_id ?? null }} /></details>}</>}

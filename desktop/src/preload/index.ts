@@ -9,6 +9,7 @@ function method(operation: Operation) {
   };
 }
 const api: DesktopApi = {
+  bindA2A: method('bindA2A'), submitA2A: method('submitA2A'), listA2A: method('listA2A'), getA2ASubmission: method('getA2ASubmission'), getA2AProgram: method('getA2AProgram'),
   listCollaborations: method('listCollaborations'), getCollaboration: method('getCollaboration'), prepareCollaboration: method('prepareCollaboration'),
   startCollaboration: method('startCollaboration'), recordCollaboration: method('recordCollaboration'), controlCollaboration: method('controlCollaboration'),
   getCollaborationMessages: method('getCollaborationMessages'), getCollaborationShared: method('getCollaborationShared'),

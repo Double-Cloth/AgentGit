@@ -10,7 +10,7 @@ export function fixedProgramOrigin(run: JsonObject): string {
 }
 export function fixedProgramTitle(run: JsonObject): string {
   const kind = fixedProgramKind(run);
-  return kind === 'collaboration_role/v1' ? '四角色协作' : kind === 'langgraph_program/v1' ? 'LangGraph 固定图' : kind === 'mcp_single_call/v1' ? 'MCP 固定工具' : '适配器任务';
+  return kind === 'a2a_program/v1' ? 'A2A 远端任务' : kind === 'collaboration_role/v1' ? '四角色协作' : kind === 'langgraph_program/v1' ? 'LangGraph 固定图' : kind === 'mcp_single_call/v1' ? 'MCP 固定工具' : '适配器任务';
 }
 export function nativeNext(adapter: JsonObject): string {
   if (!text(adapter.native_ref)) return '尚无原生检查点';

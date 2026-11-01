@@ -2,7 +2,8 @@ import React, { useId } from 'react';
 import type { Json, JsonObject } from '../shared/bridge';
 import { fixedProgramKind, fixedProgramOrigin, fixedProgramTitle, nativeNext } from '../shared/fixed-program';
 import { integer } from '../shared/model-config';
-import { JsonView, object, short, str } from './ui';
+import { a2aCancel, a2aRemote } from '../shared/a2a';
+import { JsonView, object, short, Status, str } from './ui';
 
 function count(value: Json | undefined): string { const n = integer(value); return n === undefined ? '未知' : n.toLocaleString('zh-CN'); }
 
@@ -11,6 +12,15 @@ export default function RunAdapterSummary({ run, openSource }: { run: JsonObject
   if (!kind) return null;
   const graph = kind === 'langgraph_program/v1', origin = fixedProgramOrigin(run);
   const usage = object(adapter.logical_usage), recording = object(adapter.recording), fork = object(adapter.fork);
+  if (kind === 'a2a_program/v1') return <section className="budget-summary adapter-summary" aria-labelledby={id}><h2 id={id}>A2A 远端任务 · {run.mode === 'recorded' ? 'Recorded' : 'Live'}</h2>
+    <p>{str(adapter.server_identity)} / {str(adapter.principal_id)} · <code>{str(adapter.endpoint)}</code></p>
+    <dl className="facts"><div><dt>本地运行状态</dt><dd><Status value={adapter.local_status} /></dd></div><div><dt>{run.mode === 'recorded' ? '历史远端状态' : '远端最后确认状态'}</dt><dd>{a2aRemote(adapter.remote_state)}</dd></div><div><dt>远端取消确认</dt><dd>{a2aCancel(adapter.remote_cancel_status)}</dd></div><div><dt>逻辑步骤 / 工具</dt><dd>{count(usage.steps)} / {count(usage.tool_calls)}</dd></div><div><dt>本次实际尝试</dt><dd>{count(adapter.actual_attempts)}</dd></div><div><dt>已登记调用意图</dt><dd>{count(adapter.registered_attempts)}</dd></div><div><dt>本次已保存响应字节</dt><dd>{count(adapter.actual_response_bytes)}</dd></div>{run.mode === 'recorded' && <div><dt>来源消费游标</dt><dd>{count(adapter.cursor)}</dd></div>}</dl>
+    {adapter.waiting_for && <p role="status">{adapter.waiting_for === 'input' ? '服务要求输入：仅使用已预声明的后续消息，并逐次审批。' : '服务要求认证：请由后端核对凭据；此处不能补交密钥。'}</p>}
+    {run.mode === 'recorded' ? <p>本次仅重算历史逻辑状态与产物，协议／工具／模型实际调用为0。下方 task/context 属于历史来源；取消只停止本地回放，不取消历史远端任务。</p> : <p>暂停只控制本地推进。取消请求与远端确认分别展示，远端取消另需精确审批。结果未知时不自动重发，已登记意图不等于已确认的实际次数。</p>}
+    <p className="small muted">无模型调用 · {str(adapter.release)} / HTTP+JSON {str(adapter.protocol_version)}。字节计量为网关已保存结果，不是socket流量。</p>
+    <details><summary>{run.mode === 'recorded' ? '历史远端标识、状态hash与来源' : '已确认远端标识、状态hash与固定预算'}</summary><JsonView value={adapter} /></details>
+    {origin && <button onClick={() => openSource(origin)}>打开来源运行</button>}
+  </section>;
   if (kind === 'collaboration_role/v1') return <section className="budget-summary adapter-summary" aria-labelledby={id}><h2 id={id}>四角色协作 · {str(adapter.role)}</h2>
     <p>协作 <code>{str(adapter.collaboration_id)}</code> · 当前阶段 {str(adapter.phase)}。下方运行控制只作用于本角色；整组控制请回到运行页的四角色协作。</p>
     <dl className="facts"><div><dt>逻辑模型 / 工具 / 步数</dt><dd>{count(usage.model_calls)} / {count(usage.tool_calls)} / {count(usage.steps)}</dd></div><div><dt>本次物理调用意图</dt><dd>{count(adapter.physical_call_intents)}</dd></div><div><dt>复用来源调用</dt><dd>{count(adapter.reused_calls)}</dd></div><div><dt>未知调用</dt><dd>{count(adapter.unknown_calls)}</dd></div></dl>

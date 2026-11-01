@@ -25,6 +25,11 @@ export interface ConnectionState {
   message: string;
 }
 export interface Inputs {
+  bindA2A: { server: JsonObject };
+  submitA2A: { request: JsonObject; key: string };
+  listA2A: Page;
+  getA2ASubmission: { key: string };
+  getA2AProgram: { runId: string };
   listCollaborations: Page;
   getCollaboration: { groupId: string };
   prepareCollaboration: { request: JsonObject; key: string };

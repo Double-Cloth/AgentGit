@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { BinaryChunk, ConnectionState, Json, JsonObject } from '../shared/bridge';
 import { ApiClient, DesktopError, normalizeBaseUrl, type ApiRequest } from './api-client';
+import { a2aServer } from '../shared/a2a';
 
 type Args = Record<string, unknown>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -310,7 +311,39 @@ export class BusinessController {
       }
     }
     const collaborationPath = () => `/repositories/${this.state.repositoryId!}/collaborations`;
+    const a2aPath = () => `/repositories/${this.state.repositoryId!}/a2a-runs`;
+    if (['bindA2A', 'submitA2A', 'listA2A', 'getA2ASubmission', 'getA2AProgram'].includes(operation)) {
+      this.connected();
+      if (!Array.isArray(this.descriptor?.features) || !this.descriptor.features.includes('a2a')) throw new DesktopError('unsupported', '当前后端未提供A2A，请更新后端并重新检查连接');
+    }
     switch (operation) {
+      case 'bindA2A': {
+        input = fields(raw, ['server']);
+        const server = fields(jsonObject(input.server), ['endpoint', 'server_identity', 'principal_id'], ['schema_version', 'timeout_ms', 'max_response_bytes', 'protocol_version', 'upstream_release']);
+        if (Object.hasOwn(server, 'schema_version') && server.schema_version !== 1) throw new DesktopError('validation', 'A2A登记版本无效');
+        let registered: JsonObject;
+        try { registered = a2aServer(text(server.endpoint, 100), text(server.server_identity, 64), text(server.principal_id, 64)); }
+        catch { throw new DesktopError('validation', 'A2A仅允许明确登记的回环根地址及非秘密主体'); }
+        if (Object.entries(server).some(([name, value]) => registered[name] !== value)) throw new DesktopError('validation', '桌面只支持固定A2A版本和发现边界');
+        return { method: 'POST', path: '/a2a/bind', body: registered };
+      }
+      case 'submitA2A': {
+        input = fields(raw, ['request', 'key']);
+        const body = fields(jsonObject(input.request), ['program', 'branch_name', 'expected_head', 'expected_version'], ['schema_version', 'replay']);
+        if (Object.hasOwn(body, 'schema_version') && body.schema_version !== 1) throw new DesktopError('validation', 'A2A提交版本无效');
+        jsonObject(body.program); text(body.branch_name, 100);
+        if (body.expected_head !== null) digest(body.expected_head);
+        number(required(body.expected_version), -1, Number.MAX_SAFE_INTEGER);
+        if (body.replay !== undefined && body.replay !== null) {
+          const replay = fields(jsonObject(body.replay), ['source_run_id', 'from_commit', 'to_commit'], ['mode', 'schema_version']);
+          id(replay.source_run_id); digest(replay.from_commit); digest(replay.to_commit);
+          if ((replay.mode !== undefined && replay.mode !== 'recorded') || (replay.schema_version !== undefined && replay.schema_version !== 1)) throw new DesktopError('validation', 'A2A来源必须为明确Recorded');
+        }
+        return post(a2aPath(), body as JsonObject);
+      }
+      case 'listA2A': input = fields(raw, [], ['afterId', 'limit']); return page(a2aPath());
+      case 'getA2ASubmission': input = fields(raw, ['key']); return get(query(`/repositories/${this.state.repositoryId!}/a2a-submissions`, { key: key(input.key) }));
+      case 'getA2AProgram': input = fields(raw, ['runId']); return get(`${a2aPath()}/${id(input.runId)}/program`);
       case 'listCollaborations': input = fields(raw, [], ['afterId', 'limit']); return page(collaborationPath());
       case 'getCollaboration': input = fields(raw, ['groupId']); return get(`${collaborationPath()}/${id(input.groupId)}`);
       case 'prepareCollaboration': input = fields(raw, ['request', 'key']); return post(`${collaborationPath()}/prepare`, jsonObject(input.request));
