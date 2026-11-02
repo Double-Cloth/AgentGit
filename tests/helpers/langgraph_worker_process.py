@@ -70,9 +70,7 @@ def main():
         history = HistoryService(
             engine, ObjectStore(Path(os.environ["AGENTGIT_GRAPH_TEST_OBJECTS"]))
         )
-        queue = JobService(
-            ResearchService(history, Path(os.environ["AGENTGIT_GRAPH_TEST_DATA"])), lease_ms=1000
-        )
+        queue = JobService(ResearchService(history, Path(os.environ["AGENTGIT_GRAPH_TEST_DATA"])))
         Worker(queue, fault=wait).run_once()
     finally:
         engine.dispose()

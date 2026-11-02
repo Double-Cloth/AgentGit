@@ -109,7 +109,8 @@ def case(history, server, tmp_path, *, pause=True, submit=True):
         review_note="来源已核对",
         graph=LangGraphDefinition(pause_before=("review",) if pause else ()),
     )
-    queue = JobService(ResearchService(history, tmp_path / "data"), lease_ms=1000)
+    # 普通图功能使用生产默认租约；短租约续租、到期和 fencing 由专门反例验证。
+    queue = JobService(ResearchService(history, tmp_path / "data"))
     service = LangGraphRunService(queue)
     repo = history.create_repository("LangGraph 固定图真实 Worker")
     submitted = (

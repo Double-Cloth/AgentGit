@@ -90,12 +90,16 @@ def server(tmp_path):
     )
     try:
         deadline = monotonic() + 10
-        while not ready.exists():
+        while True:
             if process.poll() is not None:
                 pytest.fail(process.stderr.read().decode(errors="replace"))
             assert monotonic() < deadline, "MCP fixture 未就绪"
-            Event().wait(0.02)
-        endpoint = json.loads(ready.read_text("utf-8"))["endpoint"]
+            try:
+                endpoint = json.loads(ready.read_text("utf-8"))["endpoint"]
+                break
+            except (FileNotFoundError, PermissionError):
+                # Windows 的短暂共享访问拒绝仍计入原就绪时限。
+                Event().wait(0.02)
         opener = build_opener(ProxyHandler({}))
 
         def counts():
