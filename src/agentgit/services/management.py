@@ -3,16 +3,28 @@
 from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
+from importlib.resources import files
 from typing import Any
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 from sqlalchemy.engine import Connection
 
+from agentgit import __version__
+from agentgit.adapters.a2a import A2AClient
+from agentgit.adapters.execution.policy import bundled_policy
 from agentgit.config import Settings
+from agentgit.core.a2a import A2AServer
+from agentgit.core.a2a_runs import NewA2ARun
 from agentgit.core.canonical import ObjectType, encode, object_digest
+from agentgit.core.collaboration_controls import CollaborationControlRequest
+from agentgit.core.collaboration_runs import NewCollaboration
+from agentgit.core.debug_reports import NewDebugReport
 from agentgit.core.effects import ToolPolicy
 from agentgit.core.errors import AgentGitError, ErrorCode
+from agentgit.core.experiments import FreezeValidator, NewExperiment
+from agentgit.core.interventions import NewIntervention
+from agentgit.core.langgraph_runs import LangGraphRunState
 from agentgit.core.management import (
     ControlRun,
     DecideApproval,
@@ -21,12 +33,56 @@ from agentgit.core.management import (
     NewTask,
     SubmitRun,
 )
-from agentgit.core.models import parse_contract
-from agentgit.core.research import AgentState, BudgetUsage
-from agentgit.core.versions import LiveReplay, NewBranch, RecordedReplay
+from agentgit.core.mcp_runs import MCPRecordedSpec, MCPRunState
+from agentgit.core.merge_proposals import (
+    ApproveMergeProposal,
+    NewMergeProposal,
+    PrepareMergeReview,
+    RejectMergeProposal,
+    ReplaceMergeRevision,
+    ValidateMergeRevision,
+)
+from agentgit.core.merge_runs import ForkMergedBranch, NewMergedRun
+from agentgit.core.model_usage import OpenAIOptions, price_micro_usd
+from agentgit.core.models import CallIntent, parse_contract
+from agentgit.core.repair import NewRepairSearch
+from agentgit.core.repair_pools import (
+    NewPreparedRepairSearch,
+    NewRepairValidationSuite,
+    RegressionOrigin,
+)
+from agentgit.core.repair_reviews import DecideRepairReview
+from agentgit.core.repair_studies import NewRepairStudy
+from agentgit.core.research import AgentConfig, AgentState, BudgetUsage
+from agentgit.core.versions import LiveReplay, NewBranch, RecordedRange, RecordedReplay
+from agentgit.runtime.model_budget import call_budget
+from agentgit.services.a2a_runs import A2ARunService
+from agentgit.services.a2a_views import A2AViewService
 from agentgit.services.approvals import ApprovalService
+from agentgit.services.collaboration import CollaborationService
+from agentgit.services.collaboration_control import CollaborationCoordinator
+from agentgit.services.collaboration_controls import CollaborationControlService
+from agentgit.services.collaboration_views import CollaborationViewService
+from agentgit.services.debug_experiments import DebugExperimentService
+from agentgit.services.debug_reports import DebugReportService
+from agentgit.services.diagnosis import BehaviorService
+from agentgit.services.execution_views import ExecutionResource, ExecutionViewService
+from agentgit.services.experiments import ExperimentService
 from agentgit.services.history import TABLES, HistoryService
+from agentgit.services.inspection import InspectionService
 from agentgit.services.jobs import JobService
+from agentgit.services.langgraph_runs import LangGraphRunService
+from agentgit.services.mcp_runs import MCPRunService
+from agentgit.services.merge import MergePreviewService
+from agentgit.services.merge_proposals import MergeProposalService
+from agentgit.services.merge_runs import MergeRunService
+from agentgit.services.repair_confirmation import RepairConfirmationService
+from agentgit.services.repair_jobs import RepairJobService
+from agentgit.services.repair_pools import RepairValidationPoolService
+from agentgit.services.repair_reviews import RepairReviewService
+from agentgit.services.repair_searches import RepairSearchService
+from agentgit.services.repair_studies import RepairStudyService
+from agentgit.services.repair_templates import prepare_templates
 from agentgit.services.replays import ReplayService
 from agentgit.services.research import ResearchService
 from agentgit.services.versions import VersionService
@@ -52,23 +108,644 @@ class ManagementService:
             raise AgentGitError(ErrorCode.CONFIGURATION, "本机操作者身份无效")
         self.research, self.history, self.actor = research, research.history, actor
         self.jobs = JobService(research)
+        self.mcp_runs = MCPRunService(self.jobs)
+        self.a2a_runs = A2ARunService(self.jobs)
+        self.a2a_views = A2AViewService(self.jobs)
+        self.collaboration_views = CollaborationViewService(self.jobs)
         self.versions = VersionService(self.history)
         self.replays = ReplayService(research)
+        self.inspection = InspectionService(self.history)
+        self.behavior = BehaviorService(self.history)
+        self.debug_reports = DebugReportService(self.history)
+        self.execution_views = ExecutionViewService(self.history)
+        self.experiments = ExperimentService(research)
+        self.debug_experiments = DebugExperimentService(self.debug_reports, self.experiments)
+        self.merge_proposals = MergeProposalService(self.history)
+        self.merge_runs = MergeRunService(research)
+
+    def _authorize_run(self, repository: UUID, run: UUID) -> bool:
+        self.collaboration_views.authorize_run(repository, run, actor=self.actor)
+        return self.a2a_views.authorize_run(repository, run, actor=self.actor)
+
+    def _authorize_commit(self, repository: UUID, commit: str) -> bool:
+        self.collaboration_views.authorize_commit(repository, commit, actor=self.actor)
+        return self.a2a_views.authorize_commit(repository, commit, actor=self.actor)
+
+    def bind_a2a(self, server: A2AServer) -> dict[str, Any]:
+        return A2AClient(server).discover().model_dump(mode="json")
+
+    def submit_a2a(self, repository: UUID, request: NewA2ARun, key: str) -> dict[str, Any]:
+        if request.expected_head is not None:
+            self._authorize_commit(repository, request.expected_head)
+        return self.a2a_runs.submit(
+            repository,
+            request.program,
+            actor=self.actor,
+            key=key,
+            branch_name=request.branch_name,
+            expected_head=request.expected_head,
+            expected_version=request.expected_version,
+            replay=request.replay,
+        ).model_dump(mode="json")
+
+    def a2a_submission(self, repository: UUID, key: str) -> dict[str, Any]:
+        return self.a2a_runs.submission(repository, actor=self.actor, key=key).model_dump(
+            mode="json"
+        )
+
+    def prepare_collaboration(
+        self, repository: UUID, request: NewCollaboration, key: str
+    ) -> dict[str, Any]:
+        return (
+            CollaborationService(self.jobs)
+            .prepare(
+                repository,
+                request.program,
+                actor=self.actor,
+                key=key,
+                private_inputs=request.private_inputs,
+            )
+            .model_dump(mode="json")
+        )
+
+    def recorded_collaboration(self, repository: UUID, group: UUID, key: str) -> dict[str, Any]:
+        return (
+            CollaborationService(self.jobs)
+            .prepare_recorded(repository, group, actor=self.actor, key=key)
+            .model_dump(mode="json")
+        )
+
+    def start_collaboration(self, repository: UUID, group: UUID, key: str) -> dict[str, Any]:
+        return CollaborationCoordinator(self.jobs).start(
+            repository, group, actor=self.actor, key=key
+        )
+
+    def control_collaboration(
+        self, repository: UUID, group: UUID, request: CollaborationControlRequest, key: str
+    ) -> dict[str, Any]:
+        return (
+            CollaborationControlService(self.jobs)
+            .request(repository, group, request, actor=self.actor, key=key)
+            .model_dump(mode="json")
+        )
+
+    def fork_merged_branch(
+        self, repository: UUID, request: ForkMergedBranch, key: str
+    ) -> dict[str, Any]:
+        return self._mutate(
+            "POST /merge-branches",
+            key,
+            repository,
+            request.model_dump(mode="json"),
+            lambda connection: self.merge_runs.fork(
+                repository, request, actor=self.actor, connection=connection
+            ),
+        )
+
+    def start_merged_run(self, repository: UUID, request: NewMergedRun, key: str) -> dict[str, Any]:
+        return self._mutate(
+            "POST /merge-runs",
+            key,
+            repository,
+            request.model_dump(mode="json"),
+            lambda connection: self.merge_runs.start(
+                repository, request, actor=self.actor, key=key, connection=connection
+            ),
+        )
+
+    def create_merge_proposal(
+        self, repository: UUID, request: NewMergeProposal, key: str
+    ) -> dict[str, Any]:
+        for pin in (request.ours, request.theirs):
+            self._authorize_run(repository, UUID(pin.source_run_id))
+            if self._authorize_commit(repository, pin.head):
+                raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "A2A 状态不属于研究语义合并范围")
+        if request.selected_base:
+            self._authorize_commit(repository, request.selected_base)
+        return self.merge_proposals.create(repository, request, actor=self.actor, key=key)
+
+    def merge_proposals_list(
+        self, repository: UUID, *, after_id: UUID | None = None, limit: int = 30
+    ) -> dict[str, Any]:
+        return self.merge_proposals.listing(repository, after_id=after_id, limit=limit)
+
+    def merge_bases(
+        self, repository: UUID, ours: str, theirs: str, *, selected: str | None = None
+    ) -> dict[str, Any]:
+        self._authorize_commit(repository, ours)
+        self._authorize_commit(repository, theirs)
+        if selected:
+            self._authorize_commit(repository, selected)
+        return (
+            MergePreviewService(self.history)
+            .bases(repository, ours, theirs, selected=selected)
+            .model_dump(mode="json")
+        )
+
+    def merge_proposal(
+        self, repository: UUID, proposal: UUID, *, review_before: UUID | None = None
+    ) -> dict[str, Any]:
+        return self.merge_proposals.show(repository, proposal, review_before=review_before)
+
+    def merge_review_status(self, repository: UUID, proposal: UUID, review: UUID) -> dict[str, Any]:
+        return self.merge_proposals.review_status(repository, proposal, review)
+
+    def replace_merge_revision(
+        self, repository: UUID, proposal: UUID, request: ReplaceMergeRevision, key: str
+    ) -> dict[str, Any]:
+        return self.merge_proposals.replace(
+            repository, proposal, request, actor=self.actor, key=key
+        )
+
+    def validate_merge_revision(
+        self, repository: UUID, proposal: UUID, request: ValidateMergeRevision, key: str
+    ) -> dict[str, Any]:
+        return self.merge_proposals.validate(
+            repository, proposal, request, actor=self.actor, key=key
+        )
+
+    def begin_merge_review(
+        self, repository: UUID, proposal: UUID, request: PrepareMergeReview, key: str
+    ) -> dict[str, Any]:
+        return self.merge_proposals.review(repository, proposal, request, actor=self.actor, key=key)
+
+    def reject_merge_proposal(
+        self, repository: UUID, proposal: UUID, request: RejectMergeProposal, key: str
+    ) -> dict[str, Any]:
+        return self.merge_proposals.reject(repository, proposal, request, actor=self.actor, key=key)
+
+    def approve_merge_proposal(
+        self, repository: UUID, proposal: UUID, request: ApproveMergeProposal, key: str
+    ) -> dict[str, Any]:
+        return self.merge_proposals.approve(
+            repository, proposal, request, actor=self.actor, key=key
+        )
+
+    def create_repair_search(
+        self,
+        repository_id: UUID,
+        payload: NewRepairSearch,
+        key: str,
+    ) -> dict[str, Any]:
+        return self._create_repair_search(repository_id, payload, key)
+
+    def create_prepared_repair_search(
+        self, repository_id: UUID, payload: NewPreparedRepairSearch, key: str
+    ) -> dict[str, Any]:
+        result = self._create_repair_search(
+            repository_id,
+            payload.search,
+            key,
+            regression=payload.regression,
+            request_identity={
+                "repository_id": str(repository_id),
+                "prepared_request": payload.model_dump(mode="json"),
+            },
+        )
+        table = TABLES["repair_validation_suites"]
+        with self.history.engine.connect() as connection:
+            row = (
+                connection.execute(
+                    sa.select(table).where(
+                        table.c.repository_id == repository_id,
+                        table.c.search_id == UUID(result["search_id"]),
+                    )
+                )
+                .mappings()
+                .first()
+            )
+        if row is None:
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "搜索缺少原子发布的预注册条件")
+        return {**result, "validation_suite": RepairValidationPoolService._suite_response(row)}
+
+    def _create_repair_search(
+        self,
+        repository_id: UUID,
+        payload: NewRepairSearch,
+        key: str,
+        *,
+        regression: tuple[RegressionOrigin, ...] | None = None,
+        request_identity: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        body = payload.model_dump(mode="json")
+        # 原始请求身份先查缓存：进程在搜索提交后、返回前退出也不会重新生成模板。
+        self._mutation_digest(key, repository_id, body)
+        request = request_identity or {
+            "repository_id": str(repository_id),
+            "template_request": body,
+        }
+        digest = object_digest(ObjectType.BLOB, encode(request))
+        searches = RepairSearchService(self.history)
+        with self.history.engine.connect() as connection:
+            cached = searches._cached(connection, self.actor, key, digest)
+        if cached is not None:
+            return cached
+        plan = prepare_templates(self.history, repository_id, payload)
+        identities = tuple(
+            self.create_intervention(
+                repository_id,
+                patch.intervention,
+                "repair-template:"
+                + object_digest(ObjectType.BLOB, encode([self.actor, key, digest, index])),
+            )["intervention_id"]
+            for index, patch in enumerate(plan.space.patches)
+        )
+        return searches.submit(
+            plan.space,
+            plan.budget,
+            identities,
+            actor=self.actor,
+            key=key,
+            hybrid=payload.hybrid,
+            fixture_scope=payload.fixture_scope,
+            _request_identity=request,
+            _regression=regression,
+            _research=self.research,
+        )
+
+    def repair_search(self, repository_id: UUID, search_id: UUID) -> dict[str, Any]:
+        return RepairJobService(self.history).view(repository_id, search_id)
+
+    def repair_workflow(self, repository: UUID, search: UUID) -> dict[str, Any]:
+        """只读发现原子流程身份，重开窗口不通过重提修改请求寻找记录。"""
+        with self.history.engine.connect() as connection:
+            RepairJobService(self.history)._root(connection, repository, search)
+            suite = connection.execute(
+                sa.select(TABLES["repair_validation_suites"].c.id).where(
+                    TABLES["repair_validation_suites"].c.repository_id == repository,
+                    TABLES["repair_validation_suites"].c.search_id == search,
+                )
+            ).scalar_one_or_none()
+            study = connection.execute(
+                sa.select(TABLES["repair_studies"].c.id).where(
+                    TABLES["repair_studies"].c.repository_id == repository,
+                    TABLES["repair_studies"].c.search_id == search,
+                )
+            ).scalar_one_or_none()
+            proposal = (
+                connection.execute(
+                    sa.select(TABLES["repair_adoption_proposals"].c.id).where(
+                        TABLES["repair_adoption_proposals"].c.repository_id == repository,
+                        TABLES["repair_adoption_proposals"].c.study_id == study,
+                    )
+                ).scalar_one_or_none()
+                if study
+                else None
+            )
+        return dict(
+            schema_version=1,
+            search_id=str(search),
+            repository_id=str(repository),
+            suite_id=str(suite) if suite else None,
+            study_id=str(study) if study else None,
+            proposal_id=str(proposal) if proposal else None,
+        )
+
+    def create_repair_proposal(self, repository: UUID, study: UUID, key: str) -> dict[str, Any]:
+        return RepairReviewService(self.research).create(
+            repository, study, actor=self.actor, key=key
+        )
+
+    def repair_proposal(self, repository: UUID, proposal: UUID) -> dict[str, Any]:
+        return RepairReviewService(self.research).view(repository, proposal)
+
+    def begin_repair_review(self, repository: UUID, proposal: UUID, key: str) -> dict[str, Any]:
+        return RepairReviewService(self.research).begin(
+            repository, proposal, actor=self.actor, key=key
+        )
+
+    def decide_repair_review(
+        self, repository: UUID, proposal: UUID, request: DecideRepairReview, key: str
+    ) -> dict[str, Any]:
+        return RepairReviewService(self.research).decide(
+            repository, proposal, request, actor=self.actor, key=key
+        )
+
+    def create_repair_study(
+        self, repository_id: UUID, payload: NewRepairStudy, key: str
+    ) -> dict[str, Any]:
+        return RepairStudyService(self.history).submit(
+            repository_id, payload, actor=self.actor, key=key
+        )
+
+    def repair_study(self, repository_id: UUID, study_id: UUID) -> dict[str, Any]:
+        return RepairStudyService(self.history).view(repository_id, study_id)
+
+    def create_repair_validation_suite(
+        self, repository_id: UUID, request: NewRepairValidationSuite, key: str
+    ) -> dict[str, Any]:
+        return RepairValidationPoolService(self.research).submit(
+            repository_id, request, actor=self.actor, key=key
+        )
+
+    def repair_validation_suite(self, repository_id: UUID, suite_id: UUID) -> dict[str, Any]:
+        return RepairValidationPoolService(self.research).view(repository_id, suite_id)
+
+    def open_repair_validation(
+        self, repository_id: UUID, study_id: UUID, suite_id: UUID, key: str
+    ) -> dict[str, Any]:
+        return RepairValidationPoolService(self.research).open(
+            repository_id, study_id, suite_id, actor=self.actor, key=key
+        )
+
+    def repair_validation(self, repository_id: UUID, study_id: UUID) -> dict[str, Any]:
+        opening = RepairValidationPoolService(self.research).opening(repository_id, study_id)
+        return {
+            "schema_version": 1,
+            "validation": opening,
+            "execution": RepairConfirmationService(self.research).view(repository_id, study_id)
+            if opening
+            else None,
+        }
+
+    def cancel_repair_study(self, repository_id: UUID, study_id: UUID, key: str) -> dict[str, Any]:
+        return self._mutate(
+            f"POST /repair-studies/{study_id}/cancel",
+            key,
+            repository_id,
+            {"study_id": str(study_id)},
+            lambda connection: RepairStudyService(self.history).cancel(
+                repository_id, study_id, actor=self.actor, connection=connection
+            ),
+        )
+
+    def repair_searches(
+        self,
+        repository_id: UUID,
+        *,
+        after_id: UUID | None = None,
+        limit: int = 30,
+    ) -> dict[str, Any]:
+        return RepairJobService(self.history).listing(repository_id, after_id=after_id, limit=limit)
+
+    def cancel_repair_search(
+        self,
+        repository_id: UUID,
+        search_id: UUID,
+        key: str,
+    ) -> dict[str, Any]:
+        return self._mutate(
+            f"POST /repair-searches/{search_id}/cancel",
+            key,
+            repository_id,
+            {"search_id": str(search_id)},
+            lambda connection: RepairJobService(self.history).cancel(
+                repository_id,
+                search_id,
+                actor=self.actor,
+                connection=connection,
+            ),
+        )
+
+    def create_experiment(
+        self, repository_id: UUID, payload: NewExperiment, key: str
+    ) -> dict[str, Any]:
+        return self._mutate(
+            "POST /experiments",
+            key,
+            repository_id,
+            payload.model_dump(mode="json"),
+            lambda connection: self.experiments.submit(
+                repository_id, payload, actor=self.actor, connection=connection
+            ),
+        )
+
+    def create_intervention(
+        self, repository_id: UUID, payload: NewIntervention, key: str
+    ) -> dict[str, Any]:
+        route = "POST /interventions"
+        body = payload.model_dump(mode="json")
+        digest = self._mutation_digest(key, repository_id, body)
+        with self.history.engine.connect() as connection:
+            cached = self._cached_response(connection, route, key, repository_id, digest)
+        if cached is not None:
+            return cached
+        prepared = self.experiments.interventions.prepare(repository_id, payload, actor=self.actor)
+        return self._mutate(
+            route,
+            key,
+            repository_id,
+            body,
+            lambda connection: self.experiments.interventions.publish(
+                prepared, connection=connection
+            ),
+        )
+
+    def intervention(self, repository_id: UUID, intervention_id: UUID) -> dict[str, Any]:
+        definition, payload = self.experiments.interventions.get(repository_id, intervention_id)
+        return {
+            "intervention_id": str(intervention_id),
+            "definition": definition.model_dump(mode="json"),
+            "payload": payload.model_dump(mode="json"),
+        }
+
+    def intervention_context(
+        self,
+        repository_id: UUID,
+        source_run_id: UUID,
+        from_commit: str,
+        target_event_id: int,
+        validator_ref: str,
+    ) -> dict[str, Any]:
+        return self.experiments.interventions.context(
+            repository_id, source_run_id, from_commit, target_event_id, validator_ref
+        )
+
+    def freeze_validator(
+        self, repository_id: UUID, payload: FreezeValidator, key: str
+    ) -> dict[str, Any]:
+        def action(connection: Connection) -> dict[str, Any]:
+            self.versions.select_range(
+                repository_id,
+                RecordedRange(
+                    source_run_id=payload.source_run_id,
+                    from_commit=payload.from_commit,
+                    until_commit=payload.from_commit,
+                ),
+            )
+            view = self.versions.checkout(repository_id, payload.from_commit)
+            state = parse_contract(encode(view["snapshot"]["data"]), AgentState)
+            corpus = self.replays._source_corpus(repository_id, UUID(payload.source_run_id))
+            source_input = self.history.objects.get_json(
+                view["environment"]["input_ref"], ObjectType.BLOB
+            )
+            if (
+                not isinstance(source_input, dict)
+                or source_input.get("goal") != state.goal.model_dump(mode="json")
+                or source_input.get("corpus_digest") != corpus.digest()
+                or view["environment"]["evaluation_time"] != corpus.evaluation_time
+            ):
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "来源冻结输入或语料无法复核")
+            ref = self.experiments.validators.freeze(
+                repository_id,
+                state.goal,
+                corpus,
+                fixture_split=payload.fixture_split,
+                connection=connection,
+            )
+            return {"schema_version": 1, "repository_id": str(repository_id), "validator_ref": ref}
+
+        return self._mutate(
+            "POST /validators", key, repository_id, payload.model_dump(mode="json"), action
+        )
+
+    def validator(self, repository_id: UUID, validator_ref: str) -> dict[str, Any]:
+        manifest = self.experiments.validators.manifest(repository_id, validator_ref)
+        return {"validator_ref": validator_ref, "manifest": manifest.model_dump(mode="json")}
+
+    def experiment(self, repository_id: UUID, experiment_id: UUID) -> dict[str, Any]:
+        return self.experiments.report(repository_id, experiment_id)
+
+    def experiments_list(
+        self, repository_id: UUID, *, after_id: UUID | None = None, limit: int = 30
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = public(
+            self.experiments.listing(repository_id, after_id=after_id, limit=limit)
+        )
+        return result
+
+    def capabilities(self) -> dict[str, Any]:
+        config = AgentConfig()
+        provider = OpenAIOptions()
+        execution = AgentConfig(
+            tools=(*config.tools, "code_exec", "terminal_exec"), execution_policy=bundled_policy()
+        )
+        return {
+            "schema_version": 1,
+            "version": __version__,
+            "default_config": config.model_dump(mode="json"),
+            "execution_config": execution.model_dump(mode="json"),
+            "collaboration_template": NewCollaboration.model_validate_json(
+                files("agentgit.adapters.fixtures").joinpath("collaboration.json").read_bytes()
+            ).model_dump(mode="json"),
+            "models": [
+                {
+                    "id": config.model,
+                    "title": "Mock · 离线",
+                    "external": False,
+                    "access": "not_required",
+                    "config_patch": {"model": config.model},
+                },
+                {
+                    "id": "openai/" + provider.model,
+                    "title": "OpenAI · GPT-5.4 Mini（固定快照）",
+                    "external": True,
+                    "access": "unknown",
+                    "currency": "USD",
+                    "config_patch": {
+                        "model": "openai/" + provider.model,
+                        "openai": provider.model_dump(mode="json"),
+                    },
+                    "minimum_reservation": {
+                        "tokens": provider.max_input_tokens + provider.max_output_tokens,
+                        "cost_micro_usd": price_micro_usd(
+                            provider.max_input_tokens, provider.max_output_tokens
+                        ),
+                        "pricebook": provider.pricebook,
+                    },
+                },
+            ],
+            "features": [
+                "run_pagination",
+                "historical_artifacts",
+                "execution_evidence",
+                "recorded",
+                "live",
+                "structural_diff",
+                "controlled_experiments",
+                "hybrid_observations",
+                "typed_interventions",
+                "experiment_statistics",
+                "static_debug_reports",
+                "prepared_repair_search",
+                "repair_workflow",
+                "repair_search",
+                "repair_validation",
+                "repair_reviews",
+                "semantic_merge",
+                "merged_run_initialization",
+                "collaboration",
+                "a2a",
+            ],
+            "worker": {"status": "unknown", "reason": "no_readiness_probe"},
+            "execution_environment": {"status": "unknown", "reason": "policy_is_not_readiness"},
+        }
+
+    def runs(
+        self, repository_id: UUID, *, after_id: UUID | None = None, limit: int = 30
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = public(
+            self.inspection.runs(repository_id, after_id=after_id, limit=limit, actor=self.actor)
+        )
+        return result
+
+    def commit_artifacts(
+        self, repository_id: UUID, commit_id: str, *, after_id: UUID | None = None, limit: int = 30
+    ) -> dict[str, Any]:
+        self._authorize_commit(repository_id, commit_id)
+        result: dict[str, Any] = public(
+            self.inspection.artifacts(repository_id, commit_id, after_id=after_id, limit=limit)
+        )
+        return result
+
+    def executions(
+        self, repository_id: UUID, run_id: UUID, *, after_id: UUID | None = None, limit: int = 30
+    ) -> dict[str, Any]:
+        self._authorize_run(repository_id, run_id)
+        result: dict[str, Any] = public(
+            self.execution_views.list(repository_id, run_id, after_id=after_id, limit=limit)
+        )
+        return result
+
+    def execution(self, repository_id: UUID, run_id: UUID, call_id: UUID) -> dict[str, Any]:
+        self._authorize_run(repository_id, run_id)
+        result: dict[str, Any] = public(self.execution_views.detail(repository_id, run_id, call_id))
+        return result
+
+    def execution_content(
+        self,
+        repository_id: UUID,
+        run_id: UUID,
+        call_id: UUID,
+        resource: ExecutionResource,
+        *,
+        offset: int = 0,
+        limit: int = 65536,
+    ) -> tuple[dict[str, Any], bytes]:
+        self._authorize_run(repository_id, run_id)
+        return self.execution_views.content(
+            repository_id, run_id, call_id, resource, offset=offset, limit=limit
+        )
 
     def replay(
         self, repository_id: UUID, payload: RecordedReplay | LiveReplay, key: str
     ) -> dict[str, Any]:
+        if self._authorize_run(repository_id, UUID(payload.source_run_id)):
+            raise AgentGitError(
+                ErrorCode.UNSUPPORTED_SCHEMA, "A2A 任务须通过明确A2A入口选择执行模式"
+            )
+        self._authorize_commit(repository_id, payload.from_commit)
+        route = "POST /replays"
+        body = payload.model_dump(mode="json")
+        digest = self._mutation_digest(key, repository_id, body)
+        with self.history.engine.connect() as connection:
+            cached = self._cached_response(connection, route, key, repository_id, digest)
+        if cached is not None:
+            return cached
+        prepared = self.replays.prepare(repository_id, payload)
         return self._mutate(
-            "POST /replays",
+            route,
             key,
             repository_id,
-            payload.model_dump(mode="json"),
-            lambda connection: self.replays.submit(
-                repository_id, payload, actor=self.actor, key=key, connection=connection
+            body,
+            lambda connection: self.replays.publish(
+                prepared, actor=self.actor, key=key, connection=connection
             ),
         )
 
     def create_branch(self, repository_id: UUID, payload: NewBranch, key: str) -> dict[str, Any]:
+        self._authorize_run(repository_id, UUID(payload.source_run_id))
+        self._authorize_commit(repository_id, payload.from_commit)
         return self._mutate(
             "POST /branches",
             key,
@@ -98,6 +775,9 @@ class ManagementService:
         after_commit: str | None = None,
         limit: int = 100,
     ) -> dict[str, Any]:
+        head = self.history.branch(repository_id, branch_name)["head_commit_id"]
+        if head is not None:
+            self._authorize_commit(repository_id, head)
         return self.versions.log(
             repository_id,
             branch_name=branch_name,
@@ -106,11 +786,70 @@ class ManagementService:
         )
 
     def checkout(self, repository_id: UUID, commit_id: str) -> dict[str, Any]:
+        self._authorize_commit(repository_id, commit_id)
         return self.versions.checkout(repository_id, commit_id)
+
+    def behavioral_trace(self, repository_id: UUID, run_id: UUID) -> dict[str, Any]:
+        self._authorize_run(repository_id, run_id)
+        return self.behavior.trace(repository_id, run_id).model_dump(mode="json")
+
+    def create_debug_report(
+        self, repository_id: UUID, payload: NewDebugReport, key: str
+    ) -> dict[str, Any]:
+        self._authorize_run(repository_id, UUID(payload.failed_run_id))
+        if payload.reference_run_id:
+            self._authorize_run(repository_id, UUID(payload.reference_run_id))
+        route = "POST /debug-reports"
+        body = payload.model_dump(mode="json")
+        digest = self._mutation_digest(key, repository_id, body)
+        with self.history.engine.connect() as connection:
+            cached = self._cached_response(connection, route, key, repository_id, digest)
+        if cached is not None:
+            return cached
+        # 编译只读且有界，不持有发布事务的连接；并发编译可重复，发布仍由幂等锁串行确认。
+        report = self.debug_reports.compile(repository_id, payload)
+        return self._mutate(
+            route,
+            key,
+            repository_id,
+            body,
+            lambda connection: self.debug_reports.store(
+                repository_id, report, self.actor, connection
+            ),
+        )
+
+    def debug_report(self, repository_id: UUID, identity: UUID) -> dict[str, Any]:
+        return self.debug_reports.get(repository_id, identity)
+
+    def debug_candidate_context(
+        self, repository_id: UUID, identity: UUID, candidate_event_id: int, validator_ref: str
+    ) -> dict[str, Any]:
+        return self.debug_experiments.context(
+            repository_id, identity, candidate_event_id, validator_ref
+        )
+
+    def debug_candidate_experiment(
+        self, repository_id: UUID, identity: UUID, candidate_event_id: int, experiment_id: UUID
+    ) -> dict[str, Any]:
+        return self.debug_experiments.report(
+            repository_id, identity, candidate_event_id, experiment_id
+        )
+
+    def debug_reports_list(
+        self, repository_id: UUID, *, after_id: UUID | None = None, limit: int = 30
+    ) -> dict[str, Any]:
+        return self.debug_reports.listing(repository_id, after_id=after_id, limit=limit)
+
+    def behavioral_diff(self, repository_id: UUID, left: UUID, right: UUID) -> dict[str, Any]:
+        self._authorize_run(repository_id, left)
+        self._authorize_run(repository_id, right)
+        return self.behavior.compare(repository_id, left, right)
 
     def diff(
         self, repository_id: UUID, left: str, right: str, *, after: int = 0, limit: int = 100
     ) -> dict[str, Any]:
+        self._authorize_commit(repository_id, left)
+        self._authorize_commit(repository_id, right)
         return self.versions.diff(repository_id, left, right, after=after, limit=limit)
 
     @classmethod
@@ -124,6 +863,50 @@ class ManagementService:
         )
         return cls(ResearchService(history, root), actor=settings.operator_id)
 
+    @staticmethod
+    def _mutation_digest(
+        key: str,
+        repository_id: UUID | None,
+        payload: dict[str, Any],
+    ) -> str:
+        if not key or len(key) > 200:
+            raise AgentGitError(ErrorCode.VALIDATION, "需要有界、非空的幂等键")
+        return object_digest(
+            ObjectType.BLOB,
+            encode(
+                {"repository_id": str(repository_id) if repository_id else None, "body": payload}
+            ),
+        )
+
+    def _cached_response(
+        self,
+        connection: Connection,
+        route: str,
+        key: str,
+        repository_id: UUID | None,
+        digest: str,
+    ) -> dict[str, Any] | None:
+        table = TABLES["idempotency_keys"]
+        cached = (
+            connection.execute(
+                sa.select(table).where(
+                    table.c.actor == self.actor, table.c.route == route, table.c.key == key
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if cached is None:
+            return None
+        if cached["request_digest"] != digest or (
+            repository_id is not None and cached["repository_id"] != repository_id
+        ):
+            raise AgentGitError(ErrorCode.VERSION_CONFLICT, "同一幂等键不能用于不同请求")
+        saved = self.history.objects.get_json(cached["result_ref"], ObjectType.BLOB)
+        if not isinstance(saved, dict):
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "幂等响应格式无效")
+        return saved
+
     def _mutate(
         self,
         route: str,
@@ -132,38 +915,16 @@ class ManagementService:
         payload: dict[str, Any],
         action: Callable[[Connection], dict[str, Any]],
     ) -> dict[str, Any]:
-        if not key or len(key) > 200:
-            raise AgentGitError(ErrorCode.VALIDATION, "需要有界、非空的幂等键")
-        digest = object_digest(
-            ObjectType.BLOB,
-            encode(
-                {"repository_id": str(repository_id) if repository_id else None, "body": payload}
-            ),
-        )
+        digest = self._mutation_digest(key, repository_id, payload)
         table = TABLES["idempotency_keys"]
         with self.history.engine.begin() as connection:
             scope = encode([self.actor, route, key]).decode()
             connection.execute(
                 sa.select(sa.func.pg_advisory_xact_lock(sa.func.hashtextextended(scope, 0)))
             )
-            cached = (
-                connection.execute(
-                    sa.select(table).where(
-                        table.c.actor == self.actor, table.c.route == route, table.c.key == key
-                    )
-                )
-                .mappings()
-                .first()
-            )
+            cached = self._cached_response(connection, route, key, repository_id, digest)
             if cached is not None:
-                if cached["request_digest"] != digest or (
-                    repository_id is not None and cached["repository_id"] != repository_id
-                ):
-                    raise AgentGitError(ErrorCode.VERSION_CONFLICT, "同一幂等键不能用于不同请求")
-                saved = self.history.objects.get_json(cached["result_ref"], ObjectType.BLOB)
-                if not isinstance(saved, dict):
-                    raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "幂等响应格式无效")
-                return saved
+                return cached
             result: dict[str, Any] = public(action(connection))
             owner = repository_id or UUID(result["repository_id"])
             response = self.history.objects.put(ObjectType.BLOB, encode(result))
@@ -254,6 +1015,7 @@ class ManagementService:
     def control(
         self, repository_id: UUID, run_id: UUID, action: str, payload: ControlRun, key: str
     ) -> dict[str, Any]:
+        self._authorize_run(repository_id, run_id)
         return self._mutate(
             f"POST /runs/{run_id}/{action}",
             key,
@@ -274,6 +1036,17 @@ class ManagementService:
     def decide(
         self, repository_id: UUID, approval_id: UUID, payload: DecideApproval, key: str
     ) -> dict[str, Any]:
+        with self.history.engine.connect() as connection:
+            approval_run = connection.execute(
+                sa.select(TABLES["approvals"].c.run_id).where(
+                    TABLES["approvals"].c.repository_id == repository_id,
+                    TABLES["approvals"].c.id == approval_id,
+                )
+            ).scalar_one_or_none()
+        if approval_run is None:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "审批不可访问")
+        self._authorize_run(repository_id, approval_run)
+
         def action(connection: Connection) -> dict[str, Any]:
             table = TABLES["approvals"]
             row = (
@@ -309,14 +1082,131 @@ class ManagementService:
         )
 
     def run(self, repository_id: UUID, run_id: UUID) -> dict[str, Any]:
+        self._authorize_run(repository_id, run_id)
         row = self.jobs.run(repository_id, run_id)
         result: dict[str, Any] = public(row)
         branch = self.history.branch(repository_id, row["branch_name"])
         result.update(branch_head=branch["head_commit_id"], branch_version=branch["version"])
         if row["agent_config_id"] is None:
             result["budget"] = None
+            with self.history.engine.connect() as connection:
+                jobs, snapshots = TABLES["jobs"], TABLES["snapshots"]
+                job = (
+                    connection.execute(
+                        sa.select(jobs).where(
+                            jobs.c.repository_id == repository_id, jobs.c.run_id == run_id
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+                own = connection.execute(
+                    sa.select(snapshots.c.commit_id).where(
+                        snapshots.c.repository_id == repository_id,
+                        snapshots.c.run_id == run_id,
+                        snapshots.c.commit_id == row["checkpoint_commit_id"],
+                    )
+                ).first()
+            if job is not None and job["kind"] == "collaboration_role":
+                result["adapter"] = self.collaboration_views.role(
+                    repository_id, run_id, actor=self.actor
+                )
+            if job is not None and job["kind"] == "a2a_run":
+                result["adapter"] = self.a2a_views.summary(repository_id, run_id, actor=self.actor)
+            if job is not None and job["kind"] == "langgraph_run":
+                graph_service = LangGraphRunService(self.jobs)
+                graph_payload = graph_service.payload(repository_id, job["id"])
+                graph_program = graph_service.program(repository_id, graph_payload)
+                graph_state = LangGraphRunState(program_ref=graph_payload.program_ref)
+                if own is not None:
+                    restored = self.history.restore(repository_id, row["checkpoint_commit_id"])
+                    graph_state = parse_contract(encode(restored.data), LangGraphRunState)
+                    if graph_state.program_ref != graph_payload.program_ref:
+                        raise AgentGitError(
+                            ErrorCode.OBJECT_CORRUPT, "LangGraph 状态与程序引用不符"
+                        )
+                result["adapter"] = {
+                    "kind": "langgraph_program/v1",
+                    "program_ref": graph_payload.program_ref,
+                    "framework_version": graph_program.framework_version,
+                    "checkpoint_version": graph_program.checkpoint_version,
+                    "template": graph_program.graph.template,
+                    "server_identity": graph_program.binding.server.server_identity,
+                    "tool_name": graph_program.binding.tool_name,
+                    "schema_digest": graph_program.binding.schema_digest(),
+                    "effect_class": graph_program.binding.effect_class.value,
+                    "limits": graph_program.limits.model_dump(mode="json"),
+                    "logical_usage": graph_state.usage.model_dump(mode="json"),
+                    "actual_attempts": graph_state.actual_attempts,
+                    "response_ref": graph_state.trace.response_ref if graph_state.trace else None,
+                    "native_ref": graph_state.native_ref,
+                    "native_next": list(graph_state.native_next),
+                    "mode": row["mode"],
+                    "has_model": False,
+                    "recording": graph_payload.replay.model_dump(mode="json")
+                    if graph_payload.replay
+                    else None,
+                    "recorded_control_index": graph_state.replay_control_index,
+                    "recorded_pause_pending": graph_state.replay_pause_pending,
+                    "recorded_call_consumed": graph_state.replay_call_consumed,
+                    "fork": graph_payload.fork.model_dump(mode="json")
+                    if graph_payload.fork
+                    else None,
+                    "fork_initialized": graph_state.fork_initialized,
+                }
+            if job is not None and job["kind"] == "mcp_run":
+                payload = self.mcp_runs.payload(repository_id, job["id"])
+                program = self.mcp_runs.program(repository_id, payload)
+                mcp_state = MCPRunState(program_ref=payload.program_ref)
+                if own is not None or payload.replay is not None:
+                    restored = self.history.restore(repository_id, row["checkpoint_commit_id"])
+                    mcp_state = parse_contract(encode(restored.data), MCPRunState)
+                    if mcp_state.program_ref != payload.program_ref:
+                        raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "MCP 状态与固定程序引用不符")
+                    if own is None:
+                        mcp_state = mcp_state.model_copy(update={"actual_attempts": 0})
+                result["adapter"] = {
+                    "kind": "mcp_single_call/v1",
+                    "program_ref": payload.program_ref,
+                    "server_identity": program.binding.server.server_identity,
+                    "tool_name": program.binding.tool_name,
+                    "schema_digest": program.binding.schema_digest(),
+                    "effect_class": program.binding.effect_class.value,
+                    "limits": program.limits.model_dump(mode="json"),
+                    "logical_usage": mcp_state.usage.model_dump(mode="json"),
+                    "actual_attempts": mcp_state.actual_attempts,
+                    "response_ref": mcp_state.response_ref,
+                    "mode": row["mode"],
+                    "has_model": False,
+                    "recording": None,
+                }
+                if row["mode"] == "live" and row["status"] == "completed":
+                    with self.history.engine.connect() as connection:
+                        calls = TABLES["external_calls"]
+                        recorded = list(
+                            connection.execute(
+                                sa.select(calls).where(
+                                    calls.c.repository_id == repository_id,
+                                    calls.c.run_id == run_id,
+                                    calls.c.status == "succeeded",
+                                )
+                            ).mappings()
+                        )
+                    if len(recorded) == 1:
+                        intent = parse_contract(
+                            self.history.objects.get(recorded[0]["intent_ref"], ObjectType.CALL),
+                            CallIntent,
+                        )
+                        if intent.checkpoint is not None:
+                            result["adapter"]["recording"] = MCPRecordedSpec(
+                                source_run_id=str(run_id),
+                                from_commit=intent.checkpoint,
+                                to_commit=row["checkpoint_commit_id"],
+                            ).model_dump(mode="json")
             return result
         config = self.research.config(repository_id, row["agent_config_id"])
+        result["model"] = config.model
+        result["model_external"] = config.openai is not None
         usage = BudgetUsage()
         with self.history.engine.connect() as connection:
             snapshots, jobs = TABLES["snapshots"], TABLES["jobs"]
@@ -345,10 +1235,16 @@ class ManagementService:
                     snapshots.c.run_id.in_(allowed),
                 )
             ).first()
+        state: AgentState | None = None
         if snapshot is not None and snapshot.run_id in allowed:
             restored = self.history.restore(repository_id, row["checkpoint_commit_id"])
-            usage = parse_contract(encode(restored.data), AgentState).usage
+            state = parse_contract(encode(restored.data), AgentState)
+            usage = state.usage
         limits = self.jobs.payload(job).limits if job is not None else None
+        if job is not None:
+            merged_input = self.jobs.payload(job).merged
+            if merged_input is not None:
+                result["merged_input"] = merged_input.model_dump(mode="json")
         limits = limits or config.limits
         baseline = BudgetUsage()
         if job is not None:
@@ -389,11 +1285,74 @@ class ManagementService:
                 "wall_ms": wall,
             },
         }
+        if limits.max_cost_micro_usd is not None:
+            held = usage.model_meter.reserved_cost_micro_usd if usage.model_meter else 0
+            if config.openai is not None:
+                pending = self._pending_model_budget(repository_id, allowed, state, config)
+                held = max(held, pending["cost_micro_usd"])
+                result["budget"]["pending_model_reservation"] = pending
+                result["budget"]["remaining"]["tokens"] = max(
+                    0,
+                    limits.max_tokens
+                    - spent["tokens"]
+                    - max(usage.reserved_tokens, pending["tokens"]),
+                )
+            result["budget"]["currency"] = "USD"
+            result["budget"]["cost_basis"] = "pricebook_estimate"
+            result["budget"]["remaining"]["cost_micro_usd"] = max(
+                0, limits.max_cost_micro_usd - spent["cost_micro_units"] - held
+            )
         if job is not None:
             report = self.replays.report(repository_id, job["id"])
             if report is not None:
                 result["replay"] = report
         return result
+
+    def _pending_model_budget(
+        self,
+        repository: UUID,
+        family: set[UUID],
+        state: AgentState | None,
+        config: AgentConfig,
+    ) -> dict[str, int]:
+        observed = (
+            tuple(
+                trace.logical_step_id
+                for trace in state.messages
+                if trace.provider.startswith("llm:")
+            )
+            if state is not None
+            else ()
+        )
+        calls = TABLES["external_calls"]
+        with self.history.engine.connect() as connection:
+            rows = list(
+                connection.execute(
+                    sa.select(calls.c.intent_ref)
+                    .where(
+                        calls.c.repository_id == repository,
+                        calls.c.run_id.in_(family),
+                        calls.c.provider.startswith("llm:"),
+                        calls.c.logical_step_id.not_in(observed),
+                    )
+                    .limit(1001)
+                ).scalars()
+            )
+        if len(rows) > 1000:
+            raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "待观察模型预算查询超过上限")
+        expected = call_budget(config)
+        distinct: dict[str, CallIntent] = {}
+        for ref in rows:
+            intent = parse_contract(self.history.objects.get(ref, ObjectType.CALL), CallIntent)
+            if intent.model_budget != expected:
+                raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "待观察模型意图的费用预留不符")
+            distinct[intent.occurrence.logical_step_id] = intent
+        assert expected is not None
+        return {
+            "call_count": len(distinct),
+            "tokens": len(distinct) * expected.tokens,
+            "cost_micro_usd": len(distinct) * expected.cost_micro_usd,
+        }
 
     def job(self, repository_id: UUID, job_id: UUID) -> dict[str, Any]:
         row = self.jobs.get(repository_id, job_id)
@@ -422,6 +1381,8 @@ class ManagementService:
                 for key in ("control_request", "control_status", "state_version", "budget")
             }
         )
+        if "merged_input" in run:
+            result["merged_input"] = run["merged_input"]
         if "replay" in run:
             result["replay"] = run["replay"]
             result["mode"] = run["mode"]
@@ -436,6 +1397,7 @@ class ManagementService:
     def events(
         self, repository_id: UUID, run_id: UUID, after_seq: int, limit: int
     ) -> dict[str, Any]:
+        self._authorize_run(repository_id, run_id)
         rows = self.history.events(repository_id, run_id, after=after_seq, limit=limit)
         items = []
         for row in rows:
@@ -447,6 +1409,7 @@ class ManagementService:
         return {"items": items, "next_after_seq": rows[-1]["seq"] if rows else after_seq}
 
     def artifacts(self, repository_id: UUID, run_id: UUID) -> dict[str, Any]:
+        self._authorize_run(repository_id, run_id)
         row = self.jobs.run(repository_id, run_id)
         return {
             "items": public(self.history.artifacts(repository_id, row["checkpoint_commit_id"]))
@@ -468,6 +1431,7 @@ class ManagementService:
             )
         if row is None:
             raise AgentGitError(ErrorCode.NOT_FOUND, "产物不可访问")
+        self._authorize_commit(repository_id, row["commit_id"])
         return public(dict(row)), self.history.read_artifact(repository_id, artifact_id)
 
     def repository(self, repository_id: UUID) -> dict[str, Any]:
@@ -478,9 +1442,16 @@ class ManagementService:
                 .mappings()
                 .first()
             )
+            configs = TABLES["agent_configs"]
+            config_version = connection.execute(
+                sa.select(sa.func.coalesce(sa.func.max(configs.c.version), 0)).where(
+                    configs.c.repository_id == repository_id
+                )
+            ).scalar_one()
         if row is None:
             raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
         result: dict[str, Any] = public(dict(row))
+        result["config_version"] = config_version
         result["branch"] = public(self.history.branch(repository_id))
         return result
 
@@ -502,11 +1473,13 @@ class ManagementService:
     def approvals(
         self, repository_id: UUID, run_id: UUID, after_seq: int = 0, limit: int = 100
     ) -> dict[str, Any]:
+        self._authorize_run(repository_id, run_id)
         if after_seq < 0 or not 1 <= limit <= 1000:
             raise AgentGitError(ErrorCode.VALIDATION, "审批分页参数越界")
         table = TABLES["approvals"]
         with self.history.engine.connect() as connection:
-            self.history._run(connection, repository_id, run_id)
+            run = self.history._run(connection, repository_id, run_id)
+            version = run["state_version"]
             numbered = (
                 sa.select(
                     table,
@@ -528,6 +1501,7 @@ class ManagementService:
         items = []
         for row in rows:
             item = public(dict(row))
+            item["version"] = version
             item["action"] = self.history.objects.get_json(row["action_ref"], ObjectType.CALL)
             action = item["action"]
             item["request"] = self.history.objects.get_json(

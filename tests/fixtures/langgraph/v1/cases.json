@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "framework_version": "1.2.18",
+  "value": "graph-fixture-value",
+  "review_note": "来源已核对",
+  "fork_note": "独立分支补充说明",
+  "expected_pause_next": ["review"],
+  "expected_final_next": [],
+  "expected_node_order": ["fetch", "review", "publish"],
+  "unsupported_node": { "id": "execute", "kind": "code_exec" },
+  "unsupported_effect": "NON_IDEMPOTENT_WRITE"
+}

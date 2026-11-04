@@ -3,10 +3,13 @@
 import hashlib
 import time
 from collections.abc import Callable
+from typing import cast
 
+from agentgit.adapters.model_protocol import configured_model_signature
 from agentgit.adapters.tools import ToolRegistry
 from agentgit.core.canonical import ObjectType, decode, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
+from agentgit.core.model_usage import ModelReply
 from agentgit.core.models import EffectClass, RunStatus, parse_contract
 from agentgit.core.research import (
     AgentConfig,
@@ -21,7 +24,17 @@ from agentgit.core.research import (
     evolve,
     parse_decision,
 )
+from agentgit.runtime.model_budget import (
+    ModelResultError,
+    call_budget,
+    clear_reservation,
+    mark_unpriced,
+    reservation,
+    reserve_model,
+    settle_model,
+)
 from agentgit.runtime.ports import (
+    BoundedModelAdapter,
     CallGateway,
     CallOutcome,
     CallSettlement,
@@ -46,6 +59,7 @@ class ResearchRuntime:
         wall_budget_ms: int | None = None,
         settlement: CallSettlement | None = None,
         budget_baseline: BudgetUsage | None = None,
+        before_evaluate: Callable[[AgentState], None] | None = None,
     ):
         self.state, self.config, self.model, self.tools = state, config, model, tools
         self.gateway, self.journal = gateway, journal
@@ -53,6 +67,9 @@ class ResearchRuntime:
         self.started_at = self.clock_ms()
         self.control, self.wall_budget_ms = control, wall_budget_ms
         self.settlement = settlement
+        self.before_evaluate = before_evaluate
+        if config.openai is not None and model.signature != configured_model_signature(config):
+            raise AgentGitError(ErrorCode.CONFIGURATION, "真实模型 Adapter 签名与冻结配置不符")
         self.budget_baseline = budget_baseline or BudgetUsage()
         if any(
             getattr(state.usage, name) < getattr(self.budget_baseline, name)
@@ -91,6 +108,7 @@ class ResearchRuntime:
                 self._failure(exc)
             if self.state.status not in (RunStatus.PLANNING, RunStatus.RUNNING):
                 return self.state
+        self._use_template()
         if self.state.status in (RunStatus.PLANNING, RunStatus.RUNNING):
             try:
                 self._consume_recorded()
@@ -110,6 +128,7 @@ class ResearchRuntime:
         if self.state.status == RunStatus.QUEUED:
             self.state = evolve(self.state, status=RunStatus.PLANNING)
             self._save("run.planning")
+        self._use_template()
         while self.state.status in (RunStatus.PLANNING, RunStatus.RUNNING):
             before_call = self.state
             try:
@@ -137,6 +156,34 @@ class ResearchRuntime:
                     raise
                 self._failure(exc)
         return self.state
+
+    def _use_template(self) -> None:
+        template = self.config.plan_template
+        if (
+            template is not None
+            and self.state.status == RunStatus.PLANNING
+            and self.state.plan is None
+            and not self.state.completed
+            and not self.state.messages
+            and self.state.usage.steps == 0
+        ):
+            if self._control_point():
+                return
+            self.state = evolve(
+                self.state,
+                plan=template,
+                plan_version=self.state.plan_version + 1,
+                status=RunStatus.RUNNING,
+                error_code=None,
+            )
+            self._save(
+                "plan.accepted",
+                plan_version=self.state.plan_version,
+                source="agent_config",
+                template_ref=object_digest(
+                    ObjectType.BLOB, encode(template.model_dump(mode="json"))
+                ),
+            )
 
     def _control_point(self, only: frozenset[str] | None = None) -> bool:
         action = self.control() if self.control is not None else None
@@ -215,23 +262,19 @@ class ResearchRuntime:
                 outcome = self.gateway.recorded(
                     step=f"model-{self.state.usage.steps + 1}",
                     attempt=1,
-                    provider="llm:mock-research/v1",
+                    provider=f"llm:{self.config.model}",
                     signature=self.model.signature,
                     effect=EffectClass.READ_ONLY,
                     request=request,
                     max_bytes=self.config.limits.max_response_bytes,
+                    model_budget=call_budget(self.config),
                 )
                 if outcome is None:
                     return
                 usage = self.state.usage
                 self.state = evolve(
                     self.state,
-                    usage=evolve(
-                        usage,
-                        steps=usage.steps + 1,
-                        model_calls=usage.model_calls + 1,
-                        reserved_tokens=len(request) + self.config.limits.max_response_bytes,
-                    ),
+                    usage=reserve_model(usage, self.config, len(request)),
                 )
                 self._observe_model(outcome, len(request), settling=True)
 
@@ -240,8 +283,16 @@ class ResearchRuntime:
         request = self._model_request()
         if len(request) > limits.max_context_bytes:
             raise AgentGitError(ErrorCode.CONTEXT_LIMIT, "上下文超过上限，未进行有损摘要")
-        reserve = len(request) + limits.max_response_bytes
+        reserve, cost_reserve = reservation(self.config, len(request))
         usage = state.usage
+        if limits.max_cost_micro_usd is not None and (
+            usage.cost_micro_units
+            - self.budget_baseline.cost_micro_units
+            + cost_reserve
+            + (usage.model_meter.reserved_cost_micro_usd if usage.model_meter else 0)
+            > limits.max_cost_micro_usd
+        ):
+            raise AgentGitError(ErrorCode.BUDGET_EXHAUSTED, "模型费用预留预算不足")
         if (
             usage.steps - self.budget_baseline.steps >= limits.max_steps
             or usage.model_calls - self.budget_baseline.model_calls >= limits.max_model_calls
@@ -250,24 +301,107 @@ class ResearchRuntime:
             raise AgentGitError(ErrorCode.BUDGET_EXHAUSTED, "模型步骤、调用或 Token 预留预算不足")
         self.state = evolve(
             state,
-            usage=evolve(
-                usage,
-                steps=usage.steps + 1,
-                model_calls=usage.model_calls + 1,
-                reserved_tokens=reserve,
-            ),
+            usage=reserve_model(usage, self.config, len(request)),
         )
         outcome = self.gateway.call(
             step=f"model-{self.state.usage.steps}",
             attempt=1,
-            provider="llm:mock-research/v1",
+            provider=f"llm:{self.config.model}",
             signature=self.model.signature,
             effect=EffectClass.READ_ONLY,
             request=request,
-            invoke=lambda: self.model.invoke(request),
+            invoke=lambda: self._invoke_model(request),
             max_bytes=limits.max_response_bytes,
+            model_budget=call_budget(self.config),
         )
         self._observe_model(outcome, len(request))
+
+    def _invoke_model(self, request: bytes) -> bytes:
+        if self.config.openai is None:
+            return self.model.invoke(request)
+        limit = self.config.limits.max_wall_ms
+        if self.wall_budget_ms is not None:
+            limit = min(limit, self.wall_budget_ms)
+        totals = self.state.usage.model_meter
+        delay = totals.next_retry_delay_ms if totals is not None else 0
+        remaining = limit - (self.clock_ms() - self.started_at)
+        if delay >= remaining:
+            raise AgentGitError(ErrorCode.BUDGET_EXHAUSTED, "模型退避超出剩余墙钟预算")
+        if delay:
+            # 只在真正 invoke 中等待，Recorded 与已录制结果结算不会触及此处。
+            time.sleep(delay / 1000)
+        remaining = limit - (self.clock_ms() - self.started_at)
+        assert self.config.limits.max_cost_micro_usd is not None
+        available = self.config.limits.max_cost_micro_usd - (
+            self.state.usage.cost_micro_units - self.budget_baseline.cost_micro_units
+        )
+        return cast(BoundedModelAdapter, self.model).invoke_bounded(
+            request,
+            timeout_ms=remaining,
+            max_reply_bytes=self.config.limits.max_response_bytes,
+            cost_limit_micro_usd=available,
+        )
+
+    def _observe_metered_model(self, outcome: CallOutcome) -> bytes:
+        usage = self.state.usage
+        if outcome.error is not None:
+            if outcome.error.code in {
+                ErrorCode.CONFIGURATION,
+                ErrorCode.BUDGET_EXHAUSTED,
+                ErrorCode.CONTEXT_LIMIT,
+                ErrorCode.FORBIDDEN,
+                ErrorCode.UNAUTHORIZED,
+            }:
+                self.state = evolve(self.state, usage=clear_reservation(usage))
+                raise outcome.error
+            # 结果封装损坏或未分类中断不能退回字节计价或触发自动重发。
+            if usage.model_meter is not None:
+                self.state = evolve(self.state, usage=mark_unpriced(usage))
+            raise ModelResultError(outcome.error.code, "模型结果计量不可核验", retryable=False)
+        try:
+            reply = parse_contract(outcome.payload, ModelReply)
+        except AgentGitError:
+            assert usage.model_meter is not None
+            self.state = evolve(self.state, usage=mark_unpriced(usage))
+            raise ModelResultError(
+                ErrorCode.CONFIGURATION, "缺少完整模型计量封装", retryable=False
+            ) from None
+        self.state = evolve(
+            self.state,
+            usage=settle_model(
+                usage,
+                reply.meter,
+                retry_delay_ms=(reply.retry_after_ms or 0) if reply.disposition == "retry" else 0,
+            ),
+        )
+        if not reply.meter.price_verified:
+            raise ModelResultError(
+                ErrorCode.CONFIGURATION, "模型费用不可核验，已保留费用预留", retryable=False
+            )
+        limits, options = self.config.limits, self.config.openai
+        assert options is not None
+        if (
+            reply.meter.accounted_input_tokens > options.max_input_tokens
+            or reply.meter.accounted_output_tokens > options.max_output_tokens
+            or self.state.usage.tokens - self.budget_baseline.tokens > limits.max_tokens
+            or (
+                limits.max_cost_micro_usd is not None
+                and (
+                    self.state.usage.cost_micro_units - self.budget_baseline.cost_micro_units
+                    > limits.max_cost_micro_usd
+                )
+            )
+        ):
+            raise AgentGitError(ErrorCode.BUDGET_EXHAUSTED, "供应商计量超出模型或 Run 预算")
+        if reply.disposition != "decision":
+            assert reply.error_code is not None
+            raise ModelResultError(
+                ErrorCode(reply.error_code),
+                "模型已返回受控停止或重试结果",
+                retryable=reply.disposition == "retry",
+            )
+        assert reply.decision is not None
+        return encode(reply.decision)
 
     def _observe_model(
         self, outcome: CallOutcome, request_bytes: int, *, settling: bool = False
@@ -275,15 +409,22 @@ class ResearchRuntime:
         if outcome.error is not None and outcome.error.code == ErrorCode.OUTCOME_UNKNOWN:
             self.state = evolve(self.state, messages=(*self.state.messages, outcome.trace))
             raise outcome.error
-        self.state = evolve(
-            self.state,
-            usage=evolve(
-                self.state.usage,
-                reserved_tokens=0,
-                tokens=self.state.usage.tokens + request_bytes + outcome.output_bytes,
-            ),
-            messages=(*self.state.messages, outcome.trace),
-        )
+        payload = outcome.payload
+        self.state = evolve(self.state, messages=(*self.state.messages, outcome.trace))
+        if self.config.openai is not None:
+            payload = self._observe_metered_model(outcome)
+        else:
+            self.state = evolve(
+                self.state,
+                usage=evolve(
+                    self.state.usage,
+                    reserved_tokens=0,
+                    tokens=self.state.usage.tokens + request_bytes + outcome.output_bytes,
+                    usage_kind="mixed_units"
+                    if self.state.usage.model_meter is not None
+                    else "mock_utf8_bytes",
+                ),
+            )
         if outcome.error:
             raise outcome.error
         if not settling:
@@ -291,7 +432,7 @@ class ResearchRuntime:
         if not outcome.payload:
             raise AgentGitError(ErrorCode.MODEL_EMPTY, "模型返回空响应")
         try:
-            decision = parse_decision(outcome.payload)
+            decision = parse_decision(payload)
         except AgentGitError as exc:
             if self.state.status == RunStatus.PLANNING:
                 raise AgentGitError(
@@ -321,6 +462,8 @@ class ResearchRuntime:
                 return
             if self.state.plan is None or len(self.state.completed) != len(self.state.plan.nodes):
                 raise AgentGitError(ErrorCode.PLAN_INVALID, "尚未完成计划不能结束任务")
+            if self.before_evaluate is not None:
+                self.before_evaluate(self.state)
             evaluation = validate_report(
                 self.state, self.tools.workspace.contents(), self.tools.corpus
             )
@@ -491,14 +634,10 @@ class ResearchRuntime:
         if trace.request_ref != object_digest(ObjectType.BLOB, settlement.request):
             raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "核对请求摘要不符")
         model = trace.provider.startswith("llm:")
-        expected_usage = evolve(
-            before.usage,
-            steps=before.usage.steps + int(model),
-            model_calls=before.usage.model_calls + int(model),
-            tool_calls=before.usage.tool_calls + int(not model),
-            reserved_tokens=len(settlement.request) + self.config.limits.max_response_bytes
+        expected_usage = (
+            reserve_model(before.usage, self.config, len(settlement.request))
             if model
-            else before.usage.reserved_tokens,
+            else evolve(before.usage, tool_calls=before.usage.tool_calls + 1)
         )
         if unknown.usage != expected_usage:
             raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "核对不能重置或重复扣除预算")
@@ -512,6 +651,7 @@ class ResearchRuntime:
                 or trace.logical_step_id != f"model-{unknown.usage.steps}"
                 or trace.attempt != 1
                 or trace.signature_digest != self.model.signature
+                or trace.provider != f"llm:{self.config.model}"
                 or unknown.attempts != before.attempts
             ):
                 raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "模型核对身份不符")
@@ -548,6 +688,7 @@ class ResearchRuntime:
         usage = self.state.usage
         if (
             error.code in retryable
+            and (not isinstance(error, ModelResultError) or error.retryable)
             and usage.replans - self.budget_baseline.replans < self.config.limits.max_replans
         ):
             self.state = evolve(
@@ -555,7 +696,7 @@ class ResearchRuntime:
                 status=RunStatus.PLANNING,
                 pending_tool=None,
                 error_code=error.code.value,
-                usage=evolve(usage, replans=usage.replans + 1, reserved_tokens=0),
+                usage=evolve(clear_reservation(usage), replans=usage.replans + 1),
             )
             self._save("run.replanning", error=error.as_dict())
             return
@@ -572,9 +713,6 @@ class ResearchRuntime:
             resume_status=self.state.status if status == RunStatus.OUTCOME_UNKNOWN else None,
             pending_tool=self.state.pending_tool if status == RunStatus.OUTCOME_UNKNOWN else None,
             error_code=error.code.value,
-            usage=evolve(
-                usage,
-                reserved_tokens=usage.reserved_tokens if status == RunStatus.OUTCOME_UNKNOWN else 0,
-            ),
+            usage=usage if status == RunStatus.OUTCOME_UNKNOWN else clear_reservation(usage),
         )
         self._save("run.stopped", error=error.as_dict())

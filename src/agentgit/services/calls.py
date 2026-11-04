@@ -1,7 +1,7 @@
 """调用意图/结果分别耐久保存；实际 Adapter 调用期间不持有数据库事务。"""
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
@@ -9,7 +9,13 @@ import sqlalchemy as sa
 from agentgit.core.canonical import ObjectType, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.execution import SANDBOX_PROVIDERS
-from agentgit.core.models import CallIntent, CallOccurrence, EffectClass, parse_contract
+from agentgit.core.models import (
+    CallIntent,
+    CallOccurrence,
+    EffectClass,
+    ModelCallBudget,
+    parse_contract,
+)
 from agentgit.core.research import CallTrace, SavedCallOutcome
 from agentgit.core.snapshots import EventPayload
 from agentgit.runtime.ports import CallOutcome
@@ -17,6 +23,9 @@ from agentgit.services.approvals import ApprovalService
 from agentgit.services.history import TABLES, EventInput, HistoryService
 from agentgit.services.managed_calls import ManagedCallContext, ManagedCalls
 from agentgit.storage.objects import StoredObject
+
+if TYPE_CHECKING:
+    from agentgit.services.hybrid import HybridService
 
 
 class RecordedCallGateway:
@@ -32,11 +41,13 @@ class RecordedCallGateway:
         after_result: Callable[[], None] | None = None,
         authorization: ApprovalService | None = None,
         managed: ManagedCalls | None = None,
+        hybrid: "HybridService | None" = None,
     ):
         self.history, self.repository_id, self.run_id = history, repository_id, run_id
         self.checkpoint = checkpoint
         self.authorization = authorization
         self.managed = managed
+        self.hybrid = hybrid
         self.origin_runs, self.materialize, self.after_result = (
             origin_runs,
             materialize,
@@ -53,6 +64,7 @@ class RecordedCallGateway:
         effect: EffectClass,
         request: bytes,
         max_bytes: int,
+        model_budget: ModelCallBudget | None = None,
     ) -> CallOutcome | None:
         """仅消费已耐久保存的结果；缺失时绝不创建意图或调用 Adapter。"""
         occurrence = CallOccurrence(
@@ -67,7 +79,7 @@ class RecordedCallGateway:
             raise AgentGitError(ErrorCode.FORBIDDEN, "录制消费缺少冻结工具策略")
         self.authorization.policy.rule(occurrence, effect)
         if self.origin_runs:
-            origin = self._reuse_origin(occurrence, effect, max_bytes)
+            origin = self._reuse_origin(occurrence, effect, max_bytes, model_budget)
             if origin is not None:
                 return origin
         head, _ = self.checkpoint()
@@ -100,6 +112,7 @@ class RecordedCallGateway:
                 or intent.effect != effect
                 or intent.checkpoint != head
                 or intent.max_response_bytes != max_bytes
+                or intent.model_budget != model_budget
             ):
                 raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "录制身份、检查点或响应限制不符")
             if row["result_ref"] is None:
@@ -120,6 +133,7 @@ class RecordedCallGateway:
         request: bytes,
         invoke: Callable[[], bytes],
         max_bytes: int,
+        model_budget: ModelCallBudget | None = None,
     ) -> CallOutcome:
         if type(max_bytes) is not int or not 1 <= max_bytes <= 8 * 1024 * 1024:
             raise AgentGitError(ErrorCode.VALIDATION, "响应上限必须为 1–8388608 字节")
@@ -137,9 +151,27 @@ class RecordedCallGateway:
             raise AgentGitError(ErrorCode.FORBIDDEN, "调用缺少本地工具策略")
         self.authorization.policy.rule(occurrence, effect)
         if self.origin_runs:
-            recovered = self._reuse_origin(occurrence, effect, max_bytes)
+            recovered = self._reuse_origin(occurrence, effect, max_bytes, model_budget)
             if recovered is not None:
                 return recovered
+        observation = (
+            self.hybrid.resolve(occurrence, effect, request, max_bytes) if self.hybrid else None
+        )
+        known_response = known_result = known_provenance = None
+        known_saved: dict[str, Any] | None = None
+        if observation is not None:
+            # 这里只读取冻结 CAS/固定语料，无真实 Adapter 调用；结果可以原子发布。
+            known_response = history.objects.put(ObjectType.BLOB, observation.payload)
+            known_saved = SavedCallOutcome(
+                response_ref=known_response.id,
+                response_bytes=len(observation.payload),
+                complete=True,
+                error=observation.error.as_dict() if observation.error else None,
+            ).model_dump(mode="json")
+            known_result = history.objects.put_json(ObjectType.CALL, known_saved)
+            known_provenance = history.objects.put_json(
+                ObjectType.BLOB, observation.provenance.model_dump(mode="json")
+            )
         head, version = self.checkpoint()
         intent = history.objects.put_json(
             ObjectType.CALL,
@@ -149,6 +181,7 @@ class RecordedCallGateway:
                 request_ref=request_obj.id,
                 checkpoint=head,
                 max_response_bytes=max_bytes,
+                model_budget=model_budget,
             ).model_dump(mode="json"),
         )
         calls = TABLES["external_calls"]
@@ -163,7 +196,7 @@ class RecordedCallGateway:
             intent.id,
             max_bytes,
         )
-        if provider in SANDBOX_PROVIDERS and self.managed is not None:
+        if provider in SANDBOX_PROVIDERS and self.managed is not None and observation is None:
             self.managed.stage(context)
         started_event = EventInput(
             "llm.requested" if provider.startswith("llm:") else "tool.started",
@@ -172,6 +205,11 @@ class RecordedCallGateway:
                 "occurrence": occurrence.model_dump(mode="json"),
                 "request_ref": request_obj.id,
                 "effect": effect.value,
+                **(
+                    {"model_budget": model_budget.model_dump(mode="json")}
+                    if model_budget is not None
+                    else {}
+                ),
             },
         )
         started_payload = history.objects.put_json(
@@ -225,6 +263,8 @@ class RecordedCallGateway:
                 if (
                     original.get("checkpoint") != head
                     or original.get("max_response_bytes") != max_bytes
+                    or original.get("model_budget")
+                    != (model_budget.model_dump(mode="json") if model_budget is not None else None)
                 ):
                     raise AgentGitError(
                         ErrorCode.REPLAY_MISMATCH, "已录制调用的 checkpoint 或响应限制不符"
@@ -245,6 +285,11 @@ class RecordedCallGateway:
             )
             started_seq = 0
             if admission_error is None:
+                if known_response is not None and known_result is not None:
+                    for role, obj in (("response", known_response), ("result", known_result)):
+                        history._ref(
+                            connection, self.repository_id, obj, "external_call", str(call_id), role
+                        )
                 for role, obj in (("request", request_obj), ("intent", intent)):
                     history._ref(
                         connection, self.repository_id, obj, "external_call", str(call_id), role
@@ -262,10 +307,13 @@ class RecordedCallGateway:
                         request_digest=request_obj.id,
                         effect=effect.value,
                         intent_ref=intent.id,
-                        status="started",
+                        result_ref=known_result.id if known_result is not None else None,
+                        status=("failed" if observation.error else "succeeded")
+                        if observation is not None
+                        else "started",
                     )
                 )
-                if provider in SANDBOX_PROVIDERS:
+                if provider in SANDBOX_PROVIDERS and observation is None:
                     assert self.managed is not None
                     self.managed.prepare(connection, context)
                 seq = int(run["last_event_seq"]) + 1
@@ -279,8 +327,45 @@ class RecordedCallGateway:
                     .values(last_event_seq=seq)
                 )
                 started_seq = seq
+                if observation is not None:
+                    assert known_response is not None and known_result is not None
+                    assert known_provenance is not None and self.hybrid is not None
+                    self.hybrid.record(connection, context, observation, known_provenance)
+                    completed = EventInput(
+                        "call.failed" if observation.error else "tool.completed",
+                        step,
+                        {
+                            "occurrence": occurrence.model_dump(mode="json"),
+                            "result_ref": known_result.id,
+                            "error": observation.error.as_dict() if observation.error else None,
+                            "observation_ref": known_provenance.id,
+                        },
+                        seq,
+                    )
+                    completed_obj = history.objects.put_json(
+                        ObjectType.EVENT,
+                        EventPayload(data=completed.payload).model_dump(mode="json"),
+                    )
+                    history._event(
+                        connection,
+                        self.repository_id,
+                        self.run_id,
+                        seq + 1,
+                        completed,
+                        completed_obj,
+                    )
+                    connection.execute(
+                        TABLES["runs"]
+                        .update()
+                        .where(TABLES["runs"].c.id == self.run_id)
+                        .values(last_event_seq=seq + 1)
+                    )
         if admission_error is not None:
             raise admission_error
+        if known_saved is not None:
+            if self.after_result is not None:
+                self.after_result()
+            return self._outcome(occurrence, known_saved)
         # Adapter 可以执行磁盘操作；此处已退出事务。
         error: AgentGitError | None = None
         response = b""
@@ -391,7 +476,11 @@ class RecordedCallGateway:
         return outcome
 
     def _reuse_origin(
-        self, occurrence: CallOccurrence, effect: EffectClass, max_bytes: int
+        self,
+        occurrence: CallOccurrence,
+        effect: EffectClass,
+        max_bytes: int,
+        model_budget: ModelCallBudget | None = None,
     ) -> CallOutcome | None:
         history, calls = self.history, TABLES["external_calls"]
         head, _ = self.checkpoint()
@@ -431,7 +520,12 @@ class RecordedCallGateway:
             ):
                 raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "恢复调用与来源录制不符")
             intent = history.objects.get_json(origin["intent_ref"], ObjectType.CALL)
-            if intent.get("checkpoint") != head or intent.get("max_response_bytes") != max_bytes:
+            if (
+                intent.get("checkpoint") != head
+                or intent.get("max_response_bytes") != max_bytes
+                or intent.get("model_budget")
+                != (model_budget.model_dump(mode="json") if model_budget is not None else None)
+            ):
                 raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "恢复调用的 checkpoint 或限制不符")
             if origin["result_ref"] is None:
                 raise AgentGitError(ErrorCode.OUTCOME_UNKNOWN, "来源调用没有结果，不能在恢复中重发")

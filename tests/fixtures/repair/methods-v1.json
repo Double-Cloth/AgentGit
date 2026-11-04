@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "protocol_id": "repair-benchmark-methods/v1",
+  "scope": "methods-only/not-a-30-case-dataset",
+  "protocol_sha256": "c1582a71dd3c3c463dd4e5c31353114ea1422c58642338e4276ca056dfe75ed8",
+  "methods": [
+    "repair",
+    "first_exception_local",
+    "global_prompt_once",
+    "unordered_enumeration",
+    "combination_without_reduction"
+  ],
+  "candidate_source": "full_candidates_fallback",
+  "global_prompt_template": "prompt-verified-sources/v1",
+  "default_budget": {
+    "schema_version": 1,
+    "quotas": {
+      "schema_version": 1,
+      "screen": 14,
+      "reduce": 6,
+      "confirm": 6,
+      "regression": 4
+    },
+    "max_trials": 30,
+    "trial": {
+      "schema_version": 1,
+      "max_steps": 32,
+      "max_model_calls": 12,
+      "max_tool_calls": 12,
+      "max_replans": 2,
+      "max_tokens": 200000,
+      "max_wall_ms": 60000,
+      "max_response_bytes": 16384,
+      "max_context_bytes": 131072,
+      "max_artifact_bytes": 65536,
+      "max_files": 100,
+      "max_cost_micro_usd": 0
+    },
+    "max_model_calls": 360,
+    "max_tool_calls": 360,
+    "max_tokens": 3000000,
+    "max_wall_ms": 900000,
+    "max_concurrency": 1,
+    "currency": "USD",
+    "max_cost_micro_usd": 0,
+    "pricebook": null
+  },
+  "no_reduction_quotas": {
+    "screen": 20,
+    "reduce": 0,
+    "confirm": 6,
+    "regression": 4
+  },
+  "heldout_execution": "not_started",
+  "dataset_release_ref": null
+}

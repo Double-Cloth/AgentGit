@@ -1,0 +1,17 @@
+{
+  "name": "echo",
+  "description": "可信本地测试工具；描述和只读提示不授予本地权限。",
+  "inputSchema": {
+    "type": "object",
+    "properties": { "value": { "type": "string", "maxLength": 100 } },
+    "required": ["value"],
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": { "value": { "type": "string", "maxLength": 100 } },
+    "required": ["value"],
+    "additionalProperties": false
+  },
+  "annotations": { "readOnlyHint": true, "idempotentHint": true }
+}

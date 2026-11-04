@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "kind": "a2a-runtime-fixture-spec/v1",
+  "profile": "public-research-summary/v1",
+  "job_kind": "a2a_run",
+  "mode": "live",
+  "recorded_spec": "recorded-cases.json",
+  "messages": ["fixture-message-1", "fixture-followup-1"],
+  "injections": ["duplicate_submit", "changed_submit", "cross_repository", "wrong_actor", "forged_remote_reference", "waiting_approval", "queued_pause", "resume", "poll_defer", "poll_limit", "original_deadline", "remote_input_required", "remote_auth_required", "remote_failure", "remote_rejected", "remote_expired", "cancel_before_send", "cancel_after_receipt", "cancel_approval", "cancel_rejected", "cancel_unknown", "pause_after_intent", "crash_after_intent", "crash_after_result", "crash_after_observation", "crash_after_defer", "stolen_fence", "artifact_budget"],
+  "expected": {"new_business_tables": 0, "unapproved_send_requests": 0, "unapproved_cancel_requests": 0, "unknown_write_auto_retry": false, "budget_reset_on_resume": false, "deadline_reset_on_reclaim": false, "remote_names_are_host_paths": false, "polling_uses_existing_available_at": true},
+  "status": "specification_only_not_acceptance"
+}

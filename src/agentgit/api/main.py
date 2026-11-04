@@ -19,8 +19,15 @@ from starlette.exceptions import HTTPException
 from agentgit import __version__
 from agentgit.api.security import LocalBoundary, RequestStats, error_response
 from agentgit.config import Settings
+from agentgit.core.a2a import A2AServer
+from agentgit.core.a2a_runs import NewA2ARun
 from agentgit.core.canonical import encode
+from agentgit.core.collaboration_controls import CollaborationControlRequest
+from agentgit.core.collaboration_runs import NewCollaboration
+from agentgit.core.debug_reports import NewDebugReport
 from agentgit.core.errors import AgentGitError, ErrorCode
+from agentgit.core.experiments import FreezeValidator, NewExperiment
+from agentgit.core.interventions import NewIntervention
 from agentgit.core.management import (
     ControlRun,
     DecideApproval,
@@ -29,9 +36,27 @@ from agentgit.core.management import (
     NewTask,
     SubmitRun,
 )
-from agentgit.core.models import parse_contract
+from agentgit.core.merge_proposals import (
+    ApproveMergeProposal,
+    NewMergeProposal,
+    PrepareMergeReview,
+    RejectMergeProposal,
+    ReplaceMergeRevision,
+    ValidateMergeRevision,
+)
+from agentgit.core.merge_runs import ForkMergedBranch, NewMergedRun
+from agentgit.core.models import Contract, parse_contract
+from agentgit.core.repair import NewRepairSearch
+from agentgit.core.repair_pools import (
+    NewPreparedRepairSearch,
+    NewRepairValidationSuite,
+    OpenRepairValidationPool,
+)
+from agentgit.core.repair_reviews import DecideRepairReview
+from agentgit.core.repair_studies import NewRepairStudy
 from agentgit.core.versions import NewBranch, parse_replay
-from agentgit.services.management import ManagementService
+from agentgit.services.execution_views import ExecutionResource
+from agentgit.services.management import ManagementService, public
 from agentgit.storage.database import probe_database
 
 Repository = Annotated[UUID, Header(alias="X-Repository-ID")]
@@ -114,6 +139,10 @@ def create_app(
     ) -> dict[str, Any]:
         return {"http": stats.snapshot(), **service.metrics(repo)}
 
+    @app.get("/capabilities")
+    def capabilities(service: Annotated[ManagementService, Depends(get_manager)]) -> dict[str, Any]:
+        return service.capabilities()
+
     @app.get("/ready")
     def ready() -> dict[str, str]:
         if manager is None:
@@ -141,6 +170,191 @@ def create_app(
             raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
         return service.repository(repo)
 
+    @app.get("/repositories/{repository_id}/runs")
+    def runs(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.runs(repo, after_id=after_id, limit=limit)
+
+    @app.post("/a2a/bind")
+    def bind_a2a(
+        body: dict[str, Any], service: Annotated[ManagementService, Depends(get_manager)]
+    ) -> dict[str, Any]:
+        return service.bind_a2a(parse_contract(encode(body), A2AServer))
+
+    @app.post("/repositories/{repository_id}/a2a-runs", status_code=202)
+    def submit_a2a(
+        repository_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.submit_a2a(repo, parse_contract(encode(body), NewA2ARun), key)
+
+    @app.get("/repositories/{repository_id}/a2a-runs")
+    def a2a_runs(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        result: dict[str, Any] = public(
+            service.a2a_views.listing(repo, actor=service.actor, after_id=after_id, limit=limit)
+        )
+        return result
+
+    @app.get("/repositories/{repository_id}/a2a-submissions")
+    def a2a_submission(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        key: Annotated[str, Query(min_length=1, max_length=200)],
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.a2a_submission(repo, key)
+
+    @app.get("/repositories/{repository_id}/a2a-runs/{run_id}/program")
+    def a2a_program(
+        repository_id: UUID,
+        run_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.a2a_views.program(repo, run_id, actor=service.actor)
+
+    @app.post("/repositories/{repository_id}/collaborations/prepare", status_code=201)
+    def prepare_collaboration(
+        repository_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.prepare_collaboration(
+            repo, parse_contract(encode(body), NewCollaboration), key
+        )
+
+    @app.get("/repositories/{repository_id}/collaborations")
+    def collaborations(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.collaboration_views.list(
+            repo, actor=service.actor, after_id=after_id, limit=limit
+        )
+
+    @app.get("/repositories/{repository_id}/collaborations/{group_id}")
+    def collaboration(
+        repository_id: UUID,
+        group_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.collaboration_views.summary(repo, group_id, actor=service.actor)
+
+    @app.post("/repositories/{repository_id}/collaborations/{group_id}/start", status_code=202)
+    def start_collaboration(
+        repository_id: UUID,
+        group_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        parse_contract(encode(body), Contract)
+        return service.start_collaboration(repo, group_id, key)
+
+    @app.post("/repositories/{repository_id}/collaborations/{group_id}/recorded", status_code=201)
+    def recorded_collaboration(
+        repository_id: UUID,
+        group_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        parse_contract(encode(body), Contract)
+        return service.recorded_collaboration(repo, group_id, key)
+
+    @app.post("/repositories/{repository_id}/collaborations/{group_id}/control", status_code=202)
+    def control_collaboration(
+        repository_id: UUID,
+        group_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.control_collaboration(
+            repo, group_id, parse_contract(encode(body), CollaborationControlRequest), key
+        )
+
+    @app.get("/repositories/{repository_id}/collaborations/{group_id}/messages")
+    def collaboration_messages(
+        repository_id: UUID,
+        group_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.collaboration_views.messages(
+            repo, group_id, actor=service.actor, after_id=after_id, limit=limit
+        )
+
+    @app.get("/repositories/{repository_id}/collaborations/{group_id}/shared")
+    def collaboration_shared(
+        repository_id: UUID,
+        group_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_path: Annotated[str | None, Query(max_length=32)] = None,
+        after_version: Annotated[int | None, Query(ge=1, le=9_007_199_254_740_991)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.collaboration_views.publications(
+            repo,
+            group_id,
+            actor=service.actor,
+            after_path=after_path,
+            after_version=after_version,
+            limit=limit,
+        )
+
     @app.post("/agents", status_code=201)
     def agent(
         body: dict[str, Any],
@@ -158,6 +372,390 @@ def create_app(
         service: Annotated[ManagementService, Depends(get_manager)],
     ) -> dict[str, Any]:
         return service.create_branch(repo, parse_contract(encode(body), NewBranch), key)
+
+    @app.get("/intervention-context")
+    def intervention_context(
+        source_run_id: UUID,
+        from_commit: str,
+        validator_ref: str,
+        target_event_id: Annotated[int, Query(ge=1)],
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.intervention_context(
+            repo, source_run_id, from_commit, target_event_id, validator_ref
+        )
+
+    @app.post("/interventions", status_code=201)
+    def intervention(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_intervention(repo, parse_contract(encode(body), NewIntervention), key)
+
+    @app.get("/interventions/{intervention_id}")
+    def intervention_view(
+        intervention_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.intervention(repo, intervention_id)
+
+    @app.post("/validators", status_code=201)
+    def freeze_validator(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.freeze_validator(repo, parse_contract(encode(body), FreezeValidator), key)
+
+    @app.get("/validators/{validator_ref}")
+    def validator(
+        validator_ref: str,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.validator(repo, validator_ref)
+
+    @app.post("/repair-validation-suites", status_code=201)
+    def repair_suite_create(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_repair_validation_suite(
+            repo, parse_contract(encode(body), NewRepairValidationSuite), key
+        )
+
+    @app.get("/repair-validation-suites/{suite_id}")
+    def repair_suite_status(
+        suite_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.repair_validation_suite(repo, suite_id)
+
+    @app.post("/repair-studies/{study_id}/open-validation")
+    def repair_validation_open(
+        study_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        request = parse_contract(encode(body), OpenRepairValidationPool)
+        return service.open_repair_validation(repo, study_id, UUID(request.suite_id), key)
+
+    @app.get("/repair-studies/{study_id}/validation")
+    def repair_validation_status(
+        study_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.repair_validation(repo, study_id)
+
+    @app.post("/repair-studies/{study_id}/proposal", status_code=201)
+    def repair_proposal_create(
+        study_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        parse_contract(encode(body), Contract)
+        return service.create_repair_proposal(repo, study_id, key)
+
+    @app.get("/repair-proposals/{proposal_id}")
+    def repair_proposal_status(
+        proposal_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.repair_proposal(repo, proposal_id)
+
+    @app.post("/repair-proposals/{proposal_id}/review", status_code=201)
+    def repair_review_begin(
+        proposal_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        parse_contract(encode(body), Contract)
+        return service.begin_repair_review(repo, proposal_id, key)
+
+    @app.post("/repair-proposals/{proposal_id}/approve")
+    def repair_review_approve(
+        proposal_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        request = parse_contract(encode(body), DecideRepairReview)
+        if request.decision == "reject":
+            raise AgentGitError(ErrorCode.VALIDATION, "拒绝决定必须使用 reject 入口")
+        return service.decide_repair_review(repo, proposal_id, request, key)
+
+    @app.post("/repair-proposals/{proposal_id}/reject")
+    def repair_review_reject(
+        proposal_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        request = parse_contract(encode(body), DecideRepairReview)
+        if request.decision != "reject":
+            raise AgentGitError(ErrorCode.VALIDATION, "采纳或保存实验必须使用 approve 入口")
+        return service.decide_repair_review(repo, proposal_id, request, key)
+
+    @app.get("/repositories/{repository_id}/merge-proposals")
+    def merge_proposals_list(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.merge_proposals_list(repo, after_id=after_id, limit=limit)
+
+    @app.get("/merge-bases")
+    def merge_bases(
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        ours: Annotated[str, Query(pattern=r"^[0-9a-f]{64}$")],
+        theirs: Annotated[str, Query(pattern=r"^[0-9a-f]{64}$")],
+        selected: Annotated[str | None, Query(pattern=r"^[0-9a-f]{64}$")] = None,
+    ) -> dict[str, Any]:
+        return service.merge_bases(repo, ours, theirs, selected=selected)
+
+    @app.post("/merge-proposals", status_code=201)
+    def merge_proposal_create(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_merge_proposal(
+            repo, parse_contract(encode(body), NewMergeProposal), key
+        )
+
+    @app.post("/merge-branches", status_code=201)
+    def merged_branch_create(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.fork_merged_branch(repo, parse_contract(encode(body), ForkMergedBranch), key)
+
+    @app.post("/merge-runs", status_code=202)
+    def merged_run_create(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.start_merged_run(repo, parse_contract(encode(body), NewMergedRun), key)
+
+    @app.get("/merge-proposals/{proposal_id}")
+    def merge_proposal_status(
+        proposal_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        review_before: UUID | None = None,
+    ) -> dict[str, Any]:
+        return service.merge_proposal(repo, proposal_id, review_before=review_before)
+
+    @app.get("/merge-proposals/{proposal_id}/reviews/{review_id}")
+    def merge_review_status(
+        proposal_id: UUID,
+        review_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.merge_review_status(repo, proposal_id, review_id)
+
+    @app.post("/merge-proposals/{proposal_id}/revisions", status_code=201)
+    def merge_revision_replace(
+        proposal_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.replace_merge_revision(
+            repo, proposal_id, parse_contract(encode(body), ReplaceMergeRevision), key
+        )
+
+    @app.post("/merge-proposals/{proposal_id}/validate", status_code=201)
+    def merge_revision_validate(
+        proposal_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.validate_merge_revision(
+            repo, proposal_id, parse_contract(encode(body), ValidateMergeRevision), key
+        )
+
+    @app.post("/merge-proposals/{proposal_id}/review", status_code=201)
+    def merge_review_prepare(
+        proposal_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.begin_merge_review(
+            repo, proposal_id, parse_contract(encode(body), PrepareMergeReview), key
+        )
+
+    @app.post("/merge-proposals/{proposal_id}/approve", status_code=201)
+    def merge_proposal_approve(
+        proposal_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.approve_merge_proposal(
+            repo, proposal_id, parse_contract(encode(body), ApproveMergeProposal), key
+        )
+
+    @app.post("/merge-proposals/{proposal_id}/reject", status_code=201)
+    def merge_proposal_reject(
+        proposal_id: UUID,
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.reject_merge_proposal(
+            repo, proposal_id, parse_contract(encode(body), RejectMergeProposal), key
+        )
+
+    @app.post("/repair-studies", status_code=202)
+    def repair_study_create(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_repair_study(repo, parse_contract(encode(body), NewRepairStudy), key)
+
+    @app.get("/repair-studies/{study_id}")
+    def repair_study_status(
+        study_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.repair_study(repo, study_id)
+
+    @app.post("/repair-studies/{study_id}/cancel")
+    def repair_study_cancel(
+        study_id: UUID,
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.cancel_repair_study(repo, study_id, key)
+
+    @app.post("/repair-searches/prepared", status_code=202)
+    def repair_search_prepared(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_prepared_repair_search(
+            repo, parse_contract(encode(body), NewPreparedRepairSearch), key
+        )
+
+    @app.post("/repair-searches", status_code=202)
+    def repair_search_create(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_repair_search(
+            repo, parse_contract(encode(body), NewRepairSearch), key
+        )
+
+    @app.get("/repair-searches/{search_id}/workflow")
+    def repair_workflow_status(
+        search_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.repair_workflow(repo, search_id)
+
+    @app.get("/repair-searches/{search_id}")
+    def repair_search_status(
+        search_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.repair_search(repo, search_id)
+
+    @app.post("/repair-searches/{search_id}/cancel")
+    def repair_search_cancel(
+        search_id: UUID,
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.cancel_repair_search(repo, search_id, key)
+
+    @app.get("/repositories/{repository_id}/repair-searches")
+    def repair_searches_list(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repo != repository_id:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.repair_searches(repo, after_id=after_id, limit=limit)
+
+    @app.post("/experiments", status_code=202)
+    def experiment(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_experiment(repo, parse_contract(encode(body), NewExperiment), key)
+
+    @app.get("/experiments/{experiment_id}")
+    def experiment_status(
+        experiment_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.experiment(repo, experiment_id)
+
+    @app.get("/repositories/{repository_id}/experiments")
+    def experiments_list(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "项目不可访问")
+        return service.experiments_list(repo, after_id=after_id, limit=limit)
 
     @app.post("/replays", status_code=202)
     def replay(
@@ -211,6 +809,16 @@ def create_app(
     ) -> dict[str, Any]:
         return service.checkout(repo, commit_id)
 
+    @app.get("/commits/{commit_id}/artifacts")
+    def commit_artifacts(
+        commit_id: str,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        return service.commit_artifacts(repo, commit_id, after_id=after_id, limit=limit)
+
     @app.get("/diff")
     def diff(
         left_commit: str,
@@ -221,6 +829,72 @@ def create_app(
         limit: Annotated[int, Query(ge=1, le=1000)] = 100,
     ) -> dict[str, Any]:
         return service.diff(repo, left_commit, right_commit, after=after, limit=limit)
+
+    @app.get("/runs/{run_id}/behavioral-trace")
+    def behavioral_trace(
+        run_id: UUID, repo: Repository, service: Annotated[ManagementService, Depends(get_manager)]
+    ) -> dict[str, Any]:
+        return service.behavioral_trace(repo, run_id)
+
+    @app.get("/behavioral-diff")
+    def behavioral_diff(
+        left_run_id: UUID,
+        right_run_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.behavioral_diff(repo, left_run_id, right_run_id)
+
+    @app.post("/debug-reports", status_code=201)
+    def create_debug_report(
+        body: dict[str, Any],
+        repo: Repository,
+        key: IdempotencyKey,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.create_debug_report(repo, parse_contract(encode(body), NewDebugReport), key)
+
+    @app.get("/debug-reports/{report_id}")
+    def debug_report(
+        report_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.debug_report(repo, report_id)
+
+    @app.get("/debug-reports/{report_id}/candidate-context")
+    def debug_candidate_context(
+        report_id: UUID,
+        validator_ref: Annotated[str, Query(pattern=r"^[a-f0-9]{64}$")],
+        candidate_event_id: Annotated[int, Query(ge=1, le=9_007_199_254_740_991)],
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.debug_candidate_context(repo, report_id, candidate_event_id, validator_ref)
+
+    @app.get("/debug-reports/{report_id}/candidate-experiment")
+    def debug_candidate_experiment(
+        report_id: UUID,
+        experiment_id: UUID,
+        candidate_event_id: Annotated[int, Query(ge=1, le=9_007_199_254_740_991)],
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.debug_candidate_experiment(
+            repo, report_id, candidate_event_id, experiment_id
+        )
+
+    @app.get("/repositories/{repository_id}/debug-reports")
+    def debug_reports_list(
+        repository_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        if repository_id != repo:
+            raise AgentGitError(ErrorCode.NOT_FOUND, "报告项目不可访问")
+        return service.debug_reports_list(repo, after_id=after_id, limit=limit)
 
     @app.post("/tasks", status_code=201)
     def task(
@@ -279,6 +953,55 @@ def create_app(
         run_id: UUID, repo: Repository, service: Annotated[ManagementService, Depends(get_manager)]
     ) -> dict[str, Any]:
         return service.artifacts(repo, run_id)
+
+    @app.get("/runs/{run_id}/executions")
+    def executions(
+        run_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        return service.executions(repo, run_id, after_id=after_id, limit=limit)
+
+    @app.get("/runs/{run_id}/executions/{call_id}")
+    def execution(
+        run_id: UUID,
+        call_id: UUID,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+    ) -> dict[str, Any]:
+        return service.execution(repo, run_id, call_id)
+
+    @app.get("/runs/{run_id}/executions/{call_id}/content/{resource}")
+    def execution_content(
+        run_id: UUID,
+        call_id: UUID,
+        resource: ExecutionResource,
+        repo: Repository,
+        service: Annotated[ManagementService, Depends(get_manager)],
+        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=1_048_576)] = 65536,
+    ) -> Response:
+        metadata, content = service.execution_content(
+            repo, run_id, call_id, resource, offset=offset, limit=limit
+        )
+        return Response(
+            content,
+            media_type="application/octet-stream",
+            headers={
+                "ETag": f'"{metadata["reference"]}"',
+                "X-Content-Bytes": str(metadata["total_bytes"]),
+                "X-Content-Offset": str(metadata["offset"]),
+                "X-Next-Offset": str(metadata["next_offset"])
+                if metadata["next_offset"] is not None
+                else "",
+                "Content-Disposition": f'attachment; filename="{resource}.bin"',
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "sandbox",
+                "Cache-Control": "no-store",
+            },
+        )
 
     @app.get("/artifacts/{artifact_id}/content")
     def artifact(

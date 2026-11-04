@@ -14,7 +14,7 @@ from sqlalchemy.engine import Connection
 from agentgit import __version__
 from agentgit.adapters.corpus import Corpus
 from agentgit.adapters.execution.policy import bundled_policy
-from agentgit.adapters.mock import MockResearchModel
+from agentgit.adapters.models import select_model
 from agentgit.adapters.tools import ToolRegistry
 from agentgit.adapters.workspace import ArtifactWorkspace
 from agentgit.core.canonical import ObjectType, encode
@@ -196,6 +196,27 @@ class ResearchService:
                 raise AgentGitError(ErrorCode.NOT_FOUND, "分支不可访问")
             if branch["active_writer_run_id"] is not None:
                 raise AgentGitError(ErrorCode.VERSION_CONFLICT, "分支已有活动写入 Run")
+            merged_origins, merged_approvals = (
+                TABLES["merge_branch_origins"],
+                TABLES["merge_approvals"],
+            )
+            if (
+                connection.execute(
+                    sa.select(merged_origins.c.id).where(
+                        merged_origins.c.repository_id == repository_id,
+                        merged_origins.c.branch_name == branch_name,
+                    )
+                ).first()
+                is not None
+                or connection.execute(
+                    sa.select(merged_approvals.c.id).where(
+                        merged_approvals.c.repository_id == repository_id,
+                        merged_approvals.c.commit_id == branch["head_commit_id"],
+                    )
+                ).first()
+                is not None
+            ):
+                raise AgentGitError(ErrorCode.FORBIDDEN, "合并来源必须显式提交独立新任务")
             connection.execute(
                 runs.insert().values(
                     id=run_id,
@@ -270,6 +291,9 @@ class ResearchSession:
         self.execution_service: ExecutionService | None = None
         self.budget_baseline: BudgetUsage | None = None
         self.initialization: dict[str, object] | None = None
+        self.initialization_type = "live.initialized"
+        self.hybrid_policy_ref: str | None = None
+        self.before_evaluate: Callable[[AgentState], None] | None = None
 
     def bind_execution(self, service: "ExecutionService") -> None:
         if service.policy != self.config.execution_policy:
@@ -356,6 +380,8 @@ class ResearchSession:
         }
         if self.budget_baseline is not None:
             controlled_input["budget_baseline"] = self.budget_baseline.model_dump(mode="json")
+        if self.hybrid_policy_ref is not None:
+            controlled_input["hybrid_policy_ref"] = self.hybrid_policy_ref
         payload = encode(controlled_input)
         input_ref = self.history.register_input(self.repository_id, payload)
         return EnvironmentManifest(
@@ -363,7 +389,7 @@ class ResearchSession:
             python_version=platform.python_version(),
             code_revision=source_revision(),
             dependency_lock_digest=hashlib.sha256(lock.read_bytes()).hexdigest(),
-            model_signature="mock-research/v1:" + model.signature,
+            model_signature=self.config.model + ":" + model.signature,
             prompt_digest=hashlib.sha256(self.config.prompt.encode()).hexdigest(),
             tool_signatures=tuple(self.tools.signature(name) for name in sorted(self.config.tools)),
             input_ref=input_ref,
@@ -379,7 +405,7 @@ class ResearchSession:
         control: Callable[[], str | None] | None = None,
         wall_budget_ms: int | None = None,
     ) -> AgentState:
-        model = model or MockResearchModel()
+        model = model or select_model(self.config)
         if self.config.execution_policy is not None and self.execution_service is None:
             raise AgentGitError(ErrorCode.FORBIDDEN, "容器工具必须通过持久 Job/Worker 执行")
         self.environment = self._environment(model)
@@ -393,7 +419,7 @@ class ResearchSession:
         if self.expected_environment is not None and self.environment != self.expected_environment:
             raise AgentGitError(ErrorCode.UNSUPPORTED_SCHEMA, "恢复环境与原检查点不兼容")
         if self.initialization is not None:
-            self.save(self.state, "live.initialized", self.initialization)
+            self.save(self.state, self.initialization_type, self.initialization)
             self.initialization = None
         gateway = (
             self.gateway_factory()
@@ -409,10 +435,10 @@ class ResearchSession:
         if gateway.authorization is None:
             rules = [
                 ToolRule(
-                    provider="llm:mock-research/v1",
+                    provider=f"llm:{self.config.model}",
                     signature_digest=model.signature,
                     effect=EffectClass.READ_ONLY,
-                    scope="local",
+                    scope="external" if self.config.openai is not None else "local",
                     preauthorized=True,
                 )
             ]
@@ -441,6 +467,7 @@ class ResearchSession:
             wall_budget_ms=wall_budget_ms,
             settlement=self.settlement,
             budget_baseline=self.budget_baseline,
+            before_evaluate=self.before_evaluate,
         ).run()
 
     def save(

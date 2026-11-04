@@ -1,5 +1,6 @@
 """来源路径、安全 Fork、只读版本浏览与客观差异。"""
 
+import heapq
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -31,6 +32,14 @@ class HistorySelection:
     until_seq: int
 
 
+@dataclass(frozen=True)
+class PreparedBranch:
+    repository_id: UUID
+    request: NewBranch
+    snapshot_payload: bytes
+    ancestors: frozenset[str]
+
+
 class VersionService:
     def __init__(self, history: HistoryService):
         self.history = history
@@ -49,7 +58,7 @@ class VersionService:
         manifest = parse_contract(
             self.history.objects.get(row["id"], ObjectType.COMMIT), CommitManifest
         )
-        expected_parent = () if row["parent_id"] is None else (row["parent_id"],)
+        expected_parent = row["parents"]
         if (
             manifest.repository_id != str(repository_id)
             or manifest.parents != expected_parent
@@ -63,39 +72,68 @@ class VersionService:
 
     def ancestors(self, repository_id: UUID, start: str) -> list[str]:
         self._digest(start)
-        # 单父 CTE 有固定深度上限；不为每层累计路径数组，避免二次方内存。
+        # 分批读取唯一节点，避免双父菱形的路径乘积；父必须位于全部子节点之后。
+        graph: dict[str, tuple[str, ...]] = {}
+        pending = [start]
         with self.history.engine.connect() as connection:
-            rows = list(
-                connection.execute(
-                    sa.text("""
-                WITH RECURSIVE lineage(id, depth) AS (
-                    SELECT id, 0 FROM commits WHERE repository_id=:repo AND id=:start
-                    UNION ALL
-                    SELECT p.parent_id, l.depth+1 FROM lineage l JOIN commit_parents p
-                      ON p.repository_id=:repo AND p.commit_id=l.id
-                    WHERE l.depth < :maximum
-                )
-                SELECT c.id, l.depth, p.parent_id, c.state_ref, c.environment_ref,
-                       c.event_manifest_ref
-                FROM lineage l JOIN commits c ON c.repository_id=:repo AND c.id=l.id
-                LEFT JOIN commit_parents p ON p.repository_id=:repo AND p.commit_id=c.id
-                ORDER BY l.depth
-            """),
-                    {"repo": repository_id, "start": start, "maximum": MAX_HISTORY},
-                ).mappings()
-            )
-        if not rows:
-            raise AgentGitError(ErrorCode.NOT_FOUND, "Commit 不可访问")
-        result: list[str] = []
-        seen: set[str] = set()
-        for depth, row in enumerate(rows):
-            if row["id"] in seen or row["depth"] != depth:
-                raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "单父历史包含循环或重复父关系")
-            self._manifest(repository_id, dict(row))
-            seen.add(row["id"])
-            result.append(row["id"])
-        if rows[-1]["parent_id"] is not None:
-            raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "历史超过有界解析深度")
+            while pending:
+                batch = list(dict.fromkeys(node for node in pending if node not in graph))
+                pending = []
+                if len(graph) + len(batch) > MAX_HISTORY:
+                    raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "历史超过有界唯一节点上限")
+                commits, parents = TABLES["commits"], TABLES["commit_parents"]
+                rows = {
+                    row["id"]: dict(row)
+                    for row in connection.execute(
+                        sa.select(commits).where(
+                            commits.c.repository_id == repository_id,
+                            commits.c.id.in_(batch),
+                        )
+                    ).mappings()
+                }
+                if len(rows) != len(batch):
+                    raise AgentGitError(ErrorCode.NOT_FOUND, "Commit 不可访问或父历史缺失")
+                indexed: dict[str, list[str]] = {node: [] for node in batch}
+                for row in connection.execute(
+                    sa.select(parents)
+                    .where(
+                        parents.c.repository_id == repository_id,
+                        parents.c.commit_id.in_(batch),
+                    )
+                    .order_by(parents.c.parent_order)
+                ).mappings():
+                    indexed_values = indexed[row["commit_id"]]
+                    if (
+                        row["parent_order"] != len(indexed_values)
+                        or len(indexed_values) >= 2
+                        or row["parent_id"] in indexed_values
+                    ):
+                        raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "父边顺序或身份非法")
+                    indexed_values.append(row["parent_id"])
+                for node in batch:
+                    values = tuple(indexed[node])
+                    rows[node]["parents"] = values
+                    self._manifest(repository_id, rows[node])
+                    graph[node] = values
+                    pending.extend(values)
+        rank = {node: index for index, node in enumerate(graph)}
+        children = dict.fromkeys(graph, 0)
+        for values in graph.values():
+            for node in values:
+                children[node] += 1
+        ready = [rank[node] for node, count in children.items() if count == 0]
+        heapq.heapify(ready)
+        nodes = list(graph)
+        result = []
+        while ready:
+            node = nodes[heapq.heappop(ready)]
+            result.append(node)
+            for parent in graph[node]:
+                children[parent] -= 1
+                if children[parent] == 0:
+                    heapq.heappush(ready, rank[parent])
+        if len(result) != len(graph):
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "历史包含循环")
         return result
 
     def checkout(self, repository_id: UUID, commit_id: str) -> dict[str, Any]:
@@ -116,6 +154,14 @@ class VersionService:
         }
 
     def select_range(self, repository_id: UUID, request: RecordedRange) -> HistorySelection:
+        if (
+            self.history.restore(repository_id, request.from_commit).data.get("kind")
+            == "merged_research_state/v1"
+        ):
+            raise AgentGitError(
+                ErrorCode.RECORDING_MISSING,
+                "合并 Commit 没有录制路径，请显式选择新 Run 的初始化检查点",
+            )
         source = UUID(request.source_run_id)
         links, snapshots = TABLES["run_commits"], TABLES["snapshots"]
         with self.history.engine.connect() as connection:
@@ -151,12 +197,14 @@ class VersionService:
         if first > last:
             raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "回放终点不能早于起点")
         selected = tuple(path[first : last + 1])
-        chain = self.ancestors(repository_id, request.until_commit)
-        if (
-            request.from_commit not in chain
-            or tuple(reversed(chain[: chain.index(request.from_commit) + 1])) != selected
-        ):
-            raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "起止点之间存在来源路径缺口")
+        # 显式 Run 路径逐边核对，不将 DAG 的拓扑排序当作唯一录制路径。
+        self.ancestors(repository_id, request.until_commit)
+        for previous, current in zip(selected[:-1], selected[1:], strict=True):
+            manifest = parse_contract(
+                self.history.objects.get(current, ObjectType.COMMIT), CommitManifest
+            )
+            if manifest.parents != (previous,):
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "起止点之间不存在唯一来源录制路径")
         sequences = {row["commit_id"]: row["event_seq"] for row in rows}
         if run["base_commit_id"] is not None:
             sequences[run["base_commit_id"]] = 0
@@ -299,6 +347,12 @@ class VersionService:
     ) -> dict[str, Any]:
         if not actor or len(actor) > 200:
             raise AgentGitError(ErrorCode.VALIDATION, "Fork 必须记录有界操作者")
+        prepared = self.prepare_fork(repository_id, payload)
+        with transaction(self.history.engine, connection) as connection:
+            return self.publish_fork(prepared, actor=actor, connection=connection)
+
+    def prepare_fork(self, repository_id: UUID, payload: NewBranch) -> PreparedBranch:
+        payload = parse_contract(encode(payload.model_dump(mode="json")), NewBranch)
         self.select_range(
             repository_id,
             RecordedRange(
@@ -308,14 +362,29 @@ class VersionService:
             ),
         )
         snapshot = self.history.restore(repository_id, payload.from_commit)
-        ancestors = set(self.ancestors(repository_id, payload.from_commit))
+        ancestors = frozenset(self.ancestors(repository_id, payload.from_commit))
+        return PreparedBranch(
+            repository_id, payload, encode(snapshot.model_dump(mode="json")), ancestors
+        )
+
+    def publish_fork(
+        self,
+        prepared: PreparedBranch,
+        *,
+        actor: str,
+        connection: Connection,
+    ) -> dict[str, Any]:
+        if not actor or len(actor) > 200:
+            raise AgentGitError(ErrorCode.VALIDATION, "Fork 必须记录有界操作者")
+        repository_id, payload = prepared.repository_id, prepared.request
+        snapshot = parse_contract(prepared.snapshot_payload, StateSnapshot)
         with transaction(self.history.engine, connection) as connection:
             self._safe(
                 connection,
                 repository_id,
                 UUID(payload.source_run_id),
                 payload.from_commit,
-                ancestors,
+                set(prepared.ancestors),
                 snapshot,
             )
             branches = TABLES["branches"]
@@ -390,6 +459,26 @@ class VersionService:
                 ).mappings()
             ]
         items = rows[:limit]
+        if items:
+            origins = TABLES["merge_branch_origins"]
+            with self.history.engine.connect() as connection:
+                merged = {
+                    item["branch_name"]: item
+                    for item in connection.execute(
+                        sa.select(origins).where(
+                            origins.c.repository_id == repository_id,
+                            origins.c.branch_name.in_([item["name"] for item in items]),
+                        )
+                    ).mappings()
+                }
+            for item in items:
+                if item["name"] in merged:
+                    origin = merged[item["name"]]
+                    item.update(
+                        origin_kind="merge",
+                        merge_approval_id=str(origin["approval_id"]),
+                        merge_commit_id=origin["commit_id"],
+                    )
         return {
             "items": items,
             "has_more": len(rows) > limit,
@@ -436,12 +525,11 @@ class VersionService:
         self._page(limit)
         if type(after) is not int or not 0 <= after <= 9007199254740991:
             raise AgentGitError(ErrorCode.VALIDATION, "差异游标必须为非负整数")
-        left_path, right_path = (
-            self.ancestors(repository_id, left),
-            self.ancestors(repository_id, right),
-        )
-        right_ancestors = set(right_path)
-        common = next((item for item in left_path if item in right_ancestors), None)
+        from agentgit.services.merge import MergePreviewService
+
+        # 多个最佳共同祖先只返回集合，不凭拓扑展示顺序任选一个。
+        selection = MergePreviewService(self.history).bases(repository_id, left, right)
+        common = selection.selected
         changes = snapshot_changes(
             self.history.restore(repository_id, left), self.history.restore(repository_id, right)
         )
@@ -449,6 +537,8 @@ class VersionService:
             "left_commit": left,
             "right_commit": right,
             "common_ancestor": common,
+            "common_ancestors": list(selection.bases),
+            "merge_base_status": selection.status,
             "items": [item.model_dump(mode="json") for item in changes[after : after + limit]],
             "total_changes": len(changes),
             "next_after": after + len(changes[after : after + limit]),

@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_heldout_ranking",
+  "frozen_at_utc": "2026-10-24T00:03:47+00:00",
+  "rules_digest": "fd88d1c4ef9698750a7a294becca6975d288184d3a80c521763c307effd06683",
+  "rules": {
+    "schema_version": 1,
+    "version": "static-failure-path/v1",
+    "ordering": [
+      "failure_path",
+      "report_role_priority",
+      "failure_distance",
+      "divergence_distance",
+      "uncertainty_count"
+    ],
+    "missing_artifacts": [
+      "accepted_plan",
+      "artifact_write",
+      "other"
+    ],
+    "other_report_assertions": [
+      "artifact_write",
+      "accepted_plan",
+      "other"
+    ],
+    "runtime_stop": "no_role_preference",
+    "divergence_distance": "undirected_distance_to_verified_first_left_frontier",
+    "ties": "competition_rank_without_arrival_or_event_id_tiebreak",
+    "terminal_output": "exclude_output_only_connected_to_final_evaluation",
+    "effect": "unknown_without_intervention"
+  },
+  "source_revision": "source-sha256:d28818d9080c33b5fabd56f0b1a4ddd11b0a731bea70eedf0a4470af29f63dd2",
+  "implementation_sha256": {
+    "src/agentgit/core/debug_reports.py": "fcc7b1ad8ce2a31534a66adfe64232c573ae769492d65ffd242ac43a3963fb0f",
+    "src/agentgit/core/diagnosis.py": "199e2645040bb52699fa858ac3e4a9d849d3cbfa69f851561e02e4a9d0977b93",
+    "src/agentgit/diagnosis/candidates.py": "bbd5704c0f4e56c1a1065209e0fafdd698a80d0eb244b3bf0cc6cdf79983bd0c",
+    "src/agentgit/diagnosis/graph.py": "c99492cd5694c7e1e4c22c7e1c801866b8661a6ee7b9a547f2790160f285065b",
+    "src/agentgit/diff/behavioral.py": "08d33041f51c984347d4804f158bb61167f7ac06c5527bf279d384ca0aa65d4e",
+    "src/agentgit/services/diagnosis.py": "2daba9c11a8be25ee752d0b887fb362add5d2cd99ca8e6a2eacc6e02361b1471",
+    "src/agentgit/services/debug_reports.py": "dc5c330d9080aac1db0cd11c057b0fbd83ef5f6ce415966c27c84f177f8845e3"
+  },
+  "dataset": {
+    "id": "diagnosis/v1",
+    "cases_sha256": "bc16f65031acd5985e56a16b6cbd897b312c5140c5361b9b324d105dddd28014",
+    "fixture_sha256": "ec9d9d3c4cb753cf98563f261b135b4de9f50df137891906c2f44eab94b9d6ce",
+    "train": [
+      "D01",
+      "D02",
+      "D03",
+      "D04",
+      "D05",
+      "D06",
+      "D07",
+      "D08",
+      "D09",
+      "D10",
+      "D11",
+      "D12"
+    ],
+    "heldout": [
+      "D13",
+      "D14",
+      "D15",
+      "D16",
+      "D17",
+      "D18",
+      "D19",
+      "D20"
+    ]
+  },
+  "calibration": "初始规则；合成单元测试及开发集 D04/D06/D10 只验证工程行为，没有进行 20 例或保留集排名调参。",
+  "annotation_status": "pending_human",
+  "ranking_evaluated": false,
+  "intervention_evaluated": false,
+  "evaluation_policy": "先冻结独立评估脚本，再评估全部样例；保留集结果不可用于同集合调参，需保留并列、失败和未定位。人工标签未确认时只输出暂定工程结果，不宣布 S8-T04/T05 通过。",
+  "change_policy": "排序或证据提取实现变化须使用新规则版本；若已使用保留集结果调整实现，须在新的未见保留集复验，不覆盖本冻结记录。"
+}

@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "kind": "repair-regression-inputs/v1",
+  "entries": [
+    {
+      "schema_version": 1,
+      "profile": {
+        "schema_version": 1,
+        "key": "regression-ordered-lanes",
+        "title": "固定回归的有序通道与精确分数",
+        "evaluation_time": "2026-05-03T12:00:00Z",
+        "values": [
+          ["有序单通道（时延 20001/10000 秒）", "追加账本（保留 71 小时）", "单租户（上限 211 项）"],
+          ["双路轮转（时延 20002/10000 秒）", "事务分片（保留 73 小时）", "双租户（上限 223 项）"],
+          ["分层通道（时延 20003/10000 秒）", "持久索引（保留 79 小时）", "多租户（上限 227 项）"]
+        ]
+      },
+      "frameworks": ["Aster", "Birch", "Cedar"],
+      "clock_boundary": "none"
+    },
+    {
+      "schema_version": 1,
+      "profile": {
+        "schema_version": 1,
+        "key": "regression-effective-now",
+        "title": "固定回归的逆序比较与生效边界",
+        "evaluation_time": "2026-06-05T12:00:00Z",
+        "values": [
+          ["轮次同步（时延 21001/10000 秒）", "状态快照（保留 83 小时）", "队列群（上限 229 项）"],
+          ["轮次异步（时延 21002/10000 秒）", "状态日志（保留 89 小时）", "任务群（上限 233 项）"],
+          ["轮次分层（时延 21003/10000 秒）", "状态副本（保留 97 小时）", "工作群（上限 239 项）"]
+        ]
+      },
+      "frameworks": ["Cedar", "Birch", "Aster"],
+      "clock_boundary": "effective_at_clock"
+    },
+    {
+      "schema_version": 1,
+      "profile": {
+        "schema_version": 1,
+        "key": "regression-expiry-near",
+        "title": "固定回归的交错比较与临近失效",
+        "evaluation_time": "2026-07-07T12:00:00Z",
+        "values": [
+          ["批次合流（时延 22001/10000 秒）", "合流日志（保留 101 小时）", "分区群（上限 241 项）"],
+          ["批次拆分（时延 22002/10000 秒）", "拆分索引（保留 103 小时）", "隔离群（上限 251 项）"],
+          ["批次嵌套（时延 22003/10000 秒）", "嵌套快照（保留 107 小时）", "编排群（上限 257 项）"]
+        ]
+      },
+      "frameworks": ["Birch", "Aster", "Cedar"],
+      "clock_boundary": "expires_after_clock"
+    },
+    {
+      "schema_version": 1,
+      "profile": {
+        "schema_version": 1,
+        "key": "regression-collected-now",
+        "title": "固定回归的采集时钟与引用归属",
+        "evaluation_time": "2026-08-09T12:00:00Z",
+        "values": [
+          ["事务串接（时延 23001/10000 秒）", "事务存档（保留 109 小时）", "流水群（上限 263 项）"],
+          ["事务并接（时延 23002/10000 秒）", "事务队列（保留 113 小时）", "协作群（上限 269 项）"],
+          ["事务树接（时延 23003/10000 秒）", "事务账本（保留 127 小时）", "自治群（上限 271 项）"]
+        ]
+      },
+      "frameworks": ["Aster", "Cedar", "Birch"],
+      "clock_boundary": "collected_at_clock"
+    }
+  ]
+}

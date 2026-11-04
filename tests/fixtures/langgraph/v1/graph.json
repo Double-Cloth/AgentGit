@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "template": "mcp-read-review-publish/v1",
+  "nodes": [
+    { "id": "fetch", "kind": "mcp_read" },
+    { "id": "review", "kind": "review_note" },
+    { "id": "publish", "kind": "publish" }
+  ],
+  "edges": [
+    ["__start__", "fetch"],
+    ["fetch", "review"],
+    ["fetch", "__end__"],
+    ["review", "publish"],
+    ["publish", "__end__"]
+  ],
+  "pause_before": ["review"]
+}

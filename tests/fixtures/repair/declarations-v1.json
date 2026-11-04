@@ -1,0 +1,400 @@
+{
+  "schema_version": 1,
+  "kind": "repair-case-declarations/v1",
+  "scope": "evaluation-metadata-only/not-agent-input",
+  "status": "declared-before-evaluation/not-observed-scores",
+  "cases": [
+    {
+      "schema_version": 1,
+      "case_id": "R01",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "plan-required-artifacts/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R02",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "plan-required-artifacts/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R03",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "plan-required-artifacts/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R04",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R05",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R06",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R07",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1",
+        "plan-required-artifacts/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R08",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1",
+        "plan-required-artifacts/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R09",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1",
+        "plan-required-artifacts/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R10",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1",
+        "plan-required-artifacts/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R11",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1",
+        "plan-required-artifacts/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R12",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1",
+        "plan-required-artifacts/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R13",
+      "claim": "observation_only",
+      "solution_templates": [
+        "recorded-observation/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R14",
+      "claim": "observation_only",
+      "solution_templates": [
+        "recorded-observation/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R15",
+      "claim": "observation_only",
+      "solution_templates": [
+        "recorded-observation/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R16",
+      "claim": "finite_template_no_solution",
+      "solution_templates": [],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R17",
+      "claim": "finite_template_no_solution",
+      "solution_templates": [],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R18",
+      "claim": "finite_template_no_solution",
+      "solution_templates": [],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R19",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-required-artifacts/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R20",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-required-artifacts/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R21",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R22",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R23",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R24",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R25",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1",
+        "plan-required-artifacts/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R26",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1",
+        "plan-required-artifacts/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R27",
+      "claim": "observation_only",
+      "solution_templates": [
+        "recorded-observation/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R28",
+      "claim": "finite_template_no_solution",
+      "solution_templates": [],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R29",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "case_id": "R30",
+      "claim": "expected_template_solution",
+      "solution_templates": [
+        "prompt-verified-sources/v1"
+      ],
+      "allowed_operations": [
+        "PROMPT_PATCH",
+        "PLAN_PATCH",
+        "TOOL_RESPONSE_PATCH"
+      ]
+    }
+  ],
+  "no_solution_scope": "Only applicable frozen finite templates/depth two; not arbitrary prompts, permissions or models.",
+  "observation_scope": "A screening observation can pass while independent regressions fail; never a production-adoptable repair."
+}

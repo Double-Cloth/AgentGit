@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "kind": "a2a-recorded-fixture-spec/v1",
+  "profile": "complete-success-without-control/v1",
+  "success": ["text", "structured", "working_then_completed", "declared_input_followup"],
+  "reject": ["wrong_actor", "wrong_repository", "wrong_source_kind", "non_live", "non_completed", "partial_range", "old_source", "changed_lock", "missing_call", "missing_response", "missing_reference", "changed_call_index", "changed_checkpoint", "changed_event", "changed_state", "changed_artifact", "unknown_call", "retired_call", "control_checkpoint"],
+  "durable_injections": ["original_key", "changed_program", "missing_fork", "queued_pause", "queued_cancel", "pause_each_cursor", "resume_original_deadline", "local_cancel_pending_history", "control_before_commit", "missing_result_after_submit", "mode_payload_mismatch", "process_after_source", "process_before_checkpoint", "process_in_projection", "process_after_checkpoint", "process_after_release"],
+  "expected": {"network_requests_during_replay": 0, "new_clients": 0, "database_writes_during_inspection": 0, "cas_writes_during_inspection": 0, "live_fallback": false, "all_checkpoint_hashes_recomputed": true, "source_remote_identities_retained": true},
+  "status": "specification_only_not_acceptance"
+}

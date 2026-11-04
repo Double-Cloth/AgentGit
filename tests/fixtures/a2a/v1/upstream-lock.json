@@ -1,0 +1,14 @@
+{
+  "kind": "a2a-upstream-lock/v1",
+  "release_tag": "v1.0.1",
+  "commit": "3303592588e388e62e0f69f701af531d2f4e3991",
+  "protocol_version": "1.0",
+  "binding": "HTTP+JSON",
+  "checked_on": "2026-10-31",
+  "files": [
+    {"path": "docs/specification.md", "bytes": 155498, "sha256": "627ccfe6ffb1be2c56811c3dcc18780deb419f41cdc98248095c939b2d9dc9cb"},
+    {"path": "specification/a2a.proto", "bytes": 35844, "sha256": "e195bf96ab630c69797851970203e1b2b6b19528f2e9803b7d904b91a5104016"},
+    {"path": "LICENSE", "bytes": 11358, "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"},
+    {"path": "CHANGELOG.md", "bytes": 19268, "sha256": "ea8802a1631acf9a6e33b489a9b4973df39927a27dd4a2ae8283dc2583f59942"}
+  ]
+}

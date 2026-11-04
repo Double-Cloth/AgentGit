@@ -204,12 +204,24 @@ def prepare_live(
             raise AgentGitError(ErrorCode.OUTPUT_LIMIT, "Live 终端命令超过 16 KiB")
     if pending is not None and pending.tool not in config.tools:
         raise AgentGitError(ErrorCode.FORBIDDEN, "待执行决策未获新配置授权")
+    usage = evolve(original.usage, reserved_tokens=0)
+    if usage.model_meter is not None:
+        # 来源的未结算负债留在来源历史；新 Live 使用新预算，不能继承可释放的预留。
+        usage = evolve(
+            usage,
+            model_meter=evolve(
+                usage.model_meter,
+                reserved_cost_micro_usd=0,
+                unpriced_cost_micro_usd=0,
+                next_retry_delay_ms=0,
+            ),
+        )
     state = evolve(
         original,
         plan=plan,
         plan_version=original.plan_version + int(overrides.plan is not None),
         status=RunStatus.RUNNING if plan is not None else RunStatus.PLANNING,
-        usage=evolve(original.usage, reserved_tokens=0),
+        usage=usage,
         pending_tool=pending,
         attempts={
             key: value for key, value in original.attempts.items() if key in original.completed

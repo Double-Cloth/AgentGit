@@ -1,8 +1,98 @@
 # 本地开发与测试
 
+2026-11-02当前交付：[0.1.8最终桌面候选](acceptance/S12-package-018.md)34项实际包内及原始审计通过，当前2,855技术节点分批覆盖，另50历史冻结研究单列，原失败不重标。产品源码dca8f8…ba7d、Python／API0.1.0、Schema `0033_a2a_runs`、79业务表加版本表共80，锁不变，无业务库迁移。固定Node24.19.0／npm12.1.0仅用于桌面构建／测试，prebuild检查版本；最终应用使用包内资源及System32 PATH。正式前置见[D3就绪报告](D3-readiness-report.md)。下列增量按当时版本保留，当前后端准备仍须使用完整当前迁移和固定镜像，不能用历史head创建当前服务。
+
+2026-11-01：[当前兼容与历史冻结评估范围](acceptance/S12-regression-scope.md)区分当前2,852技术节点与绑定旧完整源码的S8二十例／S10三十例执行入口。当前代码不得复用旧协议或覆盖固定结果目录；两套历史原始结果已在隔离原字节工作树只读重核，成绩不变，新增3项拒绝检查通过。当前其余范围与最终包仍待完成，不表示S12／D3验收。完整当前命令及精确两个研究入口的独立复现要求见该记录；不在默认pytest配置添加skip。
+
+2026-11-01 最新D：[桌面工程记录](acceptance/S12-D-desktop.md)及[演示](../examples/a2a/README.md)已更新。新五个受限IPC复用API；运行页A2A可发现／提交／按原键确认，时间线复用精确审批，分支页可显式Fork／完整Recorded。47桌面单元及23不同Electron覆盖按v5的4新增／v4的19兼容分版归属，审阅两项修复resolved，原失败保留。Python仍99956e…e1e9，锁／head33不变。最终包／完整兼容及D3继续，Runtime终态后才改源码／驱动／锁／迁移／构建。
+
+2026-11-01 最新D：[操作者入口](acceptance/S12-D-operator.md)与[可执行演示](../examples/a2a/README.md)已就绪。API／CLI提供发现、提交、原键只读确认、本人清单／程序，状态和精确审批复用原入口；新DTO为a2a_program/v1。99956e…e1e9源码1,245单元＋122不同集成通过，真实2 API／7 CLI及Recorded零额外协议请求已核对；v1只修错误码断言后v2通过，原报告保留。head33／80表／锁不变，桌面／最终包仍须推进；每轮先冻结完整输入，实际Runtime终态后才编辑源码／驱动／迁移／锁／构建。
+
+2026-11-01 最新D：[独立Recorded任务](acceptance/S12-D-recorded-runs.md)已接原Worker／History／Job。先以原VersionService建立来源初始化点Fork分支，再 `A2ARunService.submit(..., replay=A2ARecordedSpec(...))`；载荷和Run模式必须一致，`recorded_state(..., actor=...)` 查询独立本地／历史状态。bf3f6c…57b1源码1,245单元、A2A91和相关内核124通过；新增20功能及5真实进程终止，原marker读取失败保留。全程同源码／锁、独立测试Schema；新Recorded没有客户端／实际调用，逻辑投影为完整内部状态加产物。head33／80表及锁不变，尚无公开入口或新桌面包；源码／驱动／锁／迁移必须在相关Runtime终态后才修改。
+
+2026-11-01 最新D：[成功来源读取／纯重算](acceptance/S12-D-recorded-core.md)已实现。先以 `A2ARecordingReader(history).inspect(repository, A2ARecordedSpec(...), actor=...)` 核对本人完整成功Live范围，再用 `A2ARecordedEngine(source).replay()` 离线重算；同源码／锁守卫保持，不能直接消费旧32f82f…5630来源。`test_a2a_recordings.py` 的31项及35项Live／恢复共66集成通过，1,245单元归属相同dfc244…2cf1源码；v2仅改测试驱动，原五次不可变保护注入失败保留。head33／80表及锁不变。尚无新Recorded Job或公开入口，继续耐久执行／控制／接管；复验仍须独立Schema、唯一原始包目录和先冻结后运行。
+
+2026-11-01 最新D：[A2A耐久Live](acceptance/S12-D-live.md)已接通；当前32f82f…5630源码、head `0033_a2a_runs`，79业务表加版本表共80，锁不变。`test_a2a_runs.py`／`test_a2a_run_recovery.py` 合计35项，使用独立测试Schema及唯一 `AGENTGIT_A2A_RUN_PROOF_DIR`、`AGENTGIT_A2A_FIXTURE_PROOF_DIR` 保存原始包。实际base解释器子进程必须显式获得src及venv site-packages；六次真实终止和一次存活旧Worker接管已核对。1,245单元、35新增及124相关兼容通过，早期失败保留。完整Recorded／入口／桌面继续；运行前冻结全部输入，实际Runtime终态前禁止修改相关源码、驱动、锁、迁移及构建。
+
+2026-10-31 最新D：[有界客户端／wire／原调用网关](acceptance/S12-D-transport.md)已接通，当前ad9fcd…ede28源码，锁和head32不变。`uv run --locked pytest tests/integration/test_a2a_fixture.py tests/integration/test_a2a_transport.py` 运行13＋36个独立进程用例；`test_a2a_gateway.py`／`test_a2a_secrets.py` 另需原隔离PostgreSQL，分别6／2项。用唯一 `AGENTGIT_A2A_FIXTURE_PROOF_DIR`／`AGENTGIT_A2A_GATEWAY_PROOF_DIR` 导出无秘密的服务观察和数据库／CAS包。当前1,219单元、v3完整91集成及v4新增2项通过，不代表完整A2A Run／Recorded／桌面或T04–T07退出。v1时钟前提错误、v2校准及v3守卫保护各属原冻结输入；相关Runtime终态前不修改源码、驱动、迁移、锁或构建。
+
+2026-10-31 最新D纯契约：`core/a2a.py` 已定义固定回环地址、主体／卡片签名和原 `ToolRule` 效果边界；`uv run --locked pytest tests/unit` 的1,160项通过，含54项新契约。当前源码955460…49f9，锁／head32不变，无新网络入口或迁移。完整853份输入／基线和结果见 `S12-D-contract-v2` 及 [D记录](acceptance/S12-D.md)，v1保留其原版本；这批没有网络／数据库／桌面执行，不重标早先设施或C的原始证据。
+
+2026-10-31 最新D：[范围／锁定版本](S12-D-a2a-plan.md)和[设施记录](acceptance/S12-D.md)已建立。`uv run --locked pytest tests/integration/test_a2a_fixture.py` 只运行本机独立进程HTTP服务自检，不使用数据库或公网；可用唯一 `AGENTGIT_A2A_FIXTURE_PROOF_DIR` 保存不含秘密的请求／任务／PID观察。当前13项通过仅属于测试设施，产品A2A及T04／T05／T07尚未实现／通过，不能替代后续网关、Recorded和最终包核对。
+
+2026-10-31 最新 C：[本机稳定性记录](acceptance/S12-C-stability.md)核对160不同协作节点与593相关兼容覆盖（v4复验100、v2未修改493，原失败保留），含真实105组窗口、四线程／三项目和完整实际执行模块。当前生产源码914591…6078、head32/79业务表加版本表共80未变；MCP单个控制功能测试使用生产默认租约，独立短租约／心跳／fencing断言保留。固定范围本机工程可继续D，正式前置／最终包／D3保持。以下增量记录保留其当时源码、作用域与未完成状态。
+
+2026-10-31 最新 C：[操作者 API/CLI](acceptance/S12-C-operator.md)和[自动化/手动演示](../examples/collaboration/README.md)已接通。`collaboration-prepare/start/recorded/control/status/list/messages/shared` 共用后端服务，角色沿用 Run/Job/事件/产物查询；只读公开投影排除 notes，协作通用历史/Diff/行为/执行入口同样校验所属操作者。当前 66c98b…7439 源码 1,106 单元/55 不同集成通过，Ruff/format 528/mypy 219，通过证据和早期错误分版保留。Schema 仍 head32，79 业务表加版本表共 80，旧“业务表”口径勘误见记录；业务库未迁移。真实桌面、更多交错/规模、完整兼容与正式 C/T05/D3 继续。
+
+2026-10-31 Recorded 准备补充：`CollaborationService(queue).prepare_recorded(repository, source_group, actor=..., key=...)` 对同源成功 Live 组核验/重算，再原子创建四个暂停的新 Run/Job/任务/分支和来源关联；仅后端服务，尚无公开 API/CLI。head 已为 `0031_collaboration_recordings` /78 业务表（加版本表共79），业务库未自动迁移；下文 head30 等均属原冻结版本。成功轨迹 Worker 未接通时 `start` 明确拒绝；不可改 mode 或落入 Live 构造，准备态可组取消。当前 584ebc…3f29 源码 1,106 单元、141 不同集成通过；新用例为 `test_collaboration_recorded_preparation.py`、`test_collaboration_identity_contracts.py`，全套 2,523 项仅收集通过。运行前冻结源码/迁移/驱动和 Git 基线，使用独立测试 Schema；新原始包另设 `AGENTGIT_COLLABORATION_RECORDED_PREPARATION_PROOF_DIR`，不得将准备成功标为 Recorded 执行完成，见[工程记录](acceptance/S12-C.md)。
+
+2026-10-31 重算核心补充：先用本人身份取得 `CollaborationRecordingReader(history).inspect(...)` 的已核验闭包，再调用 `CollaborationRecordedEngine(prepared).replay()`；后者不读新 CAS、不构造模型/工具/网络/进程，只在内存重算来源身份下的状态和产物。当前 70d42e…5342 源码 1,095 单元、31 不同集成通过，用例为 `tests/integration/test_collaboration_replay.py` 和原读取器集成；全套 2,496 项仅收集通过，不表示全部执行。测试证明导出父地址跨暂停/恢复保持；源码/锁守卫不放宽，必须另建同源 Live fixture，不能直接读取旧 5ee575/5a74cf 工程录制。四个新 Recorded Run/Job 的耐久入口及接管仍待接入，详见[当前工程记录](acceptance/S12-C.md)。
+
+2026-10-31 录制来源补充：`CollaborationRecordingReader(history).inspect(repository, group, actor=...)` 只核对操作者自己的完整成功四角色 Live 来源，返回有界来源索引和按角色分开的录制/状态；没有公开 API/CLI，也不执行重放。必须与来源源码/锁相同，旧 5a74cf 来源在新源码下仍拒绝，不能绕过守卫。当前 5ee575…a48d 源码 1,095 单元、21 不同集成通过，单元文件按既有约定命名为 `test_collaboration_recording_contracts.py`，与集成用例 `tests/integration/test_collaboration_recordings.py` 可联合收集；最终全套 2,486 项仅收集通过，不表示全部执行。先冻结完整 Git 基线/工作区，使用唯一证据目录及 `AGENTGIT_COLLABORATION_EXECUTION_EVIDENCE_DIR`、`AGENTGIT_COLLABORATION_RECORDING_PROOF_DIR`，Runtime 结束后再改源码或驱动。来源索引不等于严格 Recorded 已完成，下一步继续重算状态/产物和消费控制事实，详见[当前记录](acceptance/S12-C.md)。
+
+2026-10-31 最新补充：[组控制后端](acceptance/S12-C.md)复用不可变事件/原键，不新增表或依赖，head30/78 表保持。当前 5a74cf…8732 源码 1,081 单元、94 集成全过，包含 `test_collaboration_controls.py` 的 21 个组控制节点、既有执行/调度/准备和普通 Job；九处实际解释器终止及原始审计完成。收据的 `accepted` 仅为接受请求，须另查实际静止/未知状态；组恢复保留单角色人工暂停和原 deadline。仍没有协作公开 API/CLI、Recorded 或新包，下文源码/版本各属历史范围，业务库未自动迁移。
+
+最新 C 工程为[四角色执行/恢复和调度边界](acceptance/S12-C.md)，Schema 当前 **`0030_collaboration_exchange`**，只在独立测试 Schema 验证，业务库未自动迁移。最新源码 ef15cc…0ed7 的 1,081 单元、34 调度/执行/Job 集成通过；历史下文 head/报告各归属其原冻结版本。协作尚无公开创建 API/CLI 或新包，组控制/Recorded/桌面继续；复验可选 `tests/integration/test_collaboration_scheduler.py` 和 `test_collaboration_execution.py`，必须使用独立测试库、唯一证据目录及固定源码/锁/驱动，运行期间不得修改这些输入。
+
+S12-B 已接通 [LangGraph `1.2.18` Live/Fork/成功范围 Recorded 与受信 stdio 核对](acceptance/S12-B.md)，范围见[计划](S12-B-langgraph-plan.md)，操作见[演示](S12-B-langgraph-demo.md)。锁仍为 `13df29416247b05eb1ab2a97b9ef2d6035af2903b1e52e8562d3ef1aaa45ed3a`。当前 960 单元、64 stdio 图契约、67 HTTP 图回归与 59 相关兼容通过；全套 2,235 项联合收集通过不代表全量执行。三个 S12 单元文件使用 `_contracts.py` 避免与集成模块重名，其他命令和断言保持。运行前冻结 679 文件；从 `ee30e72` 加快照复现时还须按 `deletions-provenance-v1.json` 删除三个旧路径。Schema 仍 `0028_langgraph_runs`，无新依赖或迁移。原生边界取消/期限组合、完整桌面和正式 B/C/D/D3 继续；下文 A 保留其原源码/旧锁范围。
+
+S12 当前在 `codex/s12-adapters` 推进，[MCP A 本机核对](acceptance/S12-A.md)已覆盖固定 HTTP 及批准的单文件 Python stdio、有界 Run/Worker、精确审批、失租/未知恢复和完整 Recorded。最终源码 `source-sha256:aad91a9394b16d68cd2ac3d252705d8161b1fe2ee24d62fb43b46a3178da1b10`；866 Python 单元、53 个不同 MCP/API、74 核心、40 桌面单元和 5 个不同包内节点均有通过证据，失败尝试和复验保留。Schema head 仍 `0027_mcp_runs`，不新增依赖/业务表或业务迁移。命令见 [HTTP 演示](S12-A-mcp-demo.md)与 [stdio 演示](S12-A-stdio-demo.md)；stdio 必须通过后端白名单，不能使用它执行未审阅脚本或替代 S4 容器。正式前置/最终包待补，按授权进入 B 工程；旧研究 release 仍使用其冻结源码，不修改旧 guard 接受新模块。
+
+S11 已接通[Merge Review](acceptance/S11-desktop.md)与固定 IPC，并进入 [0.1.7 分发候选](acceptance/S11-package-017.md)；`playwright.merge.config.ts` 覆盖明确 HTTP fixture 和两套真实测试 Schema/API/独立 Worker/CAS。`npm run build` 后以唯一证据前缀运行，实际 Runtime 期间冻结产品、锁、迁移、构建与驱动。桌面 HTTP 修订仍受完整请求 1 MiB 限制，不能仅按两个单文件上限估计载荷。新 ZIP 的 20 个不同节点均有通过证据，3 次失败与后续复验保留；完整阶段前置见 [S11 门槛](acceptance/S11-gates.md)。
+
 实现进度与阶段证据见 [PROGRESS.md](PROGRESS.md)。README 保留项目介绍；方案和设计的 S0 描述是规划时的历史基线。
 
+S6 桌面工程已建立；固定 Node/Electron 版本、开发/检查/构建命令、身份预置和字体授权见 [desktop/README.md](../desktop/README.md)。当前 [0.1.7 候选](acceptance/S11-package-017.md)包含 Repair Lab 和 Merge Review，40 单元及 20 个不同包内节点通过；Python 后端仍由独立操作者准备，桌面不打包或迁移后端。独立用户/原生专项仍未验收；用户已授权延后这些专项、先继续其他开发与本机验收，范围见实施方案第 1.2 节。
+
 ## 环境
+
+S11 分支 `codex/s11-merge` 的共同祖先、有限状态/产物验证、[耐久提案](acceptance/S11-proposals.md)、[精确批准/双父后端](acceptance/S11-approval.md)、[合并后的独立新任务](acceptance/S11-merged-runs.md)及[再次合并/交叉历史](acceptance/S11-remerge.md)已实现。[正式三十组三方法](acceptance/S11-merge-evaluation.md)完成全量候选/双父/零基线新任务重审，结果见[报告](S11-merge-report.md)；桌面和新包工程已核对，人工预期及整体前置仍待补，用户已明确选择延续 S12 工程，S11 完整验收仍是正式前置，见[次序记录](S12-engineering-order-proposal.md)。当前核对范围见各增量记录，以下阶段记录保留历史范围。
+
+```powershell
+uv run --locked pytest tests/unit
+uv run --locked pytest tests/integration/test_merge_approval.py
+uv run --locked pytest tests/integration/test_merge_runs.py tests/integration/test_merge_process_crash.py tests/integration/test_merge_runs_api.py
+uv run --locked pytest tests/integration/test_remerge.py
+uv run --locked pytest tests/integration/test_merge_benchmark_construction.py
+uv run --locked pytest tests/integration/test_merge_benchmark_protocol.py
+uv run --locked pytest tests/integration/test_merge_proposals.py tests/integration/test_merge_proposal_api.py tests/integration/test_merge_migration.py
+uv run --locked pytest tests/integration/test_merge_research_validation.py tests/integration/test_merge_unknown_input.py tests/integration/test_merge_preview.py tests/integration/test_versions.py tests/integration/test_validator_service.py
+uv run --locked ruff check src tests migrations
+uv run --locked ruff format --check src tests migrations
+uv run --locked mypy src
+```
+
+集成套件只使用 `AGENTGIT_TEST_DATABASE_URL` 指定的测试库及独立 Schema/CAS；产品源字节、锁及实际驱动在相关 Runtime 全部终态前保持冻结。可设置 `AGENTGIT_MERGE_PROPOSAL_EVIDENCE` 归档原始证据，详情以 `tests/integration/merge_proposal_cases.py` 为准；每次使用新目录，不覆盖旧包。离线重审脚本 `tests/integration/merge_proposal_verify.py` 读取指定六组归档，不连接数据库，输出只能创建一次。原 S8/S10 冻结源码不等于当前产品，旧 release guard 拒绝不能通过修改旧协议规避。
+
+S11 正式三方法冻结于 `2ffec49` 与 `evaluation-release-v1.json`。默认运行 `test_merge_benchmark_evaluation.py` 是原型模式，正式阶段还须通过完整文件/源码/资产门禁；已执行正式结果的文档更正保留在后续提交。完整重跑在 `2ffec49` 的隔离完整工作树进行，分析器从归档 `analysis-v1/` 或后续报告提交取得，命令及原始包见报告，不修改旧 release 来接受新源码/文档。
+
+当前 Repair Lab 已进入 0.1.6 并完成包内核对，三十例/五方法已全量执行并原始审计，见 [S10 退出矩阵](acceptance/S10-gates.md)和 [D2 研究报告](D2-research-report.md)。正式基准输出只创建一次，复现实验使用独立工作目录及既定版本，按[复现说明](S10-evaluation-reproduction.md)操作；原始评估与当前分析 v2 不覆盖旧结果。迁移清单漏项需要额外的已归档 Git 基线核验，不能仅凭旧 release 入口通过。完整阶段前置仍待补，后续 S11/S12 保持必选。以下增量说明保留其历史范围。
+
+S10 开发位于 `codex/s10-repair`，从 S9 本机后端退出提交 `fa37baf` 继续。[首增量](acceptance/S10-kernel.md)是纯删除与确认协议；[第二增量](acceptance/S10-reduction.md)接入耐久缩减、原搜索共享预算、实际 Live/Hybrid 删除 Job、物理结算和候选锁；[第三增量](acceptance/S10-pools.md)接入筛选前采样条件预注册及锁后一次性开启；[第四增量](acceptance/S10-confirmation.md)执行实际六加四验证并封存调用来源、计量和统计。随后完成[三原子用例](acceptance/S10-three-atoms.md)、[耐久字段缩减](acceptance/S10-fields.md)、[精确建议与审批后端](acceptance/S10-reviews.md)及[随机拒绝/观测伪修复后端](acceptance/S10-falsefix.md)。Repair Lab 与全量评估仍待完成；测试库的批准不表示业务配置已经采纳，未执行票据及纯协议 UUID 不能当作实际 Run 或实测费用。
+
+确认入口为 `repair-confirm-worker` 加普通 `worker`；查询复用 `repair-validation-status`，详见 [API.md](API.md)。单元使用 `uv run --locked pytest tests/unit`，实际新边界为 `uv run --locked pytest tests/integration/test_repair_confirmation*.py tests/integration/test_repair_frozen_corpus_boundary.py`（PowerShell 可按下列完整枚举方式传入文件），旧流程回归为 `test_repair_trials.py`、`test_repair_studies.py`、`test_repair_study_boundaries.py`、`test_repair_pools.py` 和 `test_repair_pool_registration.py`。所有集成用例必须使用真实测试库、独立 `test_<uuid>` Schema 及临时 CAS；正文证据和运行数据仅留在忽略目录。
+
+```powershell
+$confirmationTests = @(Get-ChildItem -LiteralPath tests/integration -Filter 'test_repair_confirmation*.py' | ForEach-Object { $_.FullName })
+uv run --locked pytest @confirmationTests tests/integration/test_repair_frozen_corpus_boundary.py
+```
+
+字段阶段沿用 `repair-study-worker`，新 study 默认启用，旧 study 不补加策略；次数上限共同覆盖原子、字段与复查。实际字段流程、恢复与共享额度检查：
+
+```powershell
+$fieldTests = @(Get-ChildItem -LiteralPath tests/integration -Filter 'test_repair_field_*.py' | ForEach-Object { $_.FullName })
+uv run --locked pytest @fieldTests
+```
+
+S9 开发位于 `codex/s9-repair`；[有限模板、顺序枚举、预算契约及持久意图](S9-repair-plan.md)已经建立。`0017_repair_search_ledger` 保存冻结搜索、编排租约、全部提案、试验意图、Job 归属、结算及审计；`0018_repair_dispatch_control` 保存未决标记并约束派发。Recorded/Live/Hybrid 通道与物理结算见[派发验收](acceptance/S9-trial-dispatch.md)，后续[自动搜索循环、模板 API/CLI 和新版 Mock 预算](acceptance/S9-search-loop.md)已经核对。`repair-worker` 只编排，研究 Job 由另一个 `worker` 执行；入口示例见 [API.md](API.md#有界修复搜索s9)。本轮仅在独立测试 schema 迁移/回退，不自动修改业务库，尚无本轮新桌面包。真实 Run 执行期间不得修改 `src/agentgit/**/*.py/.json` 与 `uv.lock`，这些字节全部参与冻结环境摘要；先结束所有相关试验再继续源码变更。
+
+S8 的行为图、依赖对齐与静态 Debug Report API/CLI 见 [S8 方案](S8-diagnosis-plan.md)与 [API.md](API.md)。`behavioral-trace/behavioral-diff` 继续只读既有历史；`debug-report` 在 `0016_static_debug_reports` 发布不可变静态候选和硬断言，不启动 Worker 或执行历史动作。完整 20 例定位评估、干预结果及桌面视图尚待完成，源码增量未进入 0.1.4 桌面分发包。
+
+S7 新增 `0013_branch_experiments`、`0014_frozen_interventions` 及 `0015_hybrid_observations`，保存不可变实验/trial、干预归属和 Hybrid 观测账本，运行状态仍由既有 Job/Run 管理。新入口和示例见 [API.md](API.md)；本次自动化验证仅迁移独立测试 schema，没有自动迁移用户的业务库或重建桌面包。历史迁移保持冻结。
+
+通用 `RecordingReader` 的冻结输入可以是不透明字节，不能要求所有历史输入都按研究 Agent 的 JSON 解析。Hybrid 来源仍必须严格验证受控 JSON、policy、Job 归属及全部输入引用；CAS 缺失或损坏不能进入通用兼容路径。改动此处时同时运行 `test_recording_reader.py` 与 Hybrid/Recorded 交叉用例。
+
+S7 分组统计和 `actual.model_usage` 为只读投影，不新增迁移。统计分数与合计使用十进制字符串，模型计量读取原始调用及可信核对归属；检查点用量可能滞后，不能用旧 `actual.cost_micro_units` 推断未知费用。示例见 [API.md](API.md)，当前[验收范围](acceptance/S7-statistics.md)明确区分后端、桌面桥接和待实现视图。
 
 - Python 3.12；`.python-version` 与 `requires-python` 限定 3.12 系列。
 - uv 0.12.19；后端版本由 `uv.lock` 冻结，使用 `--locked` 阻止隐式改锁。
@@ -69,7 +159,7 @@ CAS 默认单对象 8 MiB，使用支持硬链接的本地文件系统。故障�
 
 ## S3 离线研究演示
 
-S3 验收时 Schema head 为 `0004_research_tasks`；当前代码 head 已推进至 `0012_replay_source_index`。先升级开发库，再运行：
+S3验收时Schema head为 `0004_research_tasks`；当前代码为 `0033_a2a_runs`，79业务表加版本表共80。S10／S11和四项适配的完整当前迁移只在独立测试Schema验证，没有迁移业务库；S12-A／D的Job类型及后续图／协作结构均需当前head，不能停留在旧 `0027_mcp_runs`。字段阶段沿用原study租约和预算，旧原子协议记录保持原编码。用户自行准备业务环境后再运行：
 
 ```powershell
 uv run --locked alembic upgrade head
@@ -183,3 +273,19 @@ uv run --locked pytest tests/unit tests/integration tests/sandbox tests/executio
 清理后新 attempt 已实现：`stopped_executions` 记录已确认停止但没有完整结果的稳定调用身份，不冒充成功；丢弃决定和旧尝试预算同检查点原子保存，新尝试从相同输入创建新容器并另计预算。固定上限两次，取消/到期/预算不足先结算再停止。清理失败的 Job 每 30 秒有界重查，未确认时不创建新尝试，普通模型/外部写仍须可信核对。新尝试在 stage 与意图事务内复核停止依据、源链、输入和策略。
 
 [S4 本机验收](acceptance/S4.md)与 [S5 本机验收](acceptance/S5.md)已完成；`doctor --sandbox` 共用执行器的只读前提检查，固定镜像和隔离能力可用才返回就绪，不启动容器或执行命令。继续按实施方案进入 S6 Electron 桌面；必选 S11/S12 的完整交付不变。
+
+## S12-C Recorded 角色耐久执行
+
+[Recorded Worker 工程记录](acceptance/S12-C-recorded-worker.md)限定完整成功 Live 组为来源。`verified_role_lane` 使用准备时固定的后端委托核验整组，只向当前有效租约返回自己的重算状态/录制。角色不构造模型、工具、工作区或网络客户端；私有字节及普通文本 UUID 不替换。
+
+新 `collaboration_recorded_steps` 在真实 History 事务内，与目标检查点、调用来源、消息/收据和发布一起提交；必须是自身来源的完整前缀。接管沿同 Run 新 fencing token 继续，已知来源调用只登记 `call.reused`，原意图 checkpoint 仍表示来源。通用实际调用网关的 HEAD 校验保持。
+
+当前控制另保存目标事件/检查点，历史控制沿冻结来源核验。取消撤回尚未消费的预留并保留已知复用；单角色取消/到期原子发布组失败因果、唤醒其他角色结算。Supervisor 是否派发依据实际 outgoing 消息，不能依据有没有 checkpoint。head32/80 表仅测试 Schema 迁移；有录制关联时禁止降级。最终 1,106 单元/36 集成通过和前版 150 集成分别绑定源码，不合算成最终完整兼容结论。
+
+Recorded 恢复检查点在事务中遇到 `budget_exhausted` 必须直接保存预算停止，不能作为普通控制竞争重复核验来源。恢复应用后仍复查原截止时间；已到期回归固定为两步、零复用、一次核验，并清空未消费预留。最终 559 份冻结代码/测试/迁移/锁与 Git 暂存字节一致。
+
+## S12-C 开发版桌面
+
+[桌面接入记录](acceptance/S12-C-desktop.md)说明固定 IPC、公开模板、角色来源、消息／共享版本、组控制和未确认请求的原键重试。`useRead` 的可选 `enabled` 只暂停读取并保留同范围已确认数据；默认行为保持，其他页面不因此暂停。模板只描述程序，不表示 Worker 就绪，也不自动执行。
+
+复现新联调：先 `cd desktop`，运行 `npm run typecheck`、`npm test`、`npm run build`；冻结完整源码／迁移／锁／驱动及实际 `.build` 后，设置独立的 `AGENTGIT_COLLABORATION_DESKTOP_QA` 输出目录，再执行 `npx --no-install playwright test --config playwright.collaboration.config.ts`。帮助进程仅创建受限的临时测试 Schema/CAS，停止时 await Worker/API 实际结束再清理该 Schema；不得用此驱动迁移业务库。Runtime 运行期间不编辑源码、驱动、构建或锁文件。

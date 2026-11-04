@@ -1,0 +1,12 @@
+{
+  "name": "AgentGit 本地资料整理 fixture",
+  "description": "独立进程协议测试；无模型、外部工具或公网访问",
+  "supportedInterfaces": [{"url": "http://127.0.0.1:1", "protocolBinding": "HTTP+JSON", "protocolVersion": "1.0"}],
+  "version": "1.0.0",
+  "capabilities": {"streaming": false, "pushNotifications": false, "extendedAgentCard": false},
+  "securitySchemes": {"fixtureBearer": {"httpAuthSecurityScheme": {"scheme": "Bearer"}}},
+  "securityRequirements": [{"schemes": {"fixtureBearer": {"list": []}}}],
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [{"id": "public-research-summary", "name": "公开资料整理", "description": "整理显式传入的公开文本", "tags": ["fixture", "research"], "inputModes": ["text/plain"], "outputModes": ["text/plain", "application/json"]}]
+}

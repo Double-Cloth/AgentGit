@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "kind": "collaboration-fixture-spec/v1",
+  "template": "offline-four-role-research/v1",
+  "input": {"frameworks": ["Aster", "Birch", "Cedar"], "corpus": "bundled-research", "external_model": false},
+  "routes": [
+    ["dispatch", "supervisor", "researcher"], ["dispatch", "supervisor", "verifier"], ["dispatch", "supervisor", "writer"],
+    ["cancel", "supervisor", "researcher"], ["cancel", "supervisor", "verifier"], ["cancel", "supervisor", "writer"],
+    ["evidence", "researcher", "verifier"], ["evidence", "researcher", "writer"],
+    ["verification", "verifier", "writer"], ["result", "writer", "supervisor"]
+  ],
+  "injections": ["child_failed", "child_cancelled", "duplicate_message", "changed_duplicate", "stale_shared_version", "private_context_cross_agent", "cross_repository", "false_parent_event", "missing_recording", "crash_after_send", "crash_after_receive", "crash_after_shared_publish"],
+  "expected": {"agent_runs": 4, "independent_budgets": true, "independent_permissions": true, "declared_dependency_required": true, "recorded_actual_calls": 0, "recorded_actual_network": 0, "missing_recording_fails": true, "private_context_is_shared": false, "ordinary_terminal_or_python_access": false},
+  "status": "specification_only_not_acceptance"
+}

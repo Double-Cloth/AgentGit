@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "kind": "a2a-operator-fixture-spec/v1",
+  "profile": "public-research-summary/v1",
+  "entrypoints": ["public_binding", "live_submit", "original_key_lookup", "owned_list", "program_read", "generic_status", "exact_approval", "generic_control", "events", "artifacts", "fork", "recorded_submit"],
+  "boundaries": ["actor", "repository", "cursor", "secret_before_cas", "address_before_client", "redirect", "unknown_attempts_are_null", "separate_remote_cancel_approval", "local_recorded_cancel", "missing_source_record", "reject_generic_replay"],
+  "processes": ["tcp_api_first", "tcp_api_restart", "separate_cli_worker", "credential_free_recorded_worker"],
+  "expected": {"query_protocol_calls": 0, "unapproved_writes": 0, "recorded_protocol_calls": 0, "source_mutation": false, "new_dependencies": 0, "new_business_tables": 0, "public_metadata_does_not_grant_content_access": true},
+  "status": "specification_only_not_acceptance"
+}

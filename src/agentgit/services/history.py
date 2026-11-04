@@ -681,21 +681,10 @@ class HistoryService:
     def log(self, repository_id: UUID, *, branch_name: str = "main", limit: int = 100) -> list[str]:
         if not 1 <= limit <= 1000:
             raise _error(ErrorCode.VALIDATION, "历史分页大小越界")
+        from agentgit.services.versions import VersionService
+
         current = self.branch(repository_id, branch_name)["head_commit_id"]
-        result: list[str] = []
-        with self.engine.connect() as connection:
-            while current is not None and len(result) < limit:
-                self._commit_row(connection, repository_id, current)
-                if current in result:
-                    raise _error(ErrorCode.OBJECT_CORRUPT, "历史包含循环")
-                result.append(current)
-                parents = TABLES["commit_parents"]
-                current = connection.execute(
-                    sa.select(parents.c.parent_id)
-                    .where(parents.c.repository_id == repository_id, parents.c.commit_id == current)
-                    .order_by(parents.c.parent_order)
-                ).scalar_one_or_none()
-        return result
+        return VersionService(self).ancestors(repository_id, current)[:limit] if current else []
 
     def artifacts(self, repository_id: UUID, commit_id: str) -> list[dict[str, Any]]:
         with self.engine.connect() as connection:

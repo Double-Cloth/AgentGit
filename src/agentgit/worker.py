@@ -8,13 +8,17 @@ from uuid import UUID, uuid4
 import sqlalchemy as sa
 from sqlalchemy.engine import Connection
 
+from agentgit.adapters.a2a import A2AClient
 from agentgit.adapters.corpus import Corpus
-from agentgit.adapters.mock import MockResearchModel
+from agentgit.adapters.mcp import MCPClient
+from agentgit.adapters.models import select_model
 from agentgit.adapters.tools import WriteArguments
 from agentgit.adapters.workspace import ArtifactWorkspace
+from agentgit.core.a2a import A2ABinding
 from agentgit.core.canonical import ObjectType, decode, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.jobs import Lease
+from agentgit.core.mcp import MCPBinding
 from agentgit.core.models import (
     CallIntent,
     CommitManifest,
@@ -22,16 +26,25 @@ from agentgit.core.models import (
     RunStatus,
     parse_contract,
 )
-from agentgit.core.research import AgentState, ResearchGoal, evolve
+from agentgit.core.research import AgentConfig, AgentState, BudgetUsage, ResearchGoal, evolve
 from agentgit.core.snapshots import EventPayload, StateSnapshot
+from agentgit.core.versions import HybridReplaySpec
+from agentgit.runtime.a2a_run import A2ARunRunner
+from agentgit.runtime.collaboration_run import CollaborationRoleRunner
+from agentgit.runtime.langgraph_run import LangGraphRunRunner
+from agentgit.runtime.mcp_run import MCPRunRunner
+from agentgit.runtime.model_budget import call_budget, reserve_model
 from agentgit.runtime.ports import CallSettlement, ModelAdapter
 from agentgit.services.approvals import ApprovalService
 from agentgit.services.calls import RecordedCallGateway
+from agentgit.services.collaboration_control import CollaborationCoordinator
 from agentgit.services.environment import source_revision
 from agentgit.services.execution_recovery import discard_stopped, occurrence_of, validate_retry
 from agentgit.services.executions import ExecutionService
 from agentgit.services.history import TABLES, EventInput, HistoryService
+from agentgit.services.hybrid import HybridService
 from agentgit.services.jobs import JobService
+from agentgit.services.merge_runs import load_merged_input
 from agentgit.services.recorded_jobs import RecordedJobRunner
 from agentgit.services.recovery import prepare_recovery, recovery_origins
 from agentgit.services.research import ResearchService, ResearchSession
@@ -68,20 +81,61 @@ class Worker:
         queue: JobService,
         *,
         name: str | None = None,
-        model_factory: Callable[[], ModelAdapter] = MockResearchModel,
+        model_factory: Callable[[], ModelAdapter] | None = None,
         fault: Callable[[str], None] | None = None,
+        mcp_client_factory: Callable[[MCPBinding], MCPClient] | None = None,
+        collaboration_model_factory: Callable[[str], ModelAdapter] | None = None,
+        a2a_client_factory: Callable[[A2ABinding], A2AClient] | None = None,
     ):
         self.queue, self.name = queue, name or f"worker-{uuid4()}"
         self.model_factory = model_factory
         self.fault = fault or (lambda _: None)
+        self.mcp_client_factory = mcp_client_factory
+        self.collaboration_model_factory = collaboration_model_factory
+        self.a2a_client_factory = a2a_client_factory
 
     def run_once(self) -> dict[str, Any] | None:
         ApprovalService.expire_pending(self.queue.history)
+        CollaborationCoordinator(self.queue).tick()
         lease = self.queue.claim(self.name)
         if lease is None:
             return None
         try:
-            payload = self.queue.payload(self.queue.get(lease.repository_id, lease.job_id))
+            job = self.queue.get(lease.repository_id, lease.job_id)
+            if job["kind"] == "a2a_run":
+                with LeaseHeartbeat(self.queue, lease):
+                    if self.queue.run(lease.repository_id, lease.run_id)["mode"] == "recorded":
+                        from agentgit.runtime.a2a_recorded import A2ARecordedRunner
+
+                        return A2ARecordedRunner(self.queue, lease, fault=self.fault).run()
+                    return A2ARunRunner(
+                        self.queue, lease, fault=self.fault, client_factory=self.a2a_client_factory
+                    ).run()
+            if job["kind"] == "collaboration_role":
+                with LeaseHeartbeat(self.queue, lease):
+                    if self.queue.run(lease.repository_id, lease.run_id)["mode"] == "recorded":
+                        from agentgit.runtime.collaboration_recorded import (
+                            CollaborationRecordedRoleRunner,
+                        )
+
+                        return CollaborationRecordedRoleRunner(self.queue, lease, self.fault).run()
+                    return CollaborationRoleRunner(
+                        self.queue,
+                        lease,
+                        fault=self.fault,
+                        model_factory=self.collaboration_model_factory,
+                    ).run()
+            if job["kind"] == "langgraph_run":
+                with LeaseHeartbeat(self.queue, lease):
+                    return LangGraphRunRunner(
+                        self.queue, lease, fault=self.fault, client_factory=self.mcp_client_factory
+                    ).run()
+            if job["kind"] == "mcp_run":
+                with LeaseHeartbeat(self.queue, lease):
+                    return MCPRunRunner(
+                        self.queue, lease, fault=self.fault, client_factory=self.mcp_client_factory
+                    ).run()
+            payload = self.queue.payload(job)
             if payload.replay is not None and payload.replay.mode == "recorded":
                 if lease.recovery_required:
                     with LeaseHeartbeat(self.queue, lease):
@@ -103,6 +157,21 @@ class Worker:
             self.fault("after_claim")
             with LeaseHeartbeat(self.queue, lease) as heartbeat:
                 session, origins, remaining = self._attach(lease)
+                hybrid = None
+                replay = payload.replay
+                if isinstance(replay, HybridReplaySpec):
+                    hybrid = HybridService(
+                        session.history, lease, replay.policy_ref, session.service.corpus
+                    )
+                    if (
+                        hybrid.policy.source_run_id != replay.source_run_id
+                        or hybrid.policy.from_commit != replay.from_commit
+                    ):
+                        raise AgentGitError(
+                            ErrorCode.OBJECT_CORRUPT, "Hybrid policy 与冻结重执行来源不符"
+                        )
+                    session.hybrid_policy_ref = replay.policy_ref
+                    session.before_evaluate = hybrid.require_reached
                 session.gateway_factory = lambda: RecordedCallGateway(
                     session.history,
                     lease.repository_id,
@@ -113,6 +182,7 @@ class Worker:
                         session, provider, request, response
                     ),
                     after_result=lambda: self.fault("after_result"),
+                    hybrid=hybrid,
                 )
                 session.control_applied = lambda connection: self.queue.mark_control_applied(
                     connection, lease
@@ -120,7 +190,7 @@ class Worker:
                 session.after_checkpoint = lambda: self.fault("after_checkpoint")
                 unknown = self._unresolved(lease, origins, session)
                 if unknown:
-                    session.environment = session._environment(self.model_factory())
+                    session.environment = session._environment(self._model(session.config))
                     if (
                         session.expected_environment is not None
                         and session.environment != session.expected_environment
@@ -129,7 +199,7 @@ class Worker:
                     if discard_stopped(session, self.queue, lease, origins, unknown, self.fault):
                         unknown = []
                 if unknown:
-                    state = self._unknown_state(session.state, unknown)
+                    state = self._unknown_state(session.state, unknown, session.config)
                     session.save(
                         state,
                         "run.outcome_unknown",
@@ -145,7 +215,7 @@ class Worker:
                         return self.queue.apply_control(lease)
 
                     state = session.execute(
-                        self.model_factory(), control=control, wall_budget_ms=remaining
+                        self._model(session.config), control=control, wall_budget_ms=remaining
                     )
                 self.queue.finish(lease, state.status.value)
                 return self._summary(lease)
@@ -228,13 +298,30 @@ class Worker:
             remaining = max(0, int((job_row["deadline_at"] - now).total_seconds() * 1000))
         config = research.config(lease.repository_id, UUID(payload.config_id))
         if payload.limits is not None:
-            config = evolve(config, limits=payload.limits)
+            config = parse_contract(
+                encode(
+                    {
+                        **config.model_dump(mode="json"),
+                        "limits": payload.limits.model_dump(mode="json"),
+                    }
+                ),
+                AgentConfig,
+            )
         goal = parse_contract(history.objects.get(payload.goal_ref, ObjectType.BLOB), ResearchGoal)
         state = AgentState(goal=goal, plan_version=payload.initial_plan_version)
         environment = None
         snapshot = None
         live = (
-            payload.replay if payload.replay is not None and payload.replay.mode == "live" else None
+            payload.replay
+            if payload.replay is not None and payload.replay.mode in ("live", "hybrid")
+            else None
+        )
+        merged_snapshot = (
+            load_merged_input(
+                history, lease.repository_id, lease.job_id, payload.merged, config, corpus
+            )
+            if payload.merged is not None
+            else None
         )
         if live is not None:
             with history.engine.connect() as connection:
@@ -251,7 +338,7 @@ class Worker:
                 if request is None or any(
                     request[key] != value
                     for key, value in (
-                        ("mode", "live"),
+                        ("mode", live.mode),
                         ("source_run_id", UUID(live.source_run_id)),
                         ("from_commit_id", live.from_commit),
                         ("environment_ref", live.environment_ref),
@@ -270,6 +357,13 @@ class Worker:
                 history.objects.get(manifest.environment_ref, ObjectType.ENVIRONMENT),
                 EnvironmentManifest,
             )
+        elif merged_snapshot is not None and payload.merged is not None:
+            if run["checkpoint_commit_id"] != payload.merged.from_commit:
+                raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "合并新 Run 初始检查点不符")
+            snapshot = merged_snapshot
+            state = parse_contract(encode(snapshot.data), AgentState)
+            if state.goal != goal:
+                raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "合并输入与新任务目标不符")
         elif live is not None:
             if run["checkpoint_commit_id"] != live.from_commit:
                 raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "Live 初始检查点与冻结来源不符")
@@ -337,6 +431,11 @@ class Worker:
                     "from_commit": live.from_commit,
                     "initial_state_ref": live.initial_state_ref,
                 }
+        if payload.merged is not None:
+            session.budget_baseline = BudgetUsage()
+            if not has_snapshot:
+                session.initialization_type = "merge.initialized"
+                session.initialization = payload.merged.model_dump(mode="json")
         if config.execution_policy is not None:
             session.bind_execution(
                 ExecutionService(
@@ -402,20 +501,31 @@ class Worker:
                     )
             return pending
 
-    def _unknown_state(self, state: AgentState, calls: list[dict[str, Any]]) -> AgentState:
+    def _model(self, config: AgentConfig) -> ModelAdapter:
+        return self.model_factory() if self.model_factory is not None else select_model(config)
+
+    def _unknown_state(
+        self,
+        state: AgentState,
+        calls: list[dict[str, Any]],
+        config: AgentConfig,
+    ) -> AgentState:
         if state.status == RunStatus.OUTCOME_UNKNOWN:
             return state
-        models, tools, reserved = 0, 0, 0
+        tools = 0
+        usage = state.usage
         attempts = dict(state.attempts)
         for call in calls:
             if call["provider"].startswith("llm:"):
-                models += 1
                 intent = parse_contract(
                     self.queue.history.objects.get(call["intent_ref"], ObjectType.CALL), CallIntent
                 )
-                reserved += (
-                    len(self.queue.history.objects.get(call["request_digest"], ObjectType.BLOB))
-                    + intent.max_response_bytes
+                if intent.model_budget != call_budget(config):
+                    raise AgentGitError(ErrorCode.REPLAY_MISMATCH, "未知模型意图预留与配置不符")
+                usage = reserve_model(
+                    usage,
+                    config,
+                    len(self.queue.history.objects.get(call["request_digest"], ObjectType.BLOB)),
                 )
             else:
                 tools += 1
@@ -423,11 +533,8 @@ class Worker:
                     attempts.get(call["logical_step_id"], 0), call["attempt"]
                 )
         usage = evolve(
-            state.usage,
-            steps=state.usage.steps + models,
-            model_calls=state.usage.model_calls + models,
-            tool_calls=state.usage.tool_calls + tools,
-            reserved_tokens=state.usage.reserved_tokens + reserved,
+            usage,
+            tool_calls=usage.tool_calls + tools,
         )
         return evolve(
             state,
@@ -508,6 +615,10 @@ class Worker:
         if (
             outcome.error is not None
             or intent.max_response_bytes != session.config.limits.max_response_bytes
+            or (
+                occurrence.provider.startswith("llm:")
+                and intent.model_budget != call_budget(session.config)
+            )
         ):
             raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "核对结果含错误或响应上限改变")
         request = session.history.objects.get(call["request_digest"], ObjectType.BLOB)

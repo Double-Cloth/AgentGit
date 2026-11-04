@@ -10,8 +10,9 @@ from typing import TYPE_CHECKING, Any
 
 from agentgit import __version__
 from agentgit.adapters.corpus import Corpus
+from agentgit.adapters.model_protocol import configured_model_signature
 from agentgit.adapters.tools import ToolRegistry, WriteArguments
-from agentgit.core.canonical import ObjectType, encode, object_digest
+from agentgit.core.canonical import ObjectType, decode, encode, object_digest
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.execution import (
     ExecutionContext,
@@ -19,9 +20,17 @@ from agentgit.core.execution import (
     ExecutionManifest,
     ExecutionResult,
 )
-from agentgit.core.models import CommitManifest, EffectClass, RunStatus, parse_contract
+from agentgit.core.hybrid import FrozenHybridPolicy
+from agentgit.core.models import (
+    CommitManifest,
+    EffectClass,
+    ModelCallBudget,
+    RunStatus,
+    parse_contract,
+)
 from agentgit.core.research import AgentConfig, AgentState, BudgetUsage, CallTrace, ModelRequest
 from agentgit.core.snapshots import EventManifest, EventPayload, StateSnapshot
+from agentgit.experiments.hybrid import HybridSelector
 from agentgit.replay.recorded import RecordedAdapter
 from agentgit.replay.recovery import rebuild_discard
 from agentgit.replay.unknown import rebuild_unknown
@@ -100,6 +109,7 @@ class _Gateway:
         request: bytes,
         invoke: Callable[[], bytes],
         max_bytes: int,
+        model_budget: ModelCallBudget | None = None,
     ) -> CallOutcome:
         try:
             outcome = self.adapter.call(
@@ -111,6 +121,7 @@ class _Gateway:
                 request=request,
                 invoke=invoke,
                 max_bytes=max_bytes,
+                model_budget=model_budget,
             )
             # 写文件响应的观察依赖文件已存在；只在验证录制后重建内存状态。
             if outcome.error is None and provider == "tool:artifact_write/v1":
@@ -211,6 +222,18 @@ class RecordedReplayer:
 
         self.read = guarded_read
 
+    def _hybrid_selector(
+        self, bundle: "RecordedBundle", corpus: Corpus
+    ) -> tuple[str | None, HybridSelector | None]:
+        value = decode(self.read(bundle.environment.input_ref, ObjectType.BLOB))
+        reference = value.get("hybrid_policy_ref") if isinstance(value, dict) else None
+        if reference is None:
+            return None, None
+        if not isinstance(reference, str):
+            raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "Hybrid 环境 policy 引用非法")
+        policy = parse_contract(self.read(reference, ObjectType.BLOB), FrozenHybridPolicy)
+        return reference, HybridSelector(policy, corpus, self.read)
+
     def validate_environment(
         self,
         bundle: "RecordedBundle",
@@ -243,9 +266,7 @@ class RecordedReplayer:
         lock = Path(__file__).resolve().parents[3] / "uv.lock"
         if not lock.is_file():
             raise AgentGitError(ErrorCode.CONFIGURATION, "Recorded 兼容性检查缺少依赖锁文件")
-        signature = object_digest(
-            ObjectType.CALL, encode({"schema_version": 1, "model": config.model})
-        )
+        signature = configured_model_signature(config)
         if (
             environment.runtime_version != __version__
             or environment.python_version != platform.python_version()
@@ -270,6 +291,9 @@ class RecordedReplayer:
         }
         if budget_baseline is not None:
             controlled_input["budget_baseline"] = budget_baseline.model_dump(mode="json")
+        reference, _ = self._hybrid_selector(bundle, corpus)
+        if reference is not None:
+            controlled_input["hybrid_policy_ref"] = reference
         frozen_input = encode(controlled_input)
         if self.read(environment.input_ref, ObjectType.BLOB) != frozen_input:
             raise AgentGitError(
@@ -407,6 +431,7 @@ class RecordedReplayer:
             )
 
         tools.input_context, tools.execution_files = context, execution_files
+        _, hybrid = self._hybrid_selector(bundle, corpus)
         runtime = ResearchRuntime(
             state,
             config,
@@ -417,6 +442,9 @@ class RecordedReplayer:
             clock_ms=logical_clock,
             control=journal.control,
             budget_baseline=budget_baseline,
+            before_evaluate=(lambda state: hybrid.require_reached(state.messages))
+            if hybrid
+            else None,
         )
         settled: set[str] = set()
         sealed: set[str] = set()
@@ -447,7 +475,7 @@ class RecordedReplayer:
                                 ).model_dump(mode="json")
                             )
                             provider, binding, effect = (
-                                "llm:mock-research/v1",
+                                f"llm:{config.model}",
                                 signature,
                                 EffectClass.READ_ONLY,
                             )
@@ -470,6 +498,7 @@ class RecordedReplayer:
                             signature=binding,
                             effect=effect,
                             max_response_bytes=config.limits.max_response_bytes,
+                            config=config,
                         )
                         sealed.add(target)
                         journal.save(runtime.state, event_type, {"pending_calls": [stop.call_id]})

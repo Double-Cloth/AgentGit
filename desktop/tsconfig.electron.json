@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.main.json",
+  "compilerOptions": { "rootDir": ".", "noEmit": true },
+  "include": ["src/shared/**/*.ts", "tests/electron/**/*.ts", "playwright*.config.ts"]
+}

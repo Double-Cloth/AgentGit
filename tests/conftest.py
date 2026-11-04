@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+import runpy
 from pathlib import Path
 from uuid import uuid4
 
@@ -16,6 +17,12 @@ from agentgit.config import Settings, database_url
 from agentgit.services.history import HistoryService
 from agentgit.storage.database import make_engine
 from agentgit.storage.objects import ObjectStore
+
+
+@pytest.fixture
+def mcp_stdio(tmp_path, monkeypatch):
+    helper = runpy.run_path(str(Path(__file__).parent / "helpers/mcp_stdio_fixture.py"))
+    return (*helper["prepare"](tmp_path, monkeypatch), helper["exited"])
 
 
 @pytest.fixture

@@ -7,13 +7,18 @@ from uuid import UUID, uuid4
 import sqlalchemy as sa
 from sqlalchemy.engine import Connection, RowMapping
 
+from agentgit.core.a2a_runs import A2AJobPayload
 from agentgit.core.canonical import ObjectType, encode, object_digest
+from agentgit.core.collaboration_runs import CollaborationRolePayload
 from agentgit.core.errors import AgentGitError, ErrorCode
 from agentgit.core.jobs import TERMINAL_RUNS, JobPayload, Lease, Submission
+from agentgit.core.langgraph_runs import LangGraphJobPayload
+from agentgit.core.mcp_runs import MCPJobPayload
+from agentgit.core.merge_runs import MergedRunSpec
 from agentgit.core.models import parse_contract
-from agentgit.core.research import BudgetLimits
+from agentgit.core.research import AgentConfig, BudgetLimits
 from agentgit.core.snapshots import EventPayload
-from agentgit.core.versions import LiveReplaySpec, RecordedReplaySpec
+from agentgit.core.versions import HybridReplaySpec, LiveReplaySpec, RecordedReplaySpec
 from agentgit.services.environment import source_revision
 from agentgit.services.history import TABLES, EventInput
 from agentgit.services.research import ResearchService
@@ -38,11 +43,17 @@ class JobService:
         expected_head: str | None,
         branch_name: str = "main",
         budget: BudgetLimits | None = None,
-        replay: RecordedReplaySpec | LiveReplaySpec | None = None,
+        replay: RecordedReplaySpec | LiveReplaySpec | HybridReplaySpec | None = None,
+        merged: MergedRunSpec | None = None,
         connection: Connection | None = None,
+        execution_wall_ms: int | None = None,
     ) -> Submission:
         if not actor or not key or len(actor) > 200 or len(key) > 200:
             raise AgentGitError(ErrorCode.VALIDATION, "操作者和幂等键必须为有界非空字符串")
+        if merged is not None:
+            merged = parse_contract(encode(merged.model_dump(mode="json")), MergedRunSpec)
+            if replay is not None:
+                raise AgentGitError(ErrorCode.VALIDATION, "合并新任务不能混入 Replay")
         route = f"POST /tasks/{task_id}/runs"
         submission_connection = connection
         request_payload = {
@@ -57,6 +68,17 @@ class JobService:
         }
         if replay is not None:
             request_payload["replay"] = replay.model_dump(mode="json")
+        if merged is not None:
+            request_payload["merged"] = merged.model_dump(mode="json")
+        if execution_wall_ms is not None:
+            if (
+                type(execution_wall_ms) is not int
+                or execution_wall_ms < 1
+                or replay is None
+                or replay.mode != "recorded"
+            ):
+                raise AgentGitError(ErrorCode.VALIDATION, "独立执行期限仅用于 Recorded 的实际墙钟")
+            request_payload["execution_wall_ms"] = execution_wall_ms
         request_digest = object_digest(
             ObjectType.BLOB,
             encode(request_payload),
@@ -96,13 +118,21 @@ class JobService:
             self.history.objects.get(task["budget_ref"], ObjectType.BLOB), BudgetLimits
         )
         limits = budget or task_budget
-        if any(
-            getattr(limits, name) > min(getattr(task_budget, name), getattr(config.limits, name))
-            for name in BudgetLimits.model_fields
-            if name != "schema_version"
-        ):
+        if execution_wall_ms is not None and execution_wall_ms > limits.max_wall_ms:
+            raise AgentGitError(ErrorCode.FORBIDDEN, "Recorded 实际执行期限不能扩大配置上限")
+        if not limits.within(task_budget, config.limits):
             raise AgentGitError(ErrorCode.FORBIDDEN, "Run 预算不能扩大 Task 或配置上限")
+        parse_contract(
+            encode(
+                {
+                    **config.model_dump(mode="json"),
+                    "limits": limits.model_dump(mode="json"),
+                }
+            ),
+            AgentConfig,
+        )
         payload = JobPayload(
+            merged=merged,
             replay=replay,
             config_id=str(task["agent_config_id"]),
             goal_ref=task["goal_ref"],
@@ -111,7 +141,7 @@ class JobService:
             sources=tuple(self.research.corpus.sources.values()),
             evaluation_time=self.research.corpus.evaluation_time,
             initial_plan_version=plan_version,
-            max_wall_ms=limits.max_wall_ms,
+            max_wall_ms=execution_wall_ms if execution_wall_ms is not None else limits.max_wall_ms,
             limits=limits,
         )
         job_id, run_id = uuid4(), uuid4()
@@ -218,6 +248,34 @@ class JobService:
             )
             if replay is None and fork is not None:
                 raise AgentGitError(ErrorCode.FORBIDDEN, "历史分支必须通过 Replay 明确选择执行模式")
+            merge_origins = TABLES["merge_branch_origins"]
+            merge_origin = (
+                connection.execute(
+                    sa.select(merge_origins).where(
+                        merge_origins.c.repository_id == repository_id,
+                        merge_origins.c.branch_name == branch_name,
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            approved = TABLES["merge_approvals"]
+            merge_head = connection.execute(
+                sa.select(approved.c.id).where(
+                    approved.c.repository_id == repository_id,
+                    approved.c.commit_id == expected_head,
+                )
+            ).first()
+            if merged is None and (merge_origin is not None or merge_head is not None):
+                raise AgentGitError(ErrorCode.FORBIDDEN, "合并分支须显式选择新配置、验收器和预算")
+            if merged is not None and (
+                merge_origin is None
+                or merge_origin["approval_id"] != UUID(merged.approval_id)
+                or merge_origin["commit_id"] != merged.from_commit
+                or expected_head != merged.from_commit
+                or current["active_run_id"] is not None
+            ):
+                raise AgentGitError(ErrorCode.FORBIDDEN, "新 Run 必须绑定独立合并分支和新任务")
             if replay is not None and (
                 fork is None
                 or fork["source_run_id"] != UUID(replay.source_run_id)
@@ -236,7 +294,7 @@ class JobService:
                     checkpoint_commit_id=expected_head,
                     origin_run_id=UUID(replay.source_run_id)
                     if replay
-                    else current["active_run_id"],
+                    else (None if merged is not None else current["active_run_id"]),
                     mode=replay.mode if replay else "live",
                     status="queued",
                 )
@@ -332,7 +390,35 @@ class JobService:
             )
             if candidate is None:
                 return None
-            payload = self.payload(candidate)
+            payload: (
+                JobPayload
+                | MCPJobPayload
+                | LangGraphJobPayload
+                | CollaborationRolePayload
+                | A2AJobPayload
+            )
+            if candidate["kind"] == "a2a_run":
+                payload = parse_contract(
+                    self.history.objects.get(candidate["payload_ref"], ObjectType.BLOB),
+                    A2AJobPayload,
+                )
+            elif candidate["kind"] == "collaboration_role":
+                payload = parse_contract(
+                    self.history.objects.get(candidate["payload_ref"], ObjectType.BLOB),
+                    CollaborationRolePayload,
+                )
+            elif candidate["kind"] == "mcp_run":
+                payload = parse_contract(
+                    self.history.objects.get(candidate["payload_ref"], ObjectType.BLOB),
+                    MCPJobPayload,
+                )
+            elif candidate["kind"] == "langgraph_run":
+                payload = parse_contract(
+                    self.history.objects.get(candidate["payload_ref"], ObjectType.BLOB),
+                    LangGraphJobPayload,
+                )
+            else:
+                payload = self.payload(candidate)
             token = int(candidate["fencing_token"]) + 1
             connection.execute(
                 jobs.update()
@@ -459,6 +545,23 @@ class JobService:
             )
             if job is None:
                 raise AgentGitError(ErrorCode.NOT_FOUND, "Run 没有持久化 Job")
+            if job["kind"] == "collaboration_role":
+                tasks, groups = TABLES["collaboration_tasks"], TABLES["collaborations"]
+                prepared = connection.execute(
+                    sa.select(groups.c.status)
+                    .join(
+                        tasks,
+                        sa.and_(
+                            tasks.c.repository_id == groups.c.repository_id,
+                            tasks.c.collaboration_id == groups.c.id,
+                        ),
+                    )
+                    .where(tasks.c.repository_id == repository_id, tasks.c.job_id == job["id"])
+                ).scalar_one_or_none()
+                if prepared is None:
+                    raise AgentGitError(ErrorCode.OBJECT_CORRUPT, "协作 Job 缺少角色任务")
+                if prepared == "prepared":
+                    raise AgentGitError(ErrorCode.FORBIDDEN, "协作组仅完成准备，须由协作调度器启动")
             connection.execute(
                 runs.update()
                 .where(runs.c.id == run_id)

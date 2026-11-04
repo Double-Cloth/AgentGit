@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "dataset_id": "diagnosis/v1",
+  "cases_sha256": "bc16f65031acd5985e56a16b6cbd897b312c5140c5361b9b324d105dddd28014",
+  "fixture_sha256": "ec9d9d3c4cb753cf98563f261b135b4de9f50df137891906c2f44eab94b9d6ce",
+  "train": [
+    "D01",
+    "D02",
+    "D03",
+    "D04",
+    "D05",
+    "D06",
+    "D07",
+    "D08",
+    "D09",
+    "D10",
+    "D11",
+    "D12"
+  ],
+  "heldout": [
+    "D13",
+    "D14",
+    "D15",
+    "D16",
+    "D17",
+    "D18",
+    "D19",
+    "D20"
+  ],
+  "annotation_status": "pending_human",
+  "ranking_status": "not_implemented",
+  "frozen_at_utc": "2026-10-23T23:29:37+00:00"
+}
