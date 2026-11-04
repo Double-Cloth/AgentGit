@@ -49,11 +49,14 @@ def server(tmp_path, request, monkeypatch):
         )
         try:
             deadline = time.monotonic() + 10
-            while not ready.exists():
+            while True:
                 assert process.poll() is None, "fixture 提前退出"
                 assert time.monotonic() < deadline, "fixture 未就绪"
-                time.sleep(0.01)
-            observed = json.loads(ready.read_text("utf-8"))
+                try:
+                    observed = json.loads(ready.read_text("utf-8"))
+                    break
+                except (FileNotFoundError, PermissionError):
+                    time.sleep(0.01)
             assert observed["pid"] == process.pid != os.getpid()
             observed["credential_envs"] = credential_envs
 

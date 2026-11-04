@@ -13,6 +13,24 @@ const PARENT = 'b'.repeat(64);
 const EVIDENCE = process.env.AGENTGIT_ELECTRON_EVIDENCE_PREFIX ?? 'S6';
 if (!/^[a-zA-Z0-9_-]{1,80}$/.test(EVIDENCE)) throw new Error('测试证据前缀无效');
 
+function appEnvironment(extra: Record<string, string>, executable?: string) {
+  const env: Record<string, string> = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
+  if (executable) {
+    for (const key of Object.keys(env)) if (['path', 'node_path', 'node_options'].includes(key.toLowerCase())) delete env[key];
+    env.PATH = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32');
+  }
+  return { ...env, ...extra };
+}
+async function packagedIdentity(desktop: Awaited<ReturnType<typeof electron.launch>>, executable?: string) {
+  if (!executable) return;
+  const manifest = JSON.parse(await readFile(resolve('package.json'), 'utf8'));
+  const actual = await desktop.evaluate(({ app }) => ({ packaged: app.isPackaged, version: app.getVersion(), executable: process.execPath, path: process.env.PATH, nodePath: process.env.NODE_PATH, nodeOptions: process.env.NODE_OPTIONS }));
+  expect(actual.packaged).toBe(true); expect(actual.version).toBe(manifest.version);
+  expect(actual.executable.toLowerCase()).toBe(resolve(executable).toLowerCase());
+  expect(actual.path).toBe(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32')); expect(actual.nodePath).toBeUndefined(); expect(actual.nodeOptions).toBeUndefined();
+  return actual;
+}
+
 test('连接降级：API 未监听、数据库 503、版本不兼容、身份拒绝及恢复', async () => {
   let mode = 'healthy';
   const methods: string[] = [];
@@ -33,8 +51,9 @@ test('连接降级：API 未监听、数据库 503、版本不兼容、身份拒
   const evidence = await mkdtemp(join(tmpdir(), 'agentgit-connection-qa-'));
   const executable = process.env.AGENTGIT_DESKTOP_EXECUTABLE;
   const desktop = await electron.launch({ ...(executable ? { executablePath: resolve(executable), args: [], cwd: evidence } : { args: ['.'], cwd: resolve('.') }),
-    env: { ...process.env, AGENTGIT_API_TOKEN: TOKEN, AGENTGIT_API_URL: `http://127.0.0.1:${address.port}`, AGENTGIT_DESKTOP_PROFILE_DIR: join(evidence, 'profile') } });
+    env: appEnvironment({ AGENTGIT_API_TOKEN: TOKEN, AGENTGIT_API_URL: `http://127.0.0.1:${address.port}`, AGENTGIT_DESKTOP_PROFILE_DIR: join(evidence, 'profile') }, executable) });
   try {
+    await packagedIdentity(desktop, executable);
     const page = await desktop.firstWindow(), errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', entry => { if (entry.type() === 'error') errors.push(entry.text()); });
@@ -112,9 +131,10 @@ test('真实 Electron：本地资源、隔离桥接、四页查询及受控提�
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('测试端点不可用');
   const profile = await mkdtemp(join(tmpdir(), 'agentgit-electron-'));
   const executable = process.env.AGENTGIT_DESKTOP_EXECUTABLE;
-  const desktop = await electron.launch({ ...(executable ? { executablePath: resolve(executable), args: [], cwd: profile } : { args: ['.'], cwd: resolve('.') }), env: { ...process.env,
-    AGENTGIT_API_TOKEN: TOKEN, OPENAI_API_KEY: 'sk-public-desktop-env-boundary-fixture', AGENTGIT_API_URL: `http://127.0.0.1:${address.port}`, AGENTGIT_DESKTOP_PROFILE_DIR: profile } });
+  const desktop = await electron.launch({ ...(executable ? { executablePath: resolve(executable), args: [], cwd: profile } : { args: ['.'], cwd: resolve('.') }), env: appEnvironment({
+    AGENTGIT_API_TOKEN: TOKEN, OPENAI_API_KEY: 'sk-public-desktop-env-boundary-fixture', AGENTGIT_API_URL: `http://127.0.0.1:${address.port}`, AGENTGIT_DESKTOP_PROFILE_DIR: profile }, executable) });
   try {
+    await packagedIdentity(desktop, executable);
     const page = await desktop.firstWindow();
     expect(await desktop.evaluate(() => process.env.OPENAI_API_KEY)).toBeUndefined();
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));

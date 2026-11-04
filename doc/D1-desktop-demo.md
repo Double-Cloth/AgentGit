@@ -23,7 +23,7 @@ doctor 不创建执行容器或自动下载镜像。检查失败时先修复后�
 
 从[当前候选清单](S6-windows-acceptance.md)取得并核对 Setup / ZIP 的版本、摘要与签名状态。安装版可在已预置匹配令牌的终端执行 `& "$env:LOCALAPPDATA\AgentGit\AgentGit.exe"`；便携版从新目录解压后启动其中 AgentGit.exe。两者均不需要 Node/npm/Vite。当前候选未签名，若系统拦截则保留实际结果，不将“已构建”记为“已安装通过”。
 
-当前分发候选为 [0.1.7](acceptance/S11-package-017.md)，包含 S7 实验、S8 报告、Repair Lab 和 Merge Review；下面仍按 D1 核心流程演示，不把新增功能或包内复验作为独立安装/原生验收已完成。Repair Lab 所需的独立控制器和 Merge Review 的明确操作见 [桌面说明](../desktop/README.md)，不在本 D1 核心演示中隐式启动。
+当前分发候选为 [0.1.8](acceptance/S12-package-018.md)，包含S7实验、S8报告、Repair Lab、Merge Review和四项适配工作区；下面仍按D1核心流程演示，不把新增功能或包内复验作为独立安装／原生验收已完成。Repair Lab独立控制器、合并及四适配操作见[桌面说明](../desktop/README.md)和对应examples演示，不在本D1核心演示中隐式启动。正式门槛见[D3就绪报告](D3-readiness-report.md)。
 
 桌面默认连接 http://127.0.0.1:8000，也可在“连接与项目”中填写其他已准备的回环 HTTP 地址，点击“连接”或“重新检查”。确认身份 accepted、数据库 ready、协议版本兼容；Worker / 容器保持未知，直到实际任务提供证据。
 
