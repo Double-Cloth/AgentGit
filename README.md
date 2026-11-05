@@ -55,23 +55,24 @@ uv run --locked agentgit doctor --sandbox
 
 ## 启动与运行
 
-启动顺序为：**API → 普通Worker →（按需）Repair 编排器 → 桌面**。API 与桌面使用同一令牌；它通过受控进程环境传递，不写入文件、命令参数或截图。每个终端须使用一致的数据库、数据根和操作者设置。
+启动顺序为 **API → 普通Worker →（按需）Repair 编排器 → 桌面**。令牌在本轮启动中只共享给桌面：**终端 1 生成并显示一次，复制后在第 4 步粘贴**；Worker/编排器直连数据库，不需要令牌。令牌只经环境变量传递，不写入文件、Git 或启动参数。除下述变量外全部终端保持默认配置（操作者默认 `local-operator`，数据根 `.agentgit/dev`，数据库 `127.0.0.1:55432`），且后端命令都在仓库根目录运行。
 
-**第 1 步 · 启动 API**（在此终端生成一次性随机令牌，并保持运行）：
+**第 1 步 · 启动 API**（终端 1，保持运行。第 2 行会**显示生成的令牌，复制它**，第 4 步要用）：
 
 ```powershell
-$env:AGENTGIT_OPERATOR_ID = 'local-operator'
-$env:AGENTGIT_API_TOKEN = (uv run --locked python -c "import secrets; print(secrets.token_urlsafe(32))").Trim()
+$token = (uv run --locked python -c "import secrets; print(secrets.token_urlsafe(32))").Trim()
+$token    # 显示生成的令牌，复制这个字符串
+$env:AGENTGIT_API_TOKEN = $token
 uv run --locked agentgit serve --port 8000
 ```
 
-**第 2 步 · 启动普通 Worker**（另开一个终端，配置与 API 相同的后端环境）：
+**第 2 步 · 启动普通 Worker**（终端 2，仓库根目录）：
 
 ```powershell
 uv run --locked agentgit worker
 ```
 
-**第 3 步 · 启动 Repair 编排器**（仅 Repair Lab 需要；按启用流程在独立终端分别运行，不能代替普通 Worker）：
+**第 3 步 · 启动 Repair 编排器**（终端 3，仅 Repair Lab 需要；按启用流程分别独立运行，不能代替普通 Worker）：
 
 ```powershell
 uv run --locked agentgit repair-worker
@@ -79,19 +80,18 @@ uv run --locked agentgit repair-study-worker
 uv run --locked agentgit repair-confirm-worker
 ```
 
-**第 4 步 · 启动桌面**（再开一个终端：先按环境变量方式设置与 API 相同的 `AGENTGIT_OPERATOR_ID` 与 `AGENTGIT_API_TOKEN`，再执行）：
+**第 4 步 · 启动桌面**（终端 4。需 Node 26.x／npm 12.1.0，可先 `node --version` 核对；首次构建较慢）：
 
 ```powershell
 cd desktop
-node --version    # 应为 26.x
-npm --version     # 应为 12.1.0
 npm ci
 npm run setup
+$env:AGENTGIT_API_TOKEN = Read-Host '粘贴终端 1 显示的令牌'
 $env:AGENTGIT_API_URL = 'http://127.0.0.1:8000'
 npm start
 ```
 
-`npm start` 编译后启动真实 Electron，加载包内页面；首次连接时选择或创建项目。全部启动后可用 `Invoke-RestMethod http://127.0.0.1:8000/health` 核对 API 存活（不代表 Worker/Docker 就绪）。分发用户运行 Setup 或解压 ZIP，四件套在 `.agentgit/packages/desktop-0.1.8/`，摘要见[候选记录](doc/acceptance/S12-package-018.md)。这些文件不随 Git 克隆自动提供。构建新包在 `desktop/` 执行 `npm run make`，输出 `desktop/out/`，不要覆盖历史归档。
+`Read-Host` 交互输入不进入 PowerShell 命令历史。桌面主进程读取 `AGENTGIT_API_TOKEN` 后即删除环境副本，令牌不进入渲染进程、IPC 或偏好文件。`npm start` 编译后启动真实 Electron，加载包内页面；首次连接时选择或创建项目。全部启动后可用 `Invoke-RestMethod http://127.0.0.1:8000/health` 核对 API 存活（不代表 Worker/Docker 就绪）。分发用户运行 Setup 或解压 ZIP，四件套在 `.agentgit/packages/desktop-0.1.8/`，摘要见[候选记录](doc/acceptance/S12-package-018.md)。这些文件不随 Git 克隆自动提供。构建新包在 `desktop/` 执行 `npm run make`，输出 `desktop/out/`，不要覆盖历史归档。
 
 无公网/无模型密钥的三工具同步演示：
 

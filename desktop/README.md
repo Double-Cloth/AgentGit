@@ -51,10 +51,10 @@ npm run make
 
 ## 连接已有后端
 
-按 [后端开发说明](../doc/DEVELOPMENT.md) 准备数据库/迁移/固定镜像，在独立终端启动 API 与 Worker。桌面与 API 使用同一操作者预置的 `AGENTGIT_API_TOKEN`；通过环境传递，不放入启动参数、文档或 Git。
+按 [根 README 启动流程](../README.md#启动与运行) 准备数据库/迁移并启动 API 与 Worker；令牌在 API 终端生成并显示一次（根 README 第 1 步），本终端粘贴同一令牌后启动。通过环境传递，不放入启动参数、文档或 Git。
 
 ```powershell
-# 本终端须已配置与 API 相同的 AGENTGIT_API_TOKEN。
+$env:AGENTGIT_API_TOKEN = Read-Host '粘贴 API 终端显示的令牌'
 $env:AGENTGIT_API_URL = 'http://127.0.0.1:8000'
 npm start
 ```
