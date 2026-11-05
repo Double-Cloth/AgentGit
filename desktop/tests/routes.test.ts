@@ -207,6 +207,43 @@ test('S8 固定报告路由绑定当前项目，候选 ID 与精确运行参数�
     assert.equal(f.requests.at(-1)!.headers['x-repository-id'], REPO);
   } finally { await f.close(); }
 });
+test('项目列表不要求已选项目，分页参数先行验证且不携带仓库头', async () => {
+  const f = await fixture({ features: [...FEATURES, 'repository_listing'] });
+  try {
+    await f.controller.handle('getConnection', undefined);
+    await f.controller.handle('listRepositories', { afterId: OTHER, limit: 20 });
+    assert.equal(f.requests.at(-1)!.url, `/repositories?after_id=${OTHER}&limit=20`);
+    assert.equal(f.requests.at(-1)!.headers['x-repository-id'], undefined);
+    await f.controller.handle('listRepositories', {});
+    assert.equal(f.requests.at(-1)!.url, '/repositories?limit=30');
+    const before = f.requests.length;
+    for (const input of [{ afterId: '../private' }, { afterId: true }, { limit: 0 }, { limit: 101 }, { limit: '30' }, { extra: 1 }]) {
+      await assert.rejects(f.controller.handle('listRepositories', input), rejected('validation'));
+    }
+    assert.equal(f.requests.length, before);
+  } finally { await f.close(); }
+  const unready = await fixture({ ready: false, features: [...FEATURES, 'repository_listing'] });
+  try { await unready.controller.handle('getConnection', undefined); await assert.rejects(unready.controller.handle('listRepositories', {}), rejected('database_unavailable')); }
+  finally { await unready.close(); }
+  const old = await fixture();
+  try { await connect(old.controller); const before = old.requests.length; await assert.rejects(old.controller.handle('listRepositories', {}), rejected('unsupported')); assert.equal(old.requests.length, before); }
+  finally { await old.close(); }
+});
+test('项目列表不因选择项目而失效，选择后的在途列表仍可返回', async () => {
+  const f = await fixture({ features: [...FEATURES, 'repository_listing'], respond: (request, response) => {
+    if (request.method === 'GET' && request.url!.startsWith('/repositories?')) {
+      setTimeout(() => response.end(JSON.stringify({ items: [{ id: REPO, name: '在途项目', created_at: '2026-11-05T00:00:00Z' }], next_after_id: null })), 150);
+      return true;
+    }
+    return false;
+  } });
+  try {
+    await connect(f.controller);
+    const pending = f.controller.handle('listRepositories', {});
+    await f.controller.handle('selectRepository', { repositoryId: OTHER });
+    assert.deepEqual(await pending, { items: [{ id: REPO, name: '在途项目', created_at: '2026-11-05T00:00:00Z' }], next_after_id: null });
+  } finally { await f.close(); }
+});
 async function connect(controller: BusinessController) {
   await controller.handle('getConnection', undefined);
   await controller.handle('selectRepository', { repositoryId: REPO });

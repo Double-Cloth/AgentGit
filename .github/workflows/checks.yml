@@ -21,17 +21,9 @@ jobs:
       - run: uv run --locked pytest
   postgres:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3
-        env:
-          POSTGRES_USER: agentgit
-          POSTGRES_PASSWORD: agentgit_local
-          POSTGRES_DB: agentgit_test
-        ports: ["55432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U agentgit -d agentgit_test"
-          --health-interval 2s --health-timeout 3s --health-retries 30
+    # test_backup_restore.py 需要能 docker exec 名为 agentgit-postgres-1 的本机容器
+    # （pg_dump/pg_restore 走容器内客户端），因此这里不用 Actions service container，
+    # 而是按 compose 同款镜像显式起一个同名容器。
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -39,7 +31,24 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install uv==0.12.19
       - run: uv sync --locked
+      - name: 启动与本地 compose 同名的 PostgreSQL 测试容器
+        run: |
+          docker run -d --name agentgit-postgres-1 -p 55432:5432 \
+            -e POSTGRES_USER=agentgit -e POSTGRES_PASSWORD=agentgit_local -e POSTGRES_DB=agentgit_test \
+            postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3
+      - name: 等待数据库就绪
+        run: |
+          for attempt in $(seq 1 30); do
+            docker exec agentgit-postgres-1 pg_isready -U agentgit -d agentgit_test && exit 0
+            sleep 2
+          done
+          echo "数据库 60 秒内未就绪" && exit 1
+      # S8/S10 两个历史冻结执行入口绑定旧完整源码/锁，当前代码下必须拒绝执行；
+      # 按 doc/acceptance/S12-regression-scope.md 的当前技术范围命令排除，
+      # 不加默认 skip，正式复现须在原字节工作树（见该文档）。
       - run: uv run --locked pytest tests/integration
+          --ignore=tests/integration/test_diagnosis_candidate_effects_v3.py
+          --ignore=tests/integration/test_repair_frozen_evaluation.py
   sandbox:
     runs-on: ubuntu-24.04
     services:

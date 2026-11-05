@@ -56,6 +56,7 @@ export interface Inputs {
   capabilities: undefined;
   getRepository: undefined;
   createRepository: { name: string; key: string };
+  listRepositories: Page;
   listRuns: Page;
   getRun: { runId: string };
   getJob: { jobId: string };

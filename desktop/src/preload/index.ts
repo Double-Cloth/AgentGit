@@ -19,6 +19,7 @@ const api: DesktopApi = {
   rejectMergeProposal: method('rejectMergeProposal'), forkMergedBranch: method('forkMergedBranch'), submitMergedRun: method('submitMergedRun'),
   getConnection: method('getConnection'), configureConnection: method('configureConnection'), selectRepository: method('selectRepository'),
   capabilities: method('capabilities'), getRepository: method('getRepository'), createRepository: method('createRepository'), listRuns: method('listRuns'),
+  listRepositories: method('listRepositories'),
   getRun: method('getRun'), getJob: method('getJob'), getEvents: method('getEvents'), listBranches: method('listBranches'),
   listCommits: method('listCommits'), getCommit: method('getCommit'), getArtifacts: method('getArtifacts'),
   getCommitArtifacts: method('getCommitArtifacts'), getApprovals: method('getApprovals'), listExecutions: method('listExecutions'),

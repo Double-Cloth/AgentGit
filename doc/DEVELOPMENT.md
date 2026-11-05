@@ -4,6 +4,8 @@
 
 2026-11-05：桌面构建工具链由 Node 24.19.0 切换为 Node **26.x**（`desktop/.node-version` 固定 26.13.0），npm 12.1.0 不变；`prebuild` 改为按 `engines.node` 声明核对版本（支持 `26.x` 区间）。Node 26 移除 `fs.rmdir` 的 `recursive` 选项，Forge 8.0.1 所依赖的 cross-zip 4.0.1（上游最新）在 ZIP 步骤受影响，已通过 npm `overrides` 指向本地补丁 `desktop/patches/cross-zip/`（仅替换为 `fs.rm`，不进入分发产物）；因 npm 12 的 `npm ci` 不接受纯 `file:` overrides 的 lock 布局，补丁包同时声明为根 devDependency，`npm ci`/`npm install` 均已实测通过。当日实测：typecheck、47 单元、build、`npm ci` 全新安装及 `npm run make`（Setup + ZIP）均在 Node 26.13.0 下通过；`desktop/out/` 为新构建输出，`.agentgit/packages/` 历史归档未改动，旧验收记录按各自日期保留事实。另新增一键启动脚本 `scripts/start-local.ps1`（Docker/迁移核对、令牌生成与传递、后台 API/Worker、可选 Repair 编排器、前台桌面，退出自动清理），端到端冒烟测试通过。
 
+同日补充：桌面「连接与项目」新增本机已有项目列表（后端 `GET /repositories` 只读分页接口），可直接点击选择，无需手抄 UUID；此前桌面只能粘贴 UUID 或新建，已有项目无法发现。CI 的 postgres 任务改用与 compose 同名（`agentgit-postgres-1`）的测试容器，使 `test_backup_restore` 能按其固定容器名执行 `docker exec`，并按[当前兼容与历史冻结评估范围](acceptance/S12-regression-scope.md)的当前技术范围排除两个历史冻结执行入口；`mcp_stdio.py` 的 `CREATE_NO_WINDOW` 改用 `getattr` 以通过 Linux 平台的 mypy；`test_stopped_retries` 的活动取消用例把有界等待放宽到慢速 CI 环境（观察与终态判据不变）。新增 2 项项目列表集成测试与 1 项桌面路由单测；`npm test` 48/48、typecheck、ruff、mypy（含 `--platform=linux`）通过。
+
 2026-11-01：[当前兼容与历史冻结评估范围](acceptance/S12-regression-scope.md)区分当前2,852技术节点与绑定旧完整源码的S8二十例／S10三十例执行入口。当前代码不得复用旧协议或覆盖固定结果目录；两套历史原始结果已在隔离原字节工作树只读重核，成绩不变，新增3项拒绝检查通过。当前其余范围与最终包仍待完成，不表示S12／D3验收。完整当前命令及精确两个研究入口的独立复现要求见该记录；不在默认pytest配置添加skip。
 
 2026-11-01 最新D：[桌面工程记录](acceptance/S12-D-desktop.md)及[演示](../examples/a2a/README.md)已更新。新五个受限IPC复用API；运行页A2A可发现／提交／按原键确认，时间线复用精确审批，分支页可显式Fork／完整Recorded。47桌面单元及23不同Electron覆盖按v5的4新增／v4的19兼容分版归属，审阅两项修复resolved，原失败保留。Python仍99956e…e1e9，锁／head33不变。最终包／完整兼容及D3继续，Runtime终态后才改源码／驱动／锁／迁移／构建。

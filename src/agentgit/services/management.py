@@ -666,10 +666,17 @@ class ManagementService:
                 "merged_run_initialization",
                 "collaboration",
                 "a2a",
+                "repository_listing",
             ],
             "worker": {"status": "unknown", "reason": "no_readiness_probe"},
             "execution_environment": {"status": "unknown", "reason": "policy_is_not_readiness"},
         }
+
+    def repositories(self, *, after_id: UUID | None = None, limit: int = 30) -> dict[str, Any]:
+        result: dict[str, Any] = public(
+            self.inspection.repositories(after_id=after_id, limit=limit)
+        )
+        return result
 
     def runs(
         self, repository_id: UUID, *, after_id: UUID | None = None, limit: int = 30

@@ -152,6 +152,14 @@ def create_app(
                 connection.execute(text("SELECT 1"))
         return {"status": "ready"}
 
+    @app.get("/repositories")
+    def repositories(
+        service: Annotated[ManagementService, Depends(get_manager)],
+        after_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> dict[str, Any]:
+        return service.repositories(after_id=after_id, limit=limit)
+
     @app.post("/repositories", status_code=201)
     def repository(
         body: dict[str, Any],

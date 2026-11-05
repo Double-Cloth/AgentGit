@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import type { ConnectionState } from '../shared/bridge';
 import type { CandidateExperimentPreset } from '../shared/diagnosis';
 import type { CandidateRepairPreset } from '../shared/repair';
-import { call, err, Notice, useAction, type EvidenceTarget } from './ui';
+import { call, date, err, Notice, rows, short, str, useAction, useRead, type EvidenceTarget } from './ui';
 import { Runs } from './Runs';
 const Timeline = lazy(() => import('./Timeline'));
 const Branch = lazy(() => import('./Branch'));
@@ -59,9 +59,14 @@ export function App() {
 
 function Connection({ state, onChange, onClose }: { state: ConnectionState | null; onChange: (state: ConnectionState) => void; onClose: () => void }) {
   const [url, setUrl] = useState(state?.baseUrl ?? 'http://127.0.0.1:8000'), [repository, setRepository] = useState(state?.repositoryId ?? ''), [name, setName] = useState('');
+  const [after, setAfter] = useState<string | undefined>();
   const action = useAction(), createKey = useRef(crypto.randomUUID());
   const [creation, setCreation] = useState<{ name: string; id: string | null } | null>(null);
-  const available = state?.identity === 'accepted' && state.database === 'ready' && state.compatibility === 'compatible';
+  const available = Boolean(state?.identity === 'accepted' && state.database === 'ready' && state.compatibility === 'compatible');
+  const features = useRead(() => call(window.agentgit.capabilities()), [state?.baseUrl, state?.identity, state?.database], 0, state?.baseUrl, available);
+  const featureList = features.data?.features;
+  const listing = Array.isArray(featureList) && featureList.includes('repository_listing');
+  const list = useRead(() => call(window.agentgit.listRepositories({ ...(after ? { afterId: after } : {}), limit: 20 })), [after, state?.baseUrl, state?.identity, state?.database, listing], 0, state?.baseUrl, available && listing);
   return <section className="settings panel" aria-labelledby="settings-title"><div className="section-heading"><h2 id="settings-title">连接与项目</h2><button className="text-button" onClick={onClose}>收起</button></div>
     <p>API 地址仅支持回环 HTTP。身份由启动桌面前设置的 <code>AGENTGIT_API_TOKEN</code> 提供。</p>
     <div className="inline-form"><label className="grow">本机 API 地址<input value={url} onChange={event => setUrl(event.target.value)} placeholder="http://127.0.0.1:8000" spellCheck={false} /></label><button disabled={action.busy} onClick={() => void action.run(async () => onChange(await call(window.agentgit.configureConnection({ baseUrl: url }))))}>连接</button><button disabled={action.busy} onClick={() => void action.run(async () => onChange(await call(window.agentgit.getConnection())))}>重新检查</button></div>
@@ -74,6 +79,16 @@ function Connection({ state, onChange, onClose }: { state: ConnectionState | nul
       onChange(await call(window.agentgit.selectRepository({ repositoryId: id })));
       setCreation(null); setName(''); createKey.current = crypto.randomUUID();
     }); }}><label>新项目名称<input maxLength={200} value={creation?.name ?? name} disabled={creation !== null} onChange={event => setName(event.target.value)} placeholder="例如：框架研究" /></label><button disabled={!available || action.busy || !(creation?.name ?? name).trim()}>{creation ? '继续原创建操作' : '创建并选择'}</button></form></div>
+    <div className="repository-list">
+      <div className="section-heading"><h3>本机已有项目</h3><button disabled={!available || list.loading} onClick={list.refresh}>刷新列表</button></div>
+      {!available ? <p className="muted small">检查连接通过后，可在这里直接选择本机项目。</p>
+        : !listing ? <p className="muted small">{features.loading ? '正在读取后端能力…' : '当前后端不提供项目列表，请粘贴项目 UUID 或新建项目。'}</p>
+        : <><Notice>{list.error}</Notice>
+          {list.loading ? <p role="status">正在读取项目…</p>
+            : !rows(list.data?.items).length ? <p className="muted small">{after ? '没有更早的项目。' : '本机还没有项目，可先创建一个。'}</p>
+            : <ul className="repository-options">{rows(list.data?.items).map(item => <li key={str(item.id)}><button disabled={action.busy} onClick={() => void action.run(async () => onChange(await call(window.agentgit.selectRepository({ repositoryId: str(item.id) }))))}><strong>{str(item.name) || '未命名项目'}</strong><code>{short(item.id)}</code><span className="small muted">{date(item.created_at)}</span></button></li>)}</ul>}
+          <div className="pagination"><span className="small muted">按创建时间倒序 · 每页 20 项</span><button disabled={!after} onClick={() => setAfter(undefined)}>回最新</button><button disabled={!list.data?.next_after_id} onClick={() => setAfter(str(list.data?.next_after_id))}>更早项目</button></div></>}
+    </div>
     <Notice>{action.error}</Notice><p className="muted small">创建结果未确认时保留原幂等键；重新打开窗口只查询，不自动重发创建。退出桌面不会停止后端任务。</p>
     <LicenseNotices />
   </section>;

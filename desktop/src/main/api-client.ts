@@ -26,12 +26,13 @@ export interface ApiRequest {
   maxBytes?: number;
   publicProbe?: boolean;
   connectionProbe?: boolean;
+  contextFree?: boolean;
 }
 export interface BytesResponse { body: Buffer; headers: IncomingHttpHeaders; status: number }
 
 export class ApiClient {
   readonly baseUrl: string;
-  private readonly pendingReads = new Map<ReturnType<typeof httpRequest>, { cancel: () => void; connection: boolean }>();
+  private readonly pendingReads = new Map<ReturnType<typeof httpRequest>, { cancel: () => void; connection: boolean; contextFree: boolean }>();
   private active = 0;
   constructor(baseUrl: string, private readonly token: string | undefined, private readonly timeoutMs = 10000) {
     this.baseUrl = normalizeBaseUrl(baseUrl);
@@ -39,7 +40,8 @@ export class ApiClient {
   get tokenConfigured(): boolean { return Boolean(this.token); }
   cancelReads(includeConnection = false): void {
     for (const entry of this.pendingReads.values()) {
-      if (includeConnection || !entry.connection) entry.cancel();
+      // 与所选项目无关的读取（项目列表、能力描述）不随切换项目取消。
+      if (includeConnection || (!entry.connection && !entry.contextFree)) entry.cancel();
     }
   }
   private redact(value: Json): Json {
@@ -144,7 +146,7 @@ export class ApiClient {
         spec.method === 'POST' ? 'outcome_unknown' : 'connection_unavailable',
         spec.method === 'POST' ? '提交结果尚未确认；保留原幂等键并查询' : '无法连接本地 API，请检查服务地址与启动状态',
       )));
-      if (spec.method === 'GET') this.pendingReads.set(req, { connection: Boolean(spec.connectionProbe), cancel: () => {
+      if (spec.method === 'GET') this.pendingReads.set(req, { connection: Boolean(spec.connectionProbe), contextFree: Boolean(spec.contextFree), cancel: () => {
         finish(new DesktopError('request_cancelled', '读取已取消'));
         req.destroy();
       } });

@@ -260,7 +260,7 @@ export class BusinessController {
       return this.saveArtifact(name, response.body);
     }
     const plan = this.plan(operation, raw);
-    const repository = this.connected(plan.path !== '/repositories');
+    const repository = this.connected(plan.path.split('?')[0] !== '/repositories') ?? null;
     const client = this.client;
     const version = this.contextVersion;
     const spec: ApiRequest = { ...plan, ...(repository ? { repository } : {}) };
@@ -283,7 +283,11 @@ export class BusinessController {
         totalBytes: total, nextOffset: next === '' ? null : Number(next) } satisfies BinaryChunk;
     }
     const value = await client.json(spec);
-    if (plan.method === 'GET' && (this.client !== client || this.contextVersion !== version || this.state.repositoryId !== repository)) {
+    if (plan.method === 'GET' && this.client !== client) throw new DesktopError('context_changed', '读取期间项目上下文已改变');
+    // 项目列表和能力描述不依赖所选项目，选择项目不应使在途结果失效；
+    // 项目内读取仍须在响应返回时确认客户端、上下文版本和项目都未变化。
+    if (plan.method === 'GET' && repository !== null
+        && (this.contextVersion !== version || this.state.repositoryId !== repository)) {
       throw new DesktopError('context_changed', '读取期间项目上下文已改变');
     }
     return value;
@@ -315,6 +319,12 @@ export class BusinessController {
     if (['bindA2A', 'submitA2A', 'listA2A', 'getA2ASubmission', 'getA2AProgram'].includes(operation)) {
       this.connected();
       if (!Array.isArray(this.descriptor?.features) || !this.descriptor.features.includes('a2a')) throw new DesktopError('unsupported', '当前后端未提供A2A，请更新后端并重新检查连接');
+    }
+    if (operation === 'listRepositories') {
+      this.connected(false);
+      if (!Array.isArray(this.descriptor?.features) || !this.descriptor.features.includes('repository_listing')) {
+        throw new DesktopError('unsupported', '当前后端不提供项目列表，请粘贴项目 UUID 或新建项目');
+      }
     }
     switch (operation) {
       case 'bindA2A': {
@@ -408,6 +418,7 @@ export class BusinessController {
         return post('/merge-runs', { branch_name: text(input.branchName, 100), expected_head: digest(input.expectedHead), expected_branch_version: number(required(input.expectedBranchVersion), 0, Number.MAX_SAFE_INTEGER), config_id: id(input.configId), config_version: number(required(input.configVersion), 1, Number.MAX_SAFE_INTEGER, 1), validator_ref: digest(input.validatorRef), budget });
       }
       case 'getRepository': fields(raw, []); return get(`/repositories/${this.state.repositoryId!}`);
+      case 'listRepositories': input = fields(raw, [], ['afterId', 'limit']); return { ...page('/repositories'), contextFree: true };
       case 'listRuns': input = fields(raw, [], ['afterId', 'limit']); return page(`/repositories/${this.state.repositoryId ?? ''}/runs`);
       case 'getRun': input = fields(raw, ['runId']); return get(`/runs/${id(input.runId)}`);
       case 'getJob': case 'getReplay': input = fields(raw, ['jobId']); return get(`/${operation === 'getJob' ? 'jobs' : 'replays'}/${id(input.jobId)}`);

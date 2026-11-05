@@ -22,6 +22,31 @@ class InspectionService:
         if type(limit) is not int or not 1 <= limit <= 100:
             raise AgentGitError(ErrorCode.VALIDATION, "列表分页大小必须为 1 至 100")
 
+    def repositories(self, *, after_id: UUID | None = None, limit: int = 30) -> dict[str, Any]:
+        self._limit(limit)
+        table = TABLES["repositories"]
+        with self.history.engine.connect() as connection:
+            statement = sa.select(table)
+            if after_id is not None:
+                anchor = connection.execute(sa.select(table).where(table.c.id == after_id)).first()
+                if anchor is None:
+                    raise AgentGitError(ErrorCode.NOT_FOUND, "项目游标不可访问")
+                statement = statement.where(
+                    sa.tuple_(table.c.created_at, table.c.id)
+                    < sa.tuple_(anchor.created_at, anchor.id)
+                )
+            rows = list(
+                connection.execute(
+                    statement.order_by(table.c.created_at.desc(), table.c.id.desc()).limit(
+                        limit + 1
+                    )
+                ).mappings()
+            )
+        return {
+            "items": [dict(row) for row in rows[:limit]],
+            "next_after_id": rows[limit - 1]["id"] if len(rows) > limit else None,
+        }
+
     def runs(
         self,
         repository: UUID,

@@ -299,13 +299,17 @@ def test_active_user_code_cancellation_is_applied_only_after_container_cleanup(
         mock,
         "_STATISTICS_CODE",
         "from pathlib import Path\nimport time\n"
-        "Path('partial.txt').write_text('partial')\ntime.sleep(30)\n",
+        # 用户代码在写入部分文件后保持活动，取消必须等容器清理完成后才生效。
+        # 休眠窗口大于 CI 慢环境下的探测上限，避免用户程序先自行结束。
+        "Path('partial.txt').write_text('partial')\ntime.sleep(120)\n",
     )
     queue, repository, job = submit(history, tmp_path)
     with ThreadPoolExecutor(1) as pool:
         running = pool.submit(Worker(queue).run_once)
         ready = False
-        deadline = monotonic() + 18
+        # 慢速 CI runner 上容器启动和首次执行可能远超本地，放宽有界等待；
+        # 断言仍要求实际观察到用户代码写入的部分文件后才请求取消。
+        deadline = monotonic() + 60
         while monotonic() < deadline:
             rows = executions(history)
             if rows and rows[0]["container_id"]:
@@ -335,7 +339,7 @@ def test_active_user_code_cancellation_is_applied_only_after_container_cleanup(
             repository, UUID(job.run_id), "cancel", expected_version=run["state_version"]
         )
         assert requested["control_status"] == "requested"
-        summary = running.result(timeout=12)
+        summary = running.result(timeout=30)
     assert summary["status"] == "cancelled", summary
     state, files, _ = final(queue, repository, job)
     assert state.usage.tool_calls == 11 and not state.stopped_executions
