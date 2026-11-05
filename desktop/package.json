@@ -8,10 +8,13 @@
   "private": true,
   "main": ".build/main/index.js",
   "engines": {
-    "node": "24.19.0",
+    "node": "26.x",
     "npm": "12.1.0"
   },
   "packageManager": "npm@12.1.0",
+  "overrides": {
+    "cross-zip": "file:patches/cross-zip"
+  },
   "scripts": {
     "prebuild": "node scripts/check-toolchain.cjs",
     "build:main": "tsc -p tsconfig.main.json",
@@ -36,7 +39,7 @@
     "@electron-forge/maker-squirrel": "8.0.1",
     "@electron-forge/maker-zip": "8.0.1",
     "@playwright/test": "1.64.1",
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@xyflow/react": "12.12.0",

@@ -1,0 +1,26 @@
+{
+  "name": "cross-zip",
+  "description": "Cross-platform .zip file creation（AgentGit 本地补丁：Node 26 移除 fs.rmdir recursive 后改用 fs.rm）",
+  "version": "4.0.1-agentgit.1",
+  "author": {
+    "name": "Feross Aboukhadijeh",
+    "email": "feross@feross.org",
+    "url": "https://feross.org"
+  },
+  "homepage": "https://github.com/feross/cross-zip",
+  "keywords": [
+    "ZIP",
+    "cross platform",
+    "windows",
+    "zip"
+  ],
+  "license": "MIT",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/feross/cross-zip.git"
+  },
+  "engines": {
+    "node": ">=14.14"
+  }
+}

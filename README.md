@@ -30,9 +30,9 @@ Electron 主进程通过受限 IPC/回环 HTTP 连接 FastAPI；独立 Worker �
 
 ## 首次准备
 
-后端使用 Python **3.12**、uv **0.12.19**、PostgreSQL **17.6**。五工具任务还需 Docker Desktop **Linux 模式**和已核验的固定镜像。桌面构建必须使用 Node.js **24.19.0**、npm **12.1.0**；安装包用户无需 Node/npm/Vite，但须独立准备后端。
+后端使用 Python **3.12**、uv **0.12.19**、PostgreSQL **17.6**。五工具任务还需 Docker Desktop **Linux 模式**和已核验的固定镜像。桌面构建使用 Node.js **26.x**（`desktop/.node-version` 当前固定 26.13.0）与 npm **12.1.0**；安装包用户无需 Node/npm/Vite，但须独立准备后端。
 
-在仓库根目录 PowerShell 执行：
+在仓库根目录 PowerShell 按顺序执行以下命令，完成一次性环境准备：
 
 ```powershell
 uv python install 3.12
@@ -55,7 +55,9 @@ uv run --locked agentgit doctor --sandbox
 
 ## 启动与运行
 
-API 与桌面使用同一令牌。通过受控进程环境传递，不写入文件、命令参数或截图；每个终端须使用一致的数据库、数据根和操作者设置。
+启动顺序为：**API → 普通Worker →（按需）Repair 编排器 → 桌面**。API 与桌面使用同一令牌；它通过受控进程环境传递，不写入文件、命令参数或截图。每个终端须使用一致的数据库、数据根和操作者设置。
+
+**第 1 步 · 启动 API**（在此终端生成一次性随机令牌，并保持运行）：
 
 ```powershell
 $env:AGENTGIT_OPERATOR_ID = 'local-operator'
@@ -63,13 +65,13 @@ $env:AGENTGIT_API_TOKEN = (uv run --locked python -c "import secrets; print(secr
 uv run --locked agentgit serve --port 8000
 ```
 
-另开配置相同后端环境的终端启动普通 Worker：
+**第 2 步 · 启动普通 Worker**（另开一个终端，配置与 API 相同的后端环境）：
 
 ```powershell
 uv run --locked agentgit worker
 ```
 
-Repair Lab 按启用流程分别在独立终端运行所需编排器；不能代替普通 Worker：
+**第 3 步 · 启动 Repair 编排器**（仅 Repair Lab 需要；按启用流程在独立终端分别运行，不能代替普通 Worker）：
 
 ```powershell
 uv run --locked agentgit repair-worker
@@ -77,19 +79,19 @@ uv run --locked agentgit repair-study-worker
 uv run --locked agentgit repair-confirm-worker
 ```
 
-桌面开发在已配置与 API 相同令牌的另一个终端执行：
+**第 4 步 · 启动桌面**（再开一个终端：先按环境变量方式设置与 API 相同的 `AGENTGIT_OPERATOR_ID` 与 `AGENTGIT_API_TOKEN`，再执行）：
 
 ```powershell
 cd desktop
-node --version
-npm --version
+node --version    # 应为 26.x
+npm --version     # 应为 12.1.0
 npm ci
 npm run setup
 $env:AGENTGIT_API_URL = 'http://127.0.0.1:8000'
 npm start
 ```
 
-`npm start` 编译后启动真实 Electron，加载包内页面；首次连接选择或创建项目。分发用户运行 Setup 或解压 ZIP，四件套在 `.agentgit/packages/desktop-0.1.8/`，摘要见[候选记录](doc/acceptance/S12-package-018.md)。这些文件不随 Git 克隆自动提供。构建新包在 `desktop/` 执行 `npm run make`，输出 `desktop/out/`，不要覆盖历史归档。
+`npm start` 编译后启动真实 Electron，加载包内页面；首次连接时选择或创建项目。全部启动后可用 `Invoke-RestMethod http://127.0.0.1:8000/health` 核对 API 存活（不代表 Worker/Docker 就绪）。分发用户运行 Setup 或解压 ZIP，四件套在 `.agentgit/packages/desktop-0.1.8/`，摘要见[候选记录](doc/acceptance/S12-package-018.md)。这些文件不随 Git 克隆自动提供。构建新包在 `desktop/` 执行 `npm run make`，输出 `desktop/out/`，不要覆盖历史归档。
 
 无公网/无模型密钥的三工具同步演示：
 
