@@ -12,7 +12,7 @@ S10 使用[原子准备](../doc/acceptance/S10-prepared.md)发布搜索与采样
 
 Windows x64，Node.js **26.x**（`.node-version` 当前固定 26.13.0），npm **12.1.0**。使用 `package-lock.json`，不隐式升级依赖。
 
-Node 26 移除了 `fs.rmdir` 的 `recursive` 选项，而 Forge 8.0.1 的 maker-zip 依赖 cross-zip 4.0.1（上游最新版）仍有此调用，ZIP 步骤会因此失败。本项目通过 npm `overrides` 将 cross-zip 指向本地补丁 `patches/cross-zip/`（仅把 `fs.rmdir` 换成等价的 `fs.rm`，版本标记 `4.0.1-agentgit.1`），不改其他依赖，也不进入分发产物。
+Node 26 移除了 `fs.rmdir` 的 `recursive` 选项，而 Forge 8.0.1 的 maker-zip 依赖 cross-zip 4.0.1（上游最新版）仍有此调用，ZIP 步骤会因此失败。本项目通过 npm `overrides` 将 cross-zip 指向本地补丁 `patches/cross-zip/`（仅把 `fs.rmdir` 换成等价的 `fs.rm`，版本标记 `4.0.1-agentgit.1`），不改其他依赖，也不进入分发产物。补丁包同时声明为根 devDependency——npm 12 的 `npm ci` 只有这样才能接受 `file:` overrides 的 lock 布局（仅 overrides 声明时 `npm ci` 报 `Missing: cross-zip@ from lock file`，`npm install` 则不受影响）。
 
 | 组件 | 固定版本 |
 |---|---|

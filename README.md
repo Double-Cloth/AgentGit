@@ -55,7 +55,19 @@ uv run --locked agentgit doctor --sandbox
 
 ## 启动与运行
 
-启动顺序为 **API → 普通Worker →（按需）Repair 编排器 → 桌面**。令牌在本轮启动中只共享给桌面：**终端 1 生成并显示一次，复制后在第 4 步粘贴**；Worker/编排器直连数据库，不需要令牌。令牌只经环境变量传递，不写入文件、Git 或启动参数。除下述变量外全部终端保持默认配置（操作者默认 `local-operator`，数据根 `.agentgit/dev`，数据库 `127.0.0.1:55432`），且后端命令都在仓库根目录运行。
+启动顺序为 **API → 普通Worker →（按需）Repair 编排器 → 桌面**。**推荐使用一键脚本**（在仓库根目录的一个终端里完成全部启动，无需手动开多个终端）：
+
+```powershell
+pwsh -ExecutionPolicy Bypass -File scripts\start-local.ps1
+```
+
+脚本自动完成：核对/启动 Docker Desktop 与 PostgreSQL → 核对数据库迁移（落后时提示先备份再升级）→ 生成随机令牌（显示一次，并通过环境变量自动传给各服务，无需复制粘贴）→ 后台启动 API 与普通 Worker（日志在 `.agentgit/dev/logs/`，窗口隐藏）→ 首次运行自动 `npm ci` + `npm run setup` → 前台启动桌面。关闭桌面或 Ctrl+C 后自动停止本轮启动的后台服务。
+
+可选开关：`-Repair` 同时启动 Repair Lab 三个编排器（仅 Repair Lab 需要）；`-NoDesktop` 只启动后端服务，按回车停止。Worker/编排器直连数据库、不需要令牌；操作者默认 `local-operator`，数据根 `.agentgit/dev`，数据库 `127.0.0.1:55432`。
+
+### 手动分步启动（备选）
+
+不想用脚本时可按以下步骤手动启动；令牌在本轮启动中只共享给桌面：**终端 1 生成并显示一次，复制后在第 4 步粘贴**。除下述变量外全部终端保持默认配置，且后端命令都在仓库根目录运行。
 
 **第 1 步 · 启动 API**（终端 1，保持运行。第 2 行会**显示生成的令牌，复制它**，第 4 步要用）：
 
@@ -106,6 +118,7 @@ uv run --locked python examples/research_agent/run.py
 | 场景 | 操作 |
 |---|---|
 | 健康检查 | `Invoke-RestMethod http://127.0.0.1:8000/health` 检查存活，`/ready` 检查数据库；不代表 Worker/Docker 就绪 |
+| worker 报 `database_unavailable` | 先确认 Docker Desktop 已运行、`docker compose ps` 为 healthy；再 `uv run --locked alembic current` 核对迁移（须为 head `0033_a2a_runs`）；`doctor --database` 只验证连通性，schema 落后也会导致此报错 |
 | 排队无进展 | 检查普通 Worker、对应编排器和 Run/Job 状态，不重复创建任务 |
 | 执行环境异常 | `uv run --locked agentgit doctor --sandbox` 检查 Docker Linux 与固定镜像，不删除共享镜像排障 |
 | 审批/未知结果 | 查询精确动作和版本，核对实际效果后再继续，保留原幂等键 |

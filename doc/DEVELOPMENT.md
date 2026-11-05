@@ -2,7 +2,7 @@
 
 2026-11-02当前交付：[0.1.8最终桌面候选](acceptance/S12-package-018.md)34项实际包内及原始审计通过，当前2,855技术节点分批覆盖，另50历史冻结研究单列，原失败不重标。产品源码dca8f8…ba7d、Python／API0.1.0、Schema `0033_a2a_runs`、79业务表加版本表共80，锁不变，无业务库迁移。固定Node24.19.0／npm12.1.0仅用于桌面构建／测试，prebuild检查版本；最终应用使用包内资源及System32 PATH。正式前置见[D3就绪报告](D3-readiness-report.md)。下列增量按当时版本保留，当前后端准备仍须使用完整当前迁移和固定镜像，不能用历史head创建当前服务。
 
-2026-11-05：桌面构建工具链由 Node 24.19.0 切换为 Node **26.x**（`desktop/.node-version` 固定 26.13.0），npm 12.1.0 不变；`prebuild` 改为按 `engines.node` 声明核对版本（支持 `26.x` 区间）。Node 26 移除 `fs.rmdir` 的 `recursive` 选项，Forge 8.0.1 所依赖的 cross-zip 4.0.1（上游最新）在 ZIP 步骤受影响，已通过 npm `overrides` 指向本地补丁 `desktop/patches/cross-zip/`（仅替换为 `fs.rm`，不进入分发产物），见 `desktop/README.md`。当日实测：typecheck、47 单元、build 及 `npm run make`（Setup + ZIP）均在 Node 26.13.0 下通过；`desktop/out/` 为新构建输出，`.agentgit/packages/` 历史归档未改动，旧验收记录按各自日期保留事实。
+2026-11-05：桌面构建工具链由 Node 24.19.0 切换为 Node **26.x**（`desktop/.node-version` 固定 26.13.0），npm 12.1.0 不变；`prebuild` 改为按 `engines.node` 声明核对版本（支持 `26.x` 区间）。Node 26 移除 `fs.rmdir` 的 `recursive` 选项，Forge 8.0.1 所依赖的 cross-zip 4.0.1（上游最新）在 ZIP 步骤受影响，已通过 npm `overrides` 指向本地补丁 `desktop/patches/cross-zip/`（仅替换为 `fs.rm`，不进入分发产物）；因 npm 12 的 `npm ci` 不接受纯 `file:` overrides 的 lock 布局，补丁包同时声明为根 devDependency，`npm ci`/`npm install` 均已实测通过。当日实测：typecheck、47 单元、build、`npm ci` 全新安装及 `npm run make`（Setup + ZIP）均在 Node 26.13.0 下通过；`desktop/out/` 为新构建输出，`.agentgit/packages/` 历史归档未改动，旧验收记录按各自日期保留事实。另新增一键启动脚本 `scripts/start-local.ps1`（Docker/迁移核对、令牌生成与传递、后台 API/Worker、可选 Repair 编排器、前台桌面，退出自动清理），端到端冒烟测试通过。
 
 2026-11-01：[当前兼容与历史冻结评估范围](acceptance/S12-regression-scope.md)区分当前2,852技术节点与绑定旧完整源码的S8二十例／S10三十例执行入口。当前代码不得复用旧协议或覆盖固定结果目录；两套历史原始结果已在隔离原字节工作树只读重核，成绩不变，新增3项拒绝检查通过。当前其余范围与最终包仍待完成，不表示S12／D3验收。完整当前命令及精确两个研究入口的独立复现要求见该记录；不在默认pytest配置添加skip。
 
