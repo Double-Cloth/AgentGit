@@ -86,13 +86,9 @@ def server(monkeypatch, *, mode="ok", trust=True):
         lambda _: [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", address)],
     )
     if trust:
-
-        def client_context():
-            result = ORIGINAL_CONTEXT()
-            result.load_verify_locations(CERT)
-            return result
-
-        monkeypatch.setattr(model_http.ssl, "create_default_context", client_context)
+        # 计时前准备测试信任根，避免 Windows 系统证书加载耗尽慢响应测试的期限。
+        client_context = ORIGINAL_CONTEXT(cafile=str(CERT))
+        monkeypatch.setattr(model_http.ssl, "create_default_context", lambda: client_context)
     try:
         yield requests
     finally:
