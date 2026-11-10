@@ -1,137 +1,258 @@
 # AgentGit
 
-AgentGit 为 AI Agent 提供执行历史的版本管理与受控调试：回溯状态、隔离分支、重放执行、比较差异，通过实验定位故障、搜索修复，并在审阅后合并有限的结构化结果。
+**为 AI Agent 的执行历史提供版本管理、回放与受控调试。**
 
-当前定位是 **Windows x64 本机桌面应用**。桌面候选版本 **0.1.8**，Python/API 版本 **0.1.0**。2026-11-04 按用户要求将工程成果合入 `main`；**合并不代表正式 D1/D2/D3 验收通过**。剩余工作见[验收收尾清单](doc/acceptance/MAIN-integration-2026-11-04.md)。
+AgentGit 将执行状态、事件、检查点和产物保存为可追溯历史，支持隔离分支、重放、差异比较、故障定位、修复实验与结构化合并。
 
-## 基本思想
+> 项目仍处于开发完善阶段，尚未全部完成，具体缺口见[验收收尾清单](doc/acceptance/MAIN-integration-2026-11-04.md)。
 
-- 执行状态也需要版本历史：Commit、分支、检查点、事件和内容寻址对象保留来源，HEAD 与状态原子提交，历史不随重试改写。
-- 恢复、复现、修复分别验证：Recorded 消费完整录制并重算状态与产物，实际模型/工具调用为零；Live 使用独立输入、预算与授权重执行；Hybrid 只替换声明的观测。
-- 用证据判断修复：冻结验收器、A/B 单变量实验、故障候选、有界搜索、字段缩减与独立复测串联；保留失败、不确定及无解结果，不承诺全局最小修复或严格因果证明。
-- 审阅与执行分开：Merge Review 验证有限结构化状态，批准生成双父历史；继续执行须显式创建新任务，不继承旧执行授权。
-- 效果未知先核对：精确审批、幂等键、租约与 fencing 防重复；外部写入未知不自动重发。Shell/Python 只在固定 Docker 容器执行。
+当前面向 **Windows x64 本机桌面使用**，桌面候选版本为 **0.1.8**，Python/API 版本为 **0.1.0**。
 
-桌面包含 Runs、Timeline、Branch Experiment、Diff、Repair Lab、Merge Review。当前支持 MCP 固定 HTTP/批准的 Python stdio、登记的 LangGraph 图、固定四角色协作和本机 A2A；任意图恢复、公网多租户及完整协议实现不在当前范围内。
+[功能概览](#功能概览) · [环境要求](#环境要求) · [快速开始](#快速开始) · [启动与运行](#启动与运行) · [配置](#配置) · [常见问题](#常见问题) · [开发验证](#开发验证) · [文档导航](#文档导航)
+
+## 功能概览
+
+| 工作区 | 已有能力 |
+|---|---|
+| Runs | 创建与查询执行任务，查看状态、预算和审批 |
+| Timeline | 查看事件、检查点、产物和来源，回溯执行过程 |
+| Branch Experiment | 从安全起点 Fork，运行 Recorded、Live、Hybrid 及受控 A/B 实验 |
+| Diff | 比较状态与行为差异，查看冻结的故障报告和候选干预 |
+| Repair Lab | 有界搜索、字段缩减、独立确认与回归，审阅配置版本 |
+| Merge Review | 审阅有限结构化结果，批准后形成双父历史，再显式创建后续任务 |
+
+三种执行模式有各自的输入和授权要求。
+
+| 模式 | 行为 |
+|---|---|
+| Recorded | 消费完整录制，重算状态与产物，实际模型和工具调用为零 |
+| Live | 以独立输入、预算和授权重新执行 |
+| Hybrid | 仅替换显式声明的观测，保留 recorded/synthetic 来源标记 |
+
+适配范围包括固定 MCP HTTP 工具与批准的 Python stdio Server、登记的 LangGraph 图、固定四角色协作和本机 A2A。任意图恢复、公网多租户和完整协议实现超出当前支持范围。模型默认使用免费 Mock，外部模型须单独配置密钥并明确费用上限。[模型与费用说明](doc/MODEL_ADAPTER.md)
 
 ## 架构与目录
 
-Electron 主进程通过受限 IPC/回环 HTTP 连接 FastAPI；独立 Worker 从 PostgreSQL 领取耐久任务。数据库保存历史和调度元数据，CAS 保存不可变内容，Docker Linux 容器承担受控执行。桌面不嵌后端、不自动迁移数据库，关闭桌面不取消任务。
+Electron 主进程通过受限 IPC 和回环 HTTP 连接 FastAPI。独立 Worker 从 PostgreSQL 领取耐久任务，数据库保存历史与调度元数据，CAS 保存不可变内容，固定 Docker Linux 容器承担 Shell/Python 执行。
+
+桌面、API、Worker 分别运行。单独关闭桌面后，独立启动的后端任务可继续执行。一键脚本则负责本轮服务的启动与退出清理。
 
 | 路径 | 用途 |
 |---|---|
-| `src/agentgit/` | 领域服务、API、CLI、适配器、Worker |
+| `src/agentgit/` | 领域服务、API、CLI、适配器和 Worker |
 | `desktop/` | Electron、React、TypeScript、React Flow 与打包 |
-| `migrations/` | Alembic；当前 head 为 `0033_a2a_runs` |
-| `sandbox/` | 固定执行镜像、锁与隔离策略 |
-| `examples/`、`tests/` | 离线演示、固定数据与分层测试 |
-| `doc/` | 设计、实施、API 和验收证据 |
-| `.agentgit/` | 本机数据、证据、分发包，受 Git 忽略，需另外备份 |
+| `migrations/` | Alembic 数据库迁移，当前 head 为 `0033_a2a_runs` |
+| `scripts/` | Windows 本地启动脚本 |
+| `sandbox/` | 固定执行镜像、依赖锁与隔离策略 |
+| `examples/` | 离线演示与适配示例 |
+| `tests/` | 单元、集成、容器及启动脚本回归测试 |
+| `doc/` | 使用指南、设计、实施与验收记录 |
+| `.agentgit/` | Git 忽略的本机数据、CAS、日志、证据与分发归档 |
 
-## 首次准备
+## 环境要求
 
-后端使用 Python **3.12**、uv **0.12.19**、PostgreSQL **17.6**。五工具任务还需 Docker Desktop **Linux 模式**和已核验的固定镜像。桌面构建使用 Node.js **26.x**（`desktop/.node-version` 当前固定 26.13.0）与 npm **12.1.0**；安装包用户无需 Node/npm/Vite，但须独立准备后端。
+| 组件 | 版本与用途 |
+|---|---|
+| Windows | x64，桌面开发和本地启动脚本的目标平台 |
+| PowerShell | 7 或以上，通过 `pwsh` 执行启动脚本 |
+| Python | 3.12，由根目录 `.python-version` 固定 |
+| uv | CI 固定为 0.12.19，Python 依赖使用 `uv.lock` |
+| PostgreSQL | 17.6，`compose.yaml` 固定镜像摘要 |
+| Docker Desktop | Linux 容器模式，用于本地数据库和容器执行 |
+| Node.js / npm | 桌面源码构建使用 Node 26.x / npm 12.1.0，推荐版本见 `desktop/.node-version` |
 
-在仓库根目录 PowerShell 按顺序执行以下命令，完成一次性环境准备：
+运行已有安装包或 ZIP 程序时，只需准备后端及对应执行环境。Node/npm 用于桌面源码构建。`-NoDesktop` 模式跳过桌面工具链检查与安装。
+
+首次安装依赖、下载 Electron 或准备镜像需要网络。已准备的包内桌面资源、Mock 演示和固定镜像可用于离线运行。
+
+## 快速开始
+
+以下命令在仓库根目录的 PowerShell 7 执行，适用于**新的本地开发环境**。已有数据的环境先按[备份与升级](#备份与升级)处理。
+
+### 1. 准备 Python 与数据库
+
+确认已安装 uv，并启动 Docker Desktop 的 Linux 引擎。
 
 ```powershell
 uv python install 3.12
 uv sync --locked
-docker compose up -d --wait
+docker compose up -d --wait --wait-timeout 90
 uv run --locked alembic upgrade head
 uv run --locked agentgit doctor --database
 ```
 
-迁移适用于新环境；已有业务数据先停止写者并备份。Compose 只启动数据库，默认公开开发凭据仅用于本机。程序**不会自动读取 `.env`**；通过进程环境设置，字段见 [.env.example](.env.example)。默认数据根 `.agentgit/dev`，数据库端口 `127.0.0.1:55432`。
+Compose 默认创建 `agentgit_dev` 数据库，端口为 `127.0.0.1:55432`，数据保存在命名卷中。开发凭据和其他默认值见[配置](#配置)。
 
-容器执行前导入固定镜像并核验：
+### 2. 核验容器执行环境
+
+五工具任务需要本机已有锁定镜像。先按镜像说明导入，再执行核验。
 
 ```powershell
 uv run --locked python sandbox/prepare.py
 uv run --locked agentgit doctor --sandbox
 ```
 
-缺镜像按[镜像说明](sandbox/README.md)导入或显式构建并审阅新摘要；不绕过锁或回退到宿主执行。
+`prepare.py` 默认核验已有镜像。导入、显式构建和摘要审阅步骤见[固定镜像说明](sandbox/README.md)。仅浏览桌面或运行下述三工具同步示例时，可以稍后准备执行镜像。
 
-## 启动与运行
-
-启动顺序为 **API → 普通Worker →（按需）Repair 编排器 → 桌面**。**推荐使用一键脚本**（在仓库根目录的一个终端里完成全部启动，无需手动开多个终端）：
+### 3. 启动桌面与后端
 
 ```powershell
-pwsh -ExecutionPolicy Bypass -File scripts\start-local.ps1
+pwsh -NoProfile -File scripts/start-local.ps1
 ```
 
-脚本自动完成：核对/启动 Docker Desktop 与 PostgreSQL → 核对数据库迁移（落后时提示先备份再升级）→ 生成随机令牌（显示一次，并通过环境变量自动传给各服务，无需复制粘贴）→ 后台启动 API 与普通 Worker（日志在 `.agentgit/dev/logs/`，窗口隐藏）→ 首次运行自动 `npm ci` + `npm run setup` → 前台启动桌面。关闭桌面或 Ctrl+C 后自动停止本轮启动的后台服务。
+脚本会核对工具链、同步锁定 Python 依赖、首次安装桌面依赖、启动数据库并核对迁移，再生成本轮令牌、启动 API/Worker 和桌面。令牌显示一次，自动通过环境传给桌面。
 
-可选开关：`-Repair` 同时启动 Repair Lab 三个编排器（仅 Repair Lab 需要）；`-NoDesktop` 只启动后端服务，按回车停止。Worker/编排器直连数据库、不需要令牌；操作者默认 `local-operator`，数据根 `.agentgit/dev`，数据库 `127.0.0.1:55432`。
+桌面打开后，在「连接与项目」选择本机已有项目，或创建项目。运行五工具、Fork、Recorded、Live 和 Diff 的完整操作见[D1 桌面指南](doc/D1-desktop-demo.md)。
 
-桌面打开后，在「连接与项目」的**本机已有项目**列表中直接点击项目即可进入工作区（显示名称、短 ID 与创建时间），无需手抄 UUID；也可粘贴 UUID 或新建项目。
+### 先试离线示例
 
-### 手动分步启动（备选）
-
-不想用脚本时可按以下步骤手动启动；令牌在本轮启动中只共享给桌面：**终端 1 生成并显示一次，复制后在第 4 步粘贴**。除下述变量外全部终端保持默认配置，且后端命令都在仓库根目录运行。
-
-**第 1 步 · 启动 API**（终端 1，保持运行。第 2 行会**显示生成的令牌，复制它**，第 4 步要用）：
-
-```powershell
-$token = (uv run --locked python -c "import secrets; print(secrets.token_urlsafe(32))").Trim()
-$token    # 显示生成的令牌，复制这个字符串
-$env:AGENTGIT_API_TOKEN = $token
-uv run --locked agentgit serve --port 8000
-```
-
-**第 2 步 · 启动普通 Worker**（终端 2，仓库根目录）：
-
-```powershell
-uv run --locked agentgit worker
-```
-
-**第 3 步 · 启动 Repair 编排器**（终端 3，仅 Repair Lab 需要；按启用流程分别独立运行，不能代替普通 Worker）：
-
-```powershell
-uv run --locked agentgit repair-worker
-uv run --locked agentgit repair-study-worker
-uv run --locked agentgit repair-confirm-worker
-```
-
-**第 4 步 · 启动桌面**（终端 4。需 Node 26.x／npm 12.1.0，可先 `node --version` 核对；首次构建较慢）：
-
-```powershell
-cd desktop
-npm ci
-npm run setup
-$env:AGENTGIT_API_TOKEN = Read-Host '粘贴终端 1 显示的令牌'
-$env:AGENTGIT_API_URL = 'http://127.0.0.1:8000'
-npm start
-```
-
-`Read-Host` 交互输入不进入 PowerShell 命令历史。桌面主进程读取 `AGENTGIT_API_TOKEN` 后即删除环境副本，令牌不进入渲染进程、IPC 或偏好文件。`npm start` 编译后启动真实 Electron，加载包内页面；首次连接时选择或创建项目。全部启动后可用 `Invoke-RestMethod http://127.0.0.1:8000/health` 核对 API 存活（不代表 Worker/Docker 就绪）。分发用户运行 Setup 或解压 ZIP，四件套在 `.agentgit/packages/desktop-0.1.8/`，摘要见[候选记录](doc/acceptance/S12-package-018.md)。这些文件不随 Git 克隆自动提供。构建新包在 `desktop/` 执行 `npm run make`，输出 `desktop/out/`，不要覆盖历史归档。
-
-无公网/无模型密钥的三工具同步演示：
+完成第 1 步的 Python 依赖、数据库与迁移准备后，可以单独运行三工具同步示例。
 
 ```powershell
 uv run --locked python examples/research_agent/run.py
 ```
 
-该演示自行执行，不代替耐久 Worker/五工具验收。桌面五工具、Fork、Recorded、Live、Diff 按[D1 指南](doc/D1-desktop-demo.md)操作，CLI 见[五工具流程](doc/API.md#五工具容器流程)。适配演示见 [MCP](doc/S12-A-mcp-demo.md)、[LangGraph](doc/S12-B-langgraph-demo.md)、[四角色](examples/collaboration/README.md)、[A2A](examples/a2a/README.md)。默认 Mock 不产生模型费用；在线供应商调用另行配置并明确预算。
+该示例可在无公网、无模型密钥的环境执行，独立于 API/耐久 Worker。其输入、产物与运行方式见[示例说明](examples/research_agent/README.md)。
 
-## 日常运维
+## 启动与运行
 
-| 场景 | 操作 |
+### 一键脚本
+
+```powershell
+# 启用 Repair Lab 所需的三个编排器
+pwsh -NoProfile -File scripts/start-local.ps1 -Repair
+
+# 仅启动 API 和普通 Worker，按回车结束
+pwsh -NoProfile -File scripts/start-local.ps1 -NoDesktop
+
+# 使用其他回环端口
+pwsh -NoProfile -File scripts/start-local.ps1 -Port 8001
+
+# 使用已准备的数据库，跳过 Docker Desktop / Compose 启动
+pwsh -NoProfile -File scripts/start-local.ps1 -NoDesktop -SkipCompose
+```
+
+| 参数 | 行为 |
 |---|---|
-| 健康检查 | `Invoke-RestMethod http://127.0.0.1:8000/health` 检查存活，`/ready` 检查数据库；不代表 Worker/Docker 就绪 |
-| worker 报 `database_unavailable` | 先确认 Docker Desktop 已运行、`docker compose ps` 为 healthy；再 `uv run --locked alembic current` 核对迁移（须为 head `0033_a2a_runs`）；`doctor --database` 只验证连通性，schema 落后也会导致此报错 |
-| 排队无进展 | 检查普通 Worker、对应编排器和 Run/Job 状态，不重复创建任务 |
-| 执行环境异常 | `uv run --locked agentgit doctor --sandbox` 检查 Docker Linux 与固定镜像，不删除共享镜像排障 |
-| 审批/未知结果 | 查询精确动作和版本，核对实际效果后再继续，保留原幂等键 |
-| 停机 | 先暂停/处理活动任务并确认安全状态，再停编排器、Worker、API，最后 `docker compose stop`；Ctrl+C 不表示外部动作已撤销 |
-| 升级 | 停止写者并备份数据库/数据根，保存代码/锁/镜像版本；`uv sync --locked` 后迁移只前进，再按相同配置启动 |
+| `-NoDesktop` | 跳过 Node/npm、桌面依赖安装与桌面启动，按回车停止后端 |
+| `-Repair` | 额外启动 `repair-worker`、`repair-study-worker`、`repair-confirm-worker` |
+| `-Port <端口>` | 设置 API 回环端口，并自动传给本轮桌面，默认 8000 |
+| `-SkipCompose` | 使用当前环境配置的数据库，跳过 Docker/Compose 启动，仍核对迁移与 API 就绪 |
 
-备份必须同时保存 **PostgreSQL、完整 `AGENTGIT_DATA_ROOT`（含 CAS）和匹配的代码/依赖锁/镜像策略**。停止所有写者后，用 PostgreSQL `pg_dump -Fc` 归档到受控目录，复制数据根并记录摘要；固定镜像用 `docker save` 另存。不要只备份安装目录，不执行 `docker compose down -v` 删除业务卷。
+日志位于 `<AGENTGIT_DATA_ROOT>/logs/<本轮标识>/`，默认在 `.agentgit/dev/logs/` 下，每个服务各有 `.out.log` 和 `.err.log`。可以在其他终端查看启动时输出的具体日志路径。
 
-恢复时在空数据库和独立数据根用 `pg_restore` 及原字节恢复，使用匹配版本核对引用、hash、HEAD、checkpoint 后开放服务。中断任务保留未知/待核对状态，不自动重发写入；不绕过旧 Job 的源码/锁守卫。回滚使用整套备份，不在业务库 downgrade。参考[恢复证据](doc/acceptance/S10-backup-restore.md)。当前 GC 仅 dry-run，不把扫描结果用于删除。
+脚本要求数据库已迁移到代码的唯一 head，迁移缺失或落后会停止并提示手动准备。依赖安装、迁移查询、后台进程或桌面启动失败时，会保留日志并清理已启动的服务。
 
-## 开发验证与验收
+**关闭桌面或结束纯后端模式前，先将活动任务处理至安全状态。** 正常退出和 Ctrl+C 会进入清理流程，按逆序终止本轮 API/Worker/编排器进程树，恢复调用者原有环境变量和工作目录。Docker Desktop 与 PostgreSQL 继续运行，可在确认其他使用者已退出后执行 `docker compose stop`。直接关闭终端窗口后，应核对剩余进程和任务状态。
+
+### 手动分步启动
+
+需要让后台任务独立于桌面生命周期运行时，可以分终端启动。所有后端终端使用相同数据库、数据根和操作者配置。
+
+**终端 1，生成令牌并保持 API 运行。** 复制显示的令牌，供桌面终端使用。
+
+```powershell
+$token = (uv run --locked python -c "import secrets; print(secrets.token_urlsafe(32))").Trim()
+$token
+$env:AGENTGIT_API_TOKEN = $token
+uv run --locked agentgit serve --port 8000
+```
+
+**终端 2，保持普通 Worker 运行。**
+
+```powershell
+uv run --locked agentgit worker
+```
+
+**Repair Lab 按需额外开启三个终端，每个终端运行其中一条命令。**
+
+| 终端 | 命令 |
+|---|---|
+| 3 | `uv run --locked agentgit repair-worker` |
+| 4 | `uv run --locked agentgit repair-study-worker` |
+| 5 | `uv run --locked agentgit repair-confirm-worker` |
+
+**桌面终端，首次安装后启动。**
+
+```powershell
+cd desktop
+npm.cmd ci
+npm.cmd run setup
+$env:AGENTGIT_API_TOKEN = Read-Host '粘贴 API 终端显示的令牌'
+$env:AGENTGIT_API_URL = 'http://127.0.0.1:8000'
+npm.cmd start
+```
+
+后续启动可直接设置令牌与地址后执行 `npm.cmd start`。`Read-Host` 输入保留在本轮进程环境，桌面主进程读取后清除环境副本，使用受限客户端访问 API。Worker 与编排器直连数据库。
+
+### 运行与构建分发包
+
+已有分发物可运行 Setup，或解压 ZIP 后启动 `AgentGit.exe`。本机历史归档在 `.agentgit/packages/desktop-0.1.8/`，文件摘要见[0.1.8 候选记录](doc/acceptance/S12-package-018.md)。这些本机文件须另行取得。
+
+构建新的 Windows x64 Setup 和 ZIP，在已准备好桌面依赖后执行以下命令。
+
+```powershell
+cd desktop
+npm.cmd run make
+```
+
+输出位于 `desktop/out/`。历史候选按原摘要独立保留，打包细节、开源授权和包内容审计见[桌面说明](desktop/README.md)。
+
+## 配置
+
+程序从**进程环境变量**读取配置。`.env.example` 用于查阅字段，复制为 `.env` 后仍需自行加载到各终端。
+
+| 变量 | 默认值或用途 |
+|---|---|
+| `AGENTGIT_DATABASE_URL` | `postgresql+psycopg://agentgit:agentgit_local@127.0.0.1:55432/agentgit_dev` |
+| `AGENTGIT_DATA_ROOT` | `.agentgit/dev`，包含运行数据与 CAS，启动脚本日志也存放于此 |
+| `AGENTGIT_OPERATOR_ID` | `local-operator`，所有参与进程使用相同身份 |
+| `AGENTGIT_API_TOKEN` | API 与桌面共享的本轮令牌，至少 32 个可见 ASCII 字符 |
+| `AGENTGIT_API_URL` | 桌面连接地址，默认 `http://127.0.0.1:8000` |
+| `AGENTGIT_API_ORIGINS` | 显式回环 HTTP Origin 的 JSON 数组，格式见 `.env.example` |
+| `AGENTGIT_TEST_DATABASE_URL` | 独立测试库，默认数据库名 `agentgit_test` |
+| `AGENTGIT_TEST_DATA_ROOT` | `.agentgit/test`，与开发数据根互不包含 |
+
+`compose.yaml` 中的凭据为本机开发占位值。自备数据库时先设置 `AGENTGIT_DATABASE_URL`，再使用 `-SkipCompose`。各终端的相对路径均从仓库根目录解释。供应商密钥只配置在需要调用模型的独立 Worker 环境。[配置示例](.env.example) · [模型配置](doc/MODEL_ADAPTER.md)
+
+## 常见问题
+
+| 现象 | 检查与处理 |
+|---|---|
+| 找不到 `pwsh`、`uv`、`docker` 或桌面工具链 | 核对环境要求及 PATH，重新打开终端；桌面 Node/npm 必须符合 `desktop/package.json` |
+| PowerShell 执行策略阻止脚本 | 经本机策略允许时，可使用 `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/start-local.ps1` |
+| Docker 无法连接或容器模式错误 | 启动 Docker Desktop 并切换 Linux 容器，执行 `docker info` 和 `docker compose ps` |
+| 端口无法绑定 | 核对端口所属进程，或使用 `-Port 8001`，手动启动时同时修改 API 与桌面地址 |
+| 提示 schema 落后，或 Worker 报 `database_unavailable` | 先检查数据库健康状态，再用 `uv run --locked alembic current` 与 `alembic heads` 比较，按备份与升级流程迁移 |
+| API 可访问但任务持续排队 | 核对普通 Worker、对应 Repair 编排器、Job/Run 状态和本轮服务日志 |
+| `sandbox_unavailable` 或执行环境异常 | 运行 `uv run --locked agentgit doctor --sandbox`，检查 Linux 引擎与固定镜像 |
+| 桌面连接失败或业务请求被拒绝 | 核对 API 地址、同一令牌与操作者配置，重启 API 后为桌面更新本轮令牌 |
+| 桌面依赖不完整或锁文件变更 | 在 `desktop/` 重新执行 `npm.cmd ci` 和 `npm.cmd run setup` |
+| 审批或提交结果未知 | 按原请求与幂等键查询，核对精确动作和版本，再决定后续操作 |
+
+可在其他终端检查 API 与数据库连接状态，端口按实际配置调整。
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+Invoke-RestMethod http://127.0.0.1:8000/ready
+```
+
+`/health` 返回 API 存活状态，`/ready` 额外检查数据库连接。Worker 与容器执行环境需要分别检查。
+
+## 备份与升级
+
+备份需同时保存 **PostgreSQL、完整 `AGENTGIT_DATA_ROOT`（含 CAS），以及匹配的代码、依赖锁和镜像策略**。
+
+1. 停止所有写者，将活动任务处理至安全状态。
+2. 使用 PostgreSQL `pg_dump -Fc` 归档到受控目录，复制完整数据根并记录摘要，固定镜像可通过 `docker save` 另存。
+3. 更新代码后执行 `uv sync --locked`，再显式执行 `uv run --locked alembic upgrade head`。
+4. 核对迁移、数据库、镜像与任务状态，再按相同配置启动服务。
+
+恢复时使用空数据库和独立数据根，通过 `pg_restore` 及原字节恢复，核对引用、hash、HEAD 和 checkpoint 后开放服务。回滚使用整套匹配备份。中断任务保留未知或待核对状态，当前 GC 仅提供 dry-run。数据恢复过程见[备份恢复证据](doc/acceptance/S10-backup-restore.md)。
+
+## 开发验证
+
+### 无外部设施的后端检查
 
 ```powershell
 uv run --locked ruff check .
@@ -140,8 +261,49 @@ uv run --locked mypy
 uv run --locked pytest
 ```
 
-默认 pytest 只运行单元。集成测试先准备独立 `_test` 数据库（Compose 首次可运行 `docker compose exec postgres createdb -U agentgit agentgit_test`）及独立测试数据根，再执行 `uv run --locked pytest tests/integration`；容器测试显式选择 `tests/sandbox tests/execution`。不得连接业务库。S8/S10 历史研究使用对应冻结源码，见[回归范围](doc/acceptance/S12-regression-scope.md)，不改写旧成绩。
+默认 pytest 仅选择 `tests/unit`。Windows 启动编排回归使用命令替身，单独运行以下命令即可，无需真实数据库、Docker 或 Electron。
 
-桌面在固定工具链下执行 `npm run typecheck`、`npm test`、`npm run build`；Electron/真实后端专项见[桌面说明](desktop/README.md)。运行期间冻结源码、锁、迁移和驱动，终态后才修改。
+```powershell
+pwsh -NoProfile -File tests/scripts/test-start-local.ps1
+```
 
-既有证据为 2,855 技术节点分批覆盖、34 实际包内节点通过，另 50 项历史冻结研究，不是单进程全量一次全绿。本轮验证与正式缺口见[收尾清单](doc/acceptance/MAIN-integration-2026-11-04.md)。详细说明见 [DEVELOPMENT.md](doc/DEVELOPMENT.md)、[API.md](doc/API.md)、[设计文档](doc/AgentGit_设计文档_v1.0.0.md)、[实施方案](doc/AgentGit_实施方案_v1.0.0.md)。
+### 数据库与容器测试
+
+集成测试须使用独立的 `_test` 数据库和测试数据根。默认 Compose 初次准备测试库可执行 `docker compose exec postgres createdb -U agentgit agentgit_test`，已存在时直接复用。
+
+```powershell
+uv run --locked pytest tests/integration `
+  --ignore=tests/integration/test_diagnosis_candidate_effects_v3.py `
+  --ignore=tests/integration/test_repair_frozen_evaluation.py
+
+uv run --locked pytest tests/sandbox tests/execution
+```
+
+两个忽略项绑定 S8/S10 的历史冻结源码，复现须在对应原字节工作树执行。当前技术回归范围、前置设施与历史研究归属见[回归范围说明](doc/acceptance/S12-regression-scope.md)。运行期间保持相关源码、锁、迁移与驱动固定。
+
+### 桌面检查
+
+在 `desktop/` 目录执行以下命令。
+
+```powershell
+npm.cmd run typecheck
+npm.cmd test
+npm.cmd run build
+```
+
+Electron 边界、真实后端与分发包专项各有独立入口和设施要求，见[桌面开发与测试](desktop/README.md)。已有历史成绩及其源码、包版本和运行范围按各验收记录归属。
+
+## 文档导航
+
+| 主题 | 入口 |
+|---|---|
+| 桌面完整演示 | [D1 桌面指南](doc/D1-desktop-demo.md) |
+| 桌面构建、打包与专项测试 | [desktop/README.md](desktop/README.md) |
+| API、CLI 与五工具流程 | [API.md](doc/API.md) |
+| 开发环境与历史变更记录 | [DEVELOPMENT.md](doc/DEVELOPMENT.md) |
+| 模型与费用授权 | [MODEL_ADAPTER.md](doc/MODEL_ADAPTER.md) |
+| 固定容器镜像 | [sandbox/README.md](sandbox/README.md) |
+| MCP / LangGraph | [MCP HTTP](doc/S12-A-mcp-demo.md)、[MCP stdio](doc/S12-A-stdio-demo.md)、[固定图](doc/S12-B-langgraph-demo.md) |
+| 多 Agent 示例 | [四角色协作](examples/collaboration/README.md)、[本机 A2A](examples/a2a/README.md) |
+| 设计与实施 | [设计文档](doc/AgentGit_设计文档_v1.0.0.md)、[实施方案](doc/AgentGit_实施方案_v1.0.0.md)、[界面规范](DESIGN.md) |
+| 合并与正式验收 | [main 整合记录](doc/acceptance/MAIN-integration-2026-11-04.md)、[D3 就绪报告](doc/D3-readiness-report.md) |

@@ -51,7 +51,9 @@ npm run make
 
 ## 连接已有后端
 
-按 [根 README 启动流程](../README.md#启动与运行) 准备数据库/迁移并启动 API 与 Worker；令牌在 API 终端生成并显示一次（根 README 第 1 步），本终端粘贴同一令牌后启动。通过环境传递，不放入启动参数、文档或 Git。
+首次使用按[根 README 快速开始](../README.md#快速开始)准备数据库迁移与执行镜像，再从仓库根目录运行 `pwsh -NoProfile -File scripts/start-local.ps1`。脚本自动传递本轮令牌，Repair Lab 可加 `-Repair`，仅后端可加 `-NoDesktop`。
+
+手动连接独立启动的 API/Worker 时，按[分步启动流程](../README.md#手动分步启动)在 API 终端生成令牌，再在本终端输入同一令牌。各进程使用相同数据库、数据根和操作者配置。
 
 ```powershell
 $env:AGENTGIT_API_TOKEN = Read-Host '粘贴 API 终端显示的令牌'
