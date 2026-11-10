@@ -19,6 +19,10 @@ jobs:
       - run: uv run --locked ruff format --check .
       - run: uv run --locked mypy
       - run: uv run --locked pytest
+      - name: Windows 启动脚本回归
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/scripts/test-start-local.ps1
   postgres:
     runs-on: ubuntu-latest
     # test_backup_restore.py 需要能 docker exec 名为 agentgit-postgres-1 的本机容器
