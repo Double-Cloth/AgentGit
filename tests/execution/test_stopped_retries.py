@@ -4,6 +4,7 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 from time import monotonic, sleep
 from uuid import UUID, uuid4
 
@@ -295,6 +296,14 @@ def test_actual_worker_process_death_cleans_live_container_then_uses_new_attempt
 def test_active_user_code_cancellation_is_applied_only_after_container_cleanup(
     history, tmp_path, image_id, engine, monkeypatch
 ):
+    execution_started = Event()
+    execute = SandboxContainer.execute
+
+    def observe_execution(container, *args, **kwargs):
+        execution_started.set()
+        return execute(container, *args, **kwargs)
+
+    monkeypatch.setattr(SandboxContainer, "execute", observe_execution)
     monkeypatch.setattr(
         mock,
         "_STATISTICS_CODE",
@@ -306,6 +315,10 @@ def test_active_user_code_cancellation_is_applied_only_after_container_cleanup(
     queue, repository, job = submit(history, tmp_path)
     with ThreadPoolExecutor(1) as pool:
         running = pool.submit(Worker(queue).run_once)
+        # 容器完成启动、就绪和输入装载后再探测，避免测试 exec 干扰初始化。
+        assert execution_started.wait(timeout=60), (
+            running.result(timeout=0) if running.done() else "Worker 尚未进入用户代码执行阶段"
+        )
         ready = False
         # 慢速 CI runner 上容器启动和首次执行可能远超本地，放宽有界等待；
         # 断言仍要求实际观察到用户代码写入的部分文件后才请求取消。
@@ -333,7 +346,9 @@ def test_active_user_code_cancellation_is_applied_only_after_container_cleanup(
                 except EngineError as error:
                     assert error.status in (404, 409)
             sleep(0.05)
-        assert ready, "未观察到用户代码创建的部分文件"
+        assert ready, (
+            running.result(timeout=0) if running.done() else "未观察到用户代码创建的部分文件"
+        )
         run = queue.run(repository, UUID(job.run_id))
         requested = queue.request_control(
             repository, UUID(job.run_id), "cancel", expected_version=run["state_version"]
