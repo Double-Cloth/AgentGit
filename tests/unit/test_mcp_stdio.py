@@ -132,5 +132,13 @@ def test_owned_server_cannot_leave_child_process(mcp_stdio):
         assert any(r["event"] == "child_blocked" for r in events)
         assert not any(r["event"] == "child_allowed" for r in events)
     else:
-        assert all(exited(r["child_pid"]) for r in events if r["event"] == "child_allowed")
+        child_pids = [r["child_pid"] for r in events if r["event"] == "child_allowed"]
+        assert len(child_pids) == 1
+        # SIGKILL 异步生效，等待 Server 本身退出并不等于其子进程已完成退出。
+        deadline = time.monotonic() + 2
+        running = [pid for pid in child_pids if not exited(pid)]
+        while running and time.monotonic() < deadline:
+            time.sleep(0.01)
+            running = [pid for pid in running if not exited(pid)]
+        assert not running, f"MCP 子进程未在清理后退出 {running}"
     assert all(exited(r["pid"]) for r in events if r["event"] == "started")
